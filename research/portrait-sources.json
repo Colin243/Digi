@@ -1,0 +1,202 @@
+[
+  {
+    "id": "canon-history",
+    "url": "https://global.canon/en/c-museum/product/dcc596.html",
+    "evidence_type": "manufacturer",
+    "purpose": "2010 G12 technical baseline"
+  },
+  {
+    "id": "g12-default-samples",
+    "url": "https://www.cameralabs.com/canon_powershot_g12/3/",
+    "evidence_type": "reviewer",
+    "purpose": "Default My Colours off; labeled flash portrait at telephoto"
+  },
+  {
+    "id": "g12-flash-test",
+    "url": "https://www.photographyblog.com/reviews/canon_powershot_g12_review",
+    "evidence_type": "reviewer",
+    "purpose": "Flash portrait examples; 46 original candidates, image host denied download"
+  },
+  {
+    "id": "g12-exposure",
+    "url": "https://www.imaging-resource.com/cameras/canon-g12-review/exposure/",
+    "evidence_type": "reviewer-search-excerpt-only",
+    "purpose": "Indoor flash and white-balance observations; full page unavailable"
+  },
+  {
+    "id": "g12-fill-flash",
+    "url": "https://www.ephotozine.com/article/canon-powershot-g12-review-15199",
+    "evidence_type": "reviewer",
+    "purpose": "Indoor fill portrait and white-balance examples"
+  },
+  {
+    "id": "g12-edited-raw",
+    "url": "https://photographybay.com/2011/01/24/canon-powershot-g12-review/",
+    "evidence_type": "photographer",
+    "purpose": "Explicit Lightroom-edited RAW examples; separate aesthetic reference"
+  },
+  {
+    "id": "g12-owner-flash",
+    "url": "https://www.reddit.com/r/VintageDigitalCameras/comments/15uohdo",
+    "evidence_type": "owner-search-excerpt-only",
+    "purpose": "Beach flash preference; anecdote, not calibration"
+  },
+  {
+    "id": "iphone-specs",
+    "url": "https://support.apple.com/en-nz/125090",
+    "evidence_type": "manufacturer",
+    "purpose": "HDR, flash and processing features"
+  },
+  {
+    "id": "iphone-standard-samples",
+    "url": "https://9to5mac.com/2025/09/17/iphone-17-pro-review/",
+    "evidence_type": "reviewer",
+    "purpose": "Standard style gallery, mixed camera models/lenses"
+  },
+  {
+    "id": "adaptive-lut",
+    "url": "https://arxiv.org/abs/2009.14468",
+    "evidence_type": "research",
+    "purpose": "Image-adaptive learned LUTs; does not establish Canon fidelity"
+  },
+  {
+    "id": "portrait-quality",
+    "url": "https://arxiv.org/abs/2406.15848",
+    "evidence_type": "research",
+    "purpose": "Controllable skin-tone enhancement research"
+  },
+  {
+    "id": "skin-background",
+    "url": "https://arxiv.org/abs/2105.09034",
+    "evidence_type": "research",
+    "purpose": "Skin-color changes due to lighting/background context"
+  },
+  {
+    "id": "canon-face-metering",
+    "url": "https://www.usa.canon.com/support/p/powershot-g12",
+    "evidence_type": "manufacturer",
+    "purpose": "Face AiAF evaluates facial brightness for AE/flash and facial color for WB; behavior specification, not measured transfer function.",
+    "checked": "2026-09-16",
+    "training_admitted": false
+  },
+  {
+    "id": "canon-portrait-scene",
+    "url": "https://asia.canon/en/support/8200922600",
+    "evidence_type": "manufacturer",
+    "purpose": "Portrait scene mode described as a soft effect; separate from default Program/My Colors Off.",
+    "checked": "2026-09-16",
+    "training_admitted": false
+  },
+  {
+    "id": "honeypnd-g12-social",
+    "url": "https://www.lemon8-app.com/@honeypnd/7379987734275998209?region=th",
+    "evidence_type": "owner-caption",
+    "purpose": "G12 night portraits; caption discusses flash adjustment with lighting/location. Carousel descriptions mention P + flash. Instagram honeypnd linked by author; Instagram unavailable. EXIF and editing unknown; style reference only. Use main caption, not expanded SEO text as verified settings.",
+    "checked": "2026-09-16",
+    "training_admitted": false
+  },
+  {
+    "id": "gman-g12-self-portrait",
+    "url": "https://www.flickr.com/photos/30341494@N07/8711896515/",
+    "evidence_type": "owner-caption",
+    "purpose": "Lost Creek Wilderness self portrait, May 2013. Owner identifies G12; EXIF/editing unverified, all rights reserved. Candidate only.",
+    "checked": "2026-09-16",
+    "training_admitted": false
+  },
+  {
+    "id": "doug-jackson-g12-external-flash",
+    "url": "https://www.flickr.com/photos/dougweb1000/5602667498",
+    "evidence_type": "photographer-caption",
+    "purpose": "Owner explicitly used ST-E2 and wireless Canon flash. Keep external-flash examples separate from built-in flash target; EXIF and editing unverified.",
+    "checked": "2026-09-16",
+    "training_admitted": false
+  },
+  {
+    "id": "roccos-g12-self-portrait",
+    "url": "https://www.flickr.com/photos/roccoslab/6548586723/",
+    "evidence_type": "search-lead-only",
+    "purpose": "G12 self portrait indexed; direct page and metadata unavailable. Not verified or admitted.",
+    "checked": "2026-09-16",
+    "training_admitted": false
+  },
+  {
+    "id": "salisawangs-g12-social",
+    "url": "https://www.lemon8-app.com/@salisawangs_/7316800074581852673?region=th",
+    "evidence_type": "search-lead-only",
+    "purpose": "Night flash social reference candidate; full page unavailable. Indexed expanded text not treated as authenticated author settings.",
+    "checked": "2026-09-16",
+    "training_admitted": false
+  },
+  {
+    "id": "g12-cvc-portrait-tests",
+    "url": "https://www.cameraversuscamera.com.br/cameras/cg12/ck_cg12_2.htm",
+    "evidence_type": "reviewer-search-excerpt-only",
+    "purpose": "Dedicated ambient, window-light and built-in-flash comparisons using mannequins and a hand. Separate AWB, manual WB and My Colors examples. Direct fetch failed; originals unverified. Mannequin material is not real facial skin; exclude altered My Colors settings from default target.",
+    "checked": "2026-09-16",
+    "training_admitted": false
+  },
+  {
+    "id": "g12-photoreview-lighting",
+    "url": "https://www.photoreview.com.au/reviews/advanced-compact-cameras/fixed-lens/canon-powershot-g12/",
+    "evidence_type": "reviewer-search-excerpt-only",
+    "purpose": "AWB incandescent/fluorescent samples, JPEG color-test charts and labeled flash ISO series. Direct page returned 403. One ISO1600 filename has ISO800 caption; verify originals before labeling. Human skin coverage not verified.",
+    "checked": "2026-09-16",
+    "training_admitted": false
+  },
+  {
+    "id": "g12-zol-portraits",
+    "url": "https://detail.zol.com.cn/255/254746/sample.shtml",
+    "evidence_type": "search-lead-only",
+    "purpose": "Gallery index lists 35 portrait entries. Individual original files, camera EXIF, editing and default settings remain unverified. Count is not admitted training images.",
+    "checked": "2026-09-16",
+    "training_admitted": false
+  },
+  {
+    "id": "g12-dcfever-comparison",
+    "url": "https://www.dcfever.com/news/readnews.php?id=4651",
+    "evidence_type": "reviewer",
+    "purpose": "Accessible comparison with labeled original links for G12, P7000 and EX1. G12 links 24/27/30/33/36/39 on inspected page. AWB and ISO documented for several scenes; My Colors Off and human/flash coverage not established. Keep other cameras out.",
+    "checked": "2026-09-16",
+    "training_admitted": false
+  },
+  {
+    "id": "g12-dpreview-default",
+    "url": "https://www.dpreview.com/reviews/4522799364/canong12/",
+    "evidence_type": "reviewer",
+    "purpose": "Default studio-test methodology and 25-image gallery described. Old comparison scene unavailable; gallery originals not verified this pass. Exclude separately processed RAW examples.",
+    "checked": "2026-09-16",
+    "training_admitted": false
+  },
+  {
+    "id": "g12-sampleshots-quarantine",
+    "url": "https://www.sampleshots.com/cameras/canon-powershot-g12/?sort=-popularity_score&tag=human",
+    "evidence_type": "aggregator-untrusted",
+    "purpose": "Inspected page mixed G12 naming with Sony alpha3500 / ILCE-3500 naming information. Human filter also surfaced nonhuman subjects. Quarantine until each original camera model and subject are verified independently.",
+    "checked": "2026-09-16",
+    "training_admitted": false
+  },
+  {
+    "id": "explorecams-g12",
+    "url": "https://explorecams.com/photos/model/canon-powershot-g12",
+    "evidence_type": "aggregator-metadata",
+    "purpose": "Camera-specific discovery index linking Pexels/Pixabay contributors. Includes a beach-friends source link https://www.pexels.com/photo/beach-friends-friendship-fun-579971/; source page fetch failed. Default JPEG and editing status unverified.",
+    "checked": "2026-09-16",
+    "training_admitted": false
+  },
+  {
+    "id": "explorecams-g12-homa",
+    "url": "https://explorecams.com/photos/wcgomzR8OS?model=canon-powershot-g12",
+    "evidence_type": "aggregator-metadata",
+    "purpose": "Detail page reports G12, 30.5mm, f5.6, 1/1250, ISO80, Program AE, flash Auto did not fire. Metadata is site-reported, not independently checked original EXIF. WB/My Colors/editing unknown.",
+    "checked": "2026-09-16",
+    "training_admitted": false
+  },
+  {
+    "id": "explorecams-g12-sea",
+    "url": "https://explorecams.com/photos/NQCubzPZLp?model=canon-powershot-g12",
+    "evidence_type": "aggregator-metadata",
+    "purpose": "Net/fishing/sea sample: site reports G12, 15.7mm, f4, 1/400, ISO200, flash Auto did not fire. Candidate environmental reference, not verified human skin/default rendering.",
+    "checked": "2026-09-16",
+    "training_admitted": false
+  }
+]

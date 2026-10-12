@@ -1,7 +1,7 @@
 # DIgit iPhone camera app — product design
 
 Date: 2026-09-13
-Status: Initial scope approved in conversation; updated written design for review.
+Status: Scope approved in conversation; browser interaction study implemented separately from the future native application.
 
 ## Product
 
@@ -9,7 +9,9 @@ An iPhone still-camera app offering distinct digicam experiences with a shared, 
 
 Development order is Canon PowerShot G12, then Canon PowerShot S95, then Canon PowerShot G7 X Mark II. Mark II is the approved initial G7 X reference. Each profile must pass image and interaction validation before the next profile becomes the focus. The first usable milestone contains G12 alone; the three-camera release adds S95 and G7 X in that order.
 
-Source editing takes place in VS Code. The application is native Swift/SwiftUI with AVFoundation, Core Image/Metal, PhotoKit, App Intents, and a LockedCameraCapture extension. Xcode's iOS SDK, simulator, signing, and build tooling remain dependencies; VS Code tasks will invoke the Apple build tools. Current machine inspection found VS Code and its `code` command, an active CommandLineTools developer directory, and no Xcode at /Applications/Xcode.app. Locate or install the full toolchain before iOS build validation.
+Source editing takes place in VS Code. Xcode is also approved for iPhone building and testing. The application is native Swift/SwiftUI with AVFoundation, Core Image/Metal, PhotoKit, App Intents, and a LockedCameraCapture extension. Xcode's iOS SDK, simulator, signing, and build tooling remain dependencies; VS Code tasks will invoke the Apple build tools. Initial inspection found VS Code and its `code` command but no full Xcode installation. On September 14, Xcode 26.6 (17F113) and iOS 26.5 simulator devices were confirmed available. The global developer directory still points to CommandLineTools; use `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer` for native commands. No native app target has been built or installed yet.
+
+This is a personal gift app distributed through local USB development installation, with no App Store submission. Use Xcode-managed signing and the recipient's registered/trusted device. Keep the bundle identifier stable across updates. A free Personal Team requires rebuild/reinstallation after its seven-day provisioning expiration; choose an appropriate signing arrangement before gifting and record renewal responsibilities. Paid development signing is also time-limited. Do not promise a permanent unsigned cable installation. Verify extension/capability availability with the selected signing team.
 
 Proposed deployment baseline: iOS 18 or later. Query camera, capture-format, RAW, and hardware-button capabilities at runtime. Establish the tested iPhone model matrix during the capture milestone and publish only verified support.
 
@@ -17,10 +19,11 @@ Proposed deployment baseline: iOS 18 or later. Query camera, capture-format, RAW
 
 Use a consistent layout with camera-specific styling and dials. First launch offers the available camera collection; later launches go directly to the last-used model. Never require an account to capture or save.
 
-- Large live viewfinder; portrait and landscape layouts.
-- Model selector, flash, and essential status at the top.
-- Readable Auto/Manual selection and exposure values near the viewfinder.
-- Large shutter, last-capture thumbnail, and adjustment dial within thumb reach.
+- Full-screen live viewfinder with minimal overlays; portrait and landscape native layouts. The current browser study implements portrait.
+- Model selector and essential status overlay the image.
+- A single options button opens a floating panel for Auto/Manual, ISO, shutter, white balance, and rendering options. Settings stay hidden during normal shooting.
+- Large shutter and last-capture thumbnail remain within thumb reach. Options, model selection, and gallery are mutually exclusive panels and can be dismissed without changing camera settings.
+- Full-screen crop is explicit and the saved image matches the displayed framing. Offer native 4:3 capture only with a clearly matching composition guide; do not silently save a different framing.
 - Tap the model name to open a compact selector; use a dedicated camera strip to swipe between favorites without interfering with focus gestures.
 - Keep the capture session running during profile-only switches. Preserve per-model settings, clamped to current hardware capabilities with the applied values visible.
 - Freeze profile version and capture settings for each shutter event. A subsequent model change cannot recolor an in-flight photograph.
@@ -30,7 +33,7 @@ Use a consistent layout with camera-specific styling and dials. First launch off
 
 Prepare a reference dossier for each model using official manuals, product photographs, original JPEGs, and documented settings. Separate the physical camera's controls from its LCD overlays and final image output.
 
-For G12, study the ISO and exposure-compensation dial markings, mode dial, rear control wheel, focus indicators, menu hierarchy, LCD typography, material finish, and visual spacing. Translate that character into a legible phone interface. The viewfinder must remain large; a decorative full camera-body frame must not consume the screen.
+For G12, study the ISO and exposure-compensation dial markings, mode dial, rear control wheel, focus indicators, menu hierarchy, LCD typography, material finish, and visual spacing. Translate that character into the options panel and subtle overlays. The user's revised direction is a full-screen viewfinder, not a permanent camera-body frame or permanently visible control bank.
 
 S95 emphasizes the lens control-ring interaction and compact presentation. G7 X Mark II uses its own reference dossier and control-ring treatment. All retain the approved control positions and gestures. Original interface artwork and subtle haptics support the camera identity; accessibility includes readable contrast, VoiceOver labels, large touch targets, and reduced motion.
 
@@ -57,6 +60,10 @@ Calibration procedure:
 - Fit camera profiles using a training subset; evaluate on held-out scenes. Record color-chart error, tonal differences, texture comparisons, and blinded visual assessments across skin tones and lighting.
 - Determine numerical acceptance tolerances from repeat captures of the reference camera before tuning; record these in the calibration report. Do not invent an accuracy percentage.
 - Validate live-preview consistency with the final export, allowing for flash illumination and higher-quality still processing that cannot be fully previewed.
+
+Use curated online originals as an unpaired target-reference collection, preserving EXIF and provenance. Keep edited social-media recipes separate from default-camera examples. Fit bounded tone curves and color transforms first; evaluate a small scene-conditioned LUT regressor only against a stronger baseline and held-out data. Training and dataset design are specified in docs/reports/2026-09-14-adaptive-rendering.md.
+
+The current browser study has Auto white-balance and adaptive-tone heuristics plus synthetic sample-light perturbations. These are untrained, uncalibrated baselines. They run on pixels after capture and affect both the displayed image and simulated saved pixels; they do not change an iPhone sensor. The native implementation must maintain real ISO/shutter controls and reuse the versioned rendering parameters for preview/export, with temporal smoothing for live adjustments.
 
 If matched references are unavailable, the profile remains labeled an approximation in development and cannot pass the fidelity release gate. Optical depth of field, flash geometry/power, spectral response, and zoom cannot be reproduced exactly by color processing.
 
@@ -129,3 +136,6 @@ Later catalog candidates: Canon IXUS 130/210, Sony DSC-W350, Fujifilm F200EXR, C
 - Xiaohongshu-attributed model shortlist: https://post.m.smzdm.com/zz/p/adod8w8n/
 - Broader Chinese digicam coverage: https://post.smzdm.com/p/al3q4wdp/
 - Fujifilm and Xiaohongshu-oriented coverage: https://www.tech-girlz.com/2024/01/ccd.html/amp
+
+## Landscape revision (September 14)
+The camera is now landscape-first, following the user's handheld digicam direction. The browser prototype uses a horizontal 16:9 viewfinder and matching 960x540 simulated JPEG captures. Shutter, options, and gallery sit along the right edge. Settings and gallery remain dismissible overlays; narrow browser previews keep horizontal framing with scrollable settings. For the future native app, configure landscape camera orientation and verify both device orientations, safe areas, capture rotation metadata, and hardware controls on a real iPhone. Native orientation locking is not implemented by this browser change.

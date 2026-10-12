@@ -1,0 +1,65 @@
+[
+  {
+    "file": "dkamera-01.jpg",
+    "size": [
+      3648,
+      2736
+    ],
+    "make": "Canon",
+    "model": "Canon PowerShot G12",
+    "software": null,
+    "ISO": 200,
+    "exposure_seconds": "0.0005",
+    "aperture": "2.8",
+    "flash": 73,
+    "white_balance": 0,
+    "sha256": "b1e8345efe4b2329591a28dc9ac6bc5f8bf112e1c1b49d8525e2b90abdea77c9",
+    "source_url": "https://www.dkamera.de/media/testberichte/canon/powershot-g12/6_beispielaufnahmen/bilder/1_jpg/01.jpg",
+    "use": "reference inspection; not included in app; no training performed",
+    "pairing": "unpaired target only",
+    "provenance": "publisher labels this section original JPEG; model checked from EXIF",
+    "license": "publisher copyright; training/reuse license not established"
+  },
+  {
+    "file": "dkamera-02.jpg",
+    "size": [
+      3648,
+      2736
+    ],
+    "make": "Canon",
+    "model": "Canon PowerShot G12",
+    "software": null,
+    "ISO": 80,
+    "exposure_seconds": "0.016666666666666666",
+    "aperture": "2.8",
+    "flash": 16,
+    "white_balance": 0,
+    "sha256": "699147b08d457c0e5c86737e812ac86a13eac54f483a3b75f9529d97637d9f9d",
+    "source_url": "https://www.dkamera.de/media/testberichte/canon/powershot-g12/6_beispielaufnahmen/bilder/1_jpg/02.jpg",
+    "use": "reference inspection; not included in app; no training performed",
+    "pairing": "unpaired target only",
+    "provenance": "publisher labels this section original JPEG; model checked from EXIF",
+    "license": "publisher copyright; training/reuse license not established"
+  },
+  {
+    "file": "dkamera-24.jpg",
+    "size": [
+      3648,
+      2736
+    ],
+    "make": "Canon",
+    "model": "Canon PowerShot G12",
+    "software": null,
+    "ISO": 3200,
+    "exposure_seconds": "0.0025",
+    "aperture": "4.0",
+    "flash": 16,
+    "white_balance": 0,
+    "sha256": "ec1f6b9986461dd6d1757855507c46ac4bd28a072bd76a22e6130374a8aaf135",
+    "source_url": "https://www.dkamera.de/media/testberichte/canon/powershot-g12/6_beispielaufnahmen/bilder/1_jpg/24.jpg",
+    "use": "reference inspection; not included in app; no training performed",
+    "pairing": "unpaired target only",
+    "provenance": "publisher labels this section original JPEG; model checked from EXIF",
+    "license": "publisher copyright; training/reuse license not established"
+  }
+]

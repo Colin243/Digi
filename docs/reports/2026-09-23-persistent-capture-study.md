@@ -1,0 +1,12 @@
+# Persistent skin-mask capture study
+
+Digi previously required `--mask-study` at process launch. Ordinary relaunches lost that mode, making user-provided Photos JPEGs impossible to pair with diagnostic originals or masks. The opt-in setting is now available in Shooting options, stored in UserDefaults, and visibly marked `STUDY` during capture. Switching modes rebuilds the session on the camera queue and returns to the physical wide camera when disabled. Study captures export untouched and saved-result JPEG bytes under one capture ID, alongside actual skin delivery, flash and framing details. A user-visible result distinguishes mask delivery from missing mask and export failure.
+
+The live session now commits its input/output configuration before examining `availableSemanticSegmentationMatteTypes`; requested matte types are still enabled before `startRunning()`. This follows the configuration-dependent availability semantics in Apple's AVFoundation documentation. No depth delivery is enabled, avoiding the earlier 100 mm framing regression. Physical-wide mode remains unchanged.
+
+Review also found a shutter-state race: the final capture callback could mark the camera ready while full-resolution rendering and saving were still underway. The camera now waits for that pipeline to own completion, and changing study mode clears stale focus and exposure indicators.
+
+The offline validator in `research/regression/validate_skin_mask.py` reads these folders, checks orientation/aspect, writes an overlay and reports missing masks. It computes precision/recall/IoU only when an independently hand-labeled upright skin image is supplied. The two old available masks came from the overzoomed setup; they do not validate the current wide field of view.
+
+Verification: four simulator UI tests pass, including a setting-on/relaunch/setting-off flow; 28 Python regression tests pass; signed generic iOS build succeeds. The physical iPhone 17 Pro was listed as unavailable during this run, so the build was not installed and new on-phone mask delivery/latency/framing remain unverified. Do not enable mask-based color or finishing treatment until a wide-framed positive capture passes overlay inspection and no-person negatives are reviewed.
+After the review fixes, the targeted setting persistence test passed again and the signed build succeeded. One earlier simulator attempt ended when the test runner received SIGTERM; its immediate retry completed normally.

@@ -1,0 +1,61 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Digi: Test simulation",
+      "type": "process",
+      "command": "node",
+      "args": [
+        "--test",
+        "tests/simulation.test.cjs"
+      ],
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Digi: Build study",
+      "type": "process",
+      "command": "node",
+      "args": [
+        "prototype/build.cjs"
+      ],
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Digi: Preview study",
+      "type": "process",
+      "command": "python3",
+      "args": [
+        "-m",
+        "http.server",
+        "8765",
+        "--bind",
+        "127.0.0.1",
+        "--directory",
+        "prototype"
+      ],
+      "dependsOn": "Digi: Build study",
+      "problemMatcher": []
+    },
+    {
+      "label": "Digi: Build iOS simulator",
+      "type": "process",
+      "command": "xcodebuild",
+      "args": [
+        "-project",
+        "ios/Digi.xcodeproj",
+        "-scheme",
+        "Digi",
+        "-sdk",
+        "iphonesimulator",
+        "-derivedDataPath",
+        "output/ios-simulator",
+        "CODE_SIGNING_ALLOWED=NO",
+        "build"
+      ],
+      "group": "build",
+      "problemMatcher": []
+    }
+  ]
+}

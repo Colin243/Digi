@@ -1,0 +1,385 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="data:,"><meta name="description" content="Interactive G12 camera interface study with simulated manual exposure and adaptive rendering."><title>Digi · G12 Study</title><style>:root{color-scheme:light dark}body{margin:0;padding:20px;background:light-dark(#e7e9e5,#171a18)}@media(max-width:420px){body{padding:8px}}</style></head><body><div id="digit-lab">
+  <style>
+    #digit-lab {font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; color:#eae6df; max-width:740px; margin:0 auto; padding:14px 0; --digit-accent:#d7b57a;}
+    #digit-lab *{box-sizing:border-box} #digit-lab button,#digit-lab input,#digit-lab select{font:inherit}
+    #digit-lab button {cursor:pointer} #digit-lab button:disabled{cursor:default;opacity:.45}
+    #digit-lab .lab-title{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;color:light-dark(#36332e,#d8d2c8);font-size:12px;letter-spacing:.08em;margin:0 auto 16px;max-width:410px}
+    #digit-lab .phone{position:relative;isolation:isolate;width:100%;max-width:390px;aspect-ratio:1/2;margin:auto;background:#191a1b;border:3px solid #252626;border-radius:38px;box-shadow:0 15px 40px #0003;overflow:hidden}
+    #digit-lab .system{position:absolute;z-index:2;inset:15px 24px auto;display:flex;justify-content:space-between;align-items:center;font-size:12px;color:white;text-shadow:0 1px 4px #000}
+    #digit-lab .island{width:98px;height:24px;background:#090909;border-radius:18px}
+    #digit-lab .brand-row{position:absolute;z-index:2;top:58px;left:22px;right:22px;display:flex;justify-content:space-between;align-items:center}
+    #digit-lab .camera-label{font-size:15px;letter-spacing:.12em;color:white;text-shadow:0 1px 4px #000}
+    #digit-lab .model{background:#202421b8;backdrop-filter:blur(14px);border:1px solid #ffffff36;border-radius:22px;color:white;padding:10px 15px;font-size:14px;min-height:44px}
+    #digit-lab .screen{position:absolute;inset:0;background:#31383a;overflow:hidden;cursor:crosshair}
+    #digit-lab .screen:before{content:'';position:absolute;z-index:1;inset:0;background:linear-gradient(#0007,transparent 22%,transparent 68%,#0008);pointer-events:none}
+    #digit-lab canvas{position:absolute;width:100%;height:100%;inset:0;object-fit:cover}
+    #digit-lab .source{clip-path:inset(0 50% 0 0)} #digit-lab .source.hidden{display:none}
+    #digit-lab .divider{position:absolute;left:50%;top:0;bottom:0;border-left:1px solid #fff9;pointer-events:none}
+    #digit-lab .screen-top,#digit-lab .screen-bottom{position:absolute;left:10px;right:10px;display:flex;justify-content:space-between;gap:8px;color:#fff;text-shadow:0 1px 3px #000;font:13px ui-monospace,SFMono-Regular,monospace;pointer-events:none}
+    #digit-lab .screen-top{top:115px;left:24px;right:24px;z-index:1;opacity:.85} #digit-lab .screen-bottom{bottom:142px;left:24px;right:24px;z-index:1;font-size:11px;opacity:.85}
+    #digit-lab .screen-top strong{color:white;font-size:11px;font-weight:500}
+    #digit-lab .focus{position:absolute;left:50%;top:50%;width:58px;height:44px;border:1px solid #e8eee0;transform:translate(-50%,-50%);pointer-events:none}
+    #digit-lab .focus.selected{border-color:#b8ef82;box-shadow:0 0 0 1px #0003}
+    #digit-lab .screen:after{content:'';position:absolute;inset:0;background:repeating-linear-gradient(0deg,#0000 0 2px,#0001 2px 3px);pointer-events:none;opacity:var(--digit-lcd,0)}
+    #digit-lab .image-credit{color:inherit;font-size:11px;margin:0 0 14px;min-height:12px;opacity:.7}
+    #digit-lab .mode-row{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:14px}
+    #digit-lab .modes{display:flex;gap:4px;background:#101112;padding:4px;border-radius:8px}
+    #digit-lab .modes button{background:transparent;border:0;color:#9d9e9e;padding:9px 12px;border-radius:5px;font-size:12px;min-height:38px}
+    #digit-lab .modes button[aria-pressed=true]{background:#373735;color:var(--digit-accent)}
+    #digit-lab .recipe{background:#232526;border:1px solid #444;color:#ddd;border-radius:6px;max-width:142px;padding:9px;font-size:12px;min-height:44px}
+    #digit-lab .settings{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}
+    #digit-lab .setting{display:flex;flex-direction:column;gap:7px;font-size:10px;letter-spacing:.08em;color:#a5a5a2;border-bottom:1px solid #44443e;padding-bottom:10px}
+    #digit-lab .setting select{width:100%;background:#191a1b;color:#e7e3d9;border:0;font:14px ui-monospace,SFMono-Regular,monospace;min-height:34px}
+    #digit-lab .setting select:disabled{opacity:.4}
+    #digit-lab .ev-row{display:flex;align-items:center;gap:12px;padding:14px 0 7px;color:var(--digit-accent);font:12px ui-monospace,SFMono-Regular,monospace}
+    #digit-lab input[type=range]{accent-color:var(--digit-accent);min-width:0;flex:1;min-height:30px}
+    #digit-lab .ev-label{min-width:54px} #digit-lab .ticks{display:flex;justify-content:space-between;color:#868680;font:10px ui-monospace,monospace;margin:0 0 8px 68px}
+    #digit-lab .shoot-row{position:absolute;z-index:5;left:24px;right:24px;bottom:55px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+    #digit-lab .options-toggle{width:48px;height:48px;border:1px solid #ffffff59;border-radius:50%;color:white;background:#202421a8;backdrop-filter:blur(14px);font-size:20px;letter-spacing:2px}
+    #digit-lab .options-toggle[aria-expanded=true]{background:#d7b57a;color:#211c14}
+    #digit-lab .gallery-btn{width:48px;height:48px;overflow:hidden;border:1px solid #62615a;background:#292b2c;color:#a6a49d;border-radius:7px;padding:0;font-size:10px;position:relative}
+    #digit-lab .gallery-btn img{width:100%;height:100%;object-fit:cover} #digit-lab .shutter{width:76px;height:76px;border:5px solid #64645e;border-radius:50%;background:#e2ddd1;box-shadow:inset 0 0 0 4px #292a29;transition:transform .1s} #digit-lab .shutter:active{transform:scale(.95)}
+    #digit-lab .save-status{position:absolute;z-index:5;left:18px;right:18px;bottom:30px;font-size:11px;text-align:center;color:white;text-shadow:0 1px 4px #000;pointer-events:none;min-height:15px}
+    #digit-lab .home-bar{position:absolute;z-index:5;bottom:11px;left:calc(50% - 55px);width:110px;height:4px;background:#fff9;border-radius:3px}
+    #digit-lab .scrim{position:absolute;z-index:3;inset:0;width:100%;height:100%;background:#0003;border:0;cursor:default}
+    #digit-lab .tray{position:absolute;z-index:4;left:12px;right:12px;bottom:148px;padding:18px 16px 14px;background:#1b1e1df5;border:1px solid #ffffff2e;border-radius:20px;box-shadow:0 8px 30px #0004;backdrop-filter:blur(20px)}
+    #digit-lab .panel-heading{display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:12px}
+    #digit-lab .panel-heading .tray-title{margin:0;font-size:10px}
+    #digit-lab .close-panel{background:transparent;border:0;color:var(--digit-accent);font-size:12px;min-height:44px;padding:0 3px}
+    #digit-lab .crop-note{font-size:11px;color:#a9aaa3;margin:14px 0 0}
+    #digit-lab .adaptive-row{display:flex;justify-content:space-between;align-items:center;gap:12px;min-height:44px;color:#d4d5ce;font-size:12px;border-top:1px solid #ffffff20;margin-top:8px}
+    #digit-lab .adaptive-row input{accent-color:var(--digit-accent);width:20px;height:20px}
+    #digit-lab .tray-title{font-size:11px;letter-spacing:.12em;color:#aba99e;margin:0 0 12px}
+    #digit-lab .camera-option{width:100%;display:flex;justify-content:space-between;background:#262828;border:1px solid #454743;color:#e4dfd1;padding:12px;margin:6px 0;border-radius:7px;font-size:12px}
+    #digit-lab .camera-option small{color:#a7a69c} #digit-lab [hidden]{display:none!important}
+    #digit-lab .session-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+    #digit-lab .shot{margin:0;font-size:10px;color:#bcb8ae} #digit-lab .shot img{width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:4px} #digit-lab .shot figcaption{line-height:1.6}
+    #digit-lab .lab-controls{max-width:410px;margin:20px auto 0;padding:0 8px;color:light-dark(#403c36,#d6d0c6);font-size:12px}
+    #digit-lab .compare-label{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:10px}
+    #digit-lab .compare-label input{max-width:180px;accent-color:#a0804b}
+    #digit-lab .tools{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    #digit-lab .lab-button{background:light-dark(#eeeae2,#30302d);color:light-dark(#34312b,#ddd8ce);border:1px solid light-dark(#c5c0b6,#626059);border-radius:6px;padding:9px 10px;font-size:12px;min-height:40px}
+    #digit-lab .file-label{display:flex;align-items:center;cursor:pointer} #digit-lab .file-label input{width:100%;max-width:220px;font-size:11px;padding-top:5px}
+    #digit-lab details{margin-top:12px} #digit-lab summary{cursor:pointer;padding:10px 0} #digit-lab .test-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0}
+    #digit-lab .test-row select{background:light-dark(#f6f3ee,#282a29);color:inherit;padding:8px;border:1px solid #777;border-radius:5px;max-width:100%}
+    #digit-lab .test-note{font-size:11px;line-height:1.5;color:light-dark(#686156,#aaa69b)}
+    /* Layers: image 0, camera chrome 2, dismissal 3, panels 4, shutter/status 5.
+       Shape scale: fields 10px, panels 22px, camera controls circular. */
+    #digit-lab {--digit-panel:#202222;--digit-muted:#bec0ba;color:#eceee9}
+    #digit-lab button:focus-visible,#digit-lab select:focus-visible,#digit-lab input:focus-visible,#digit-lab summary:focus-visible{outline:3px solid var(--digit-accent);outline-offset:3px}
+    #digit-lab button{transition:background-color .18s,transform .18s}
+    #digit-lab button:not(:disabled):active{transform:scale(.98)}
+    #digit-lab .lab-title{letter-spacing:0;font-size:13px;padding:0 8px;color:light-dark(#383b38,#d9dcd7)}
+    #digit-lab .tray{background:var(--digit-panel);padding:18px;border-radius:22px;backdrop-filter:none;max-height:calc(100% - 258px);overflow-y:auto}
+    #digit-lab .panel-heading{margin-bottom:14px}
+    #digit-lab .panel-heading .tray-title{font-size:15px;letter-spacing:0;color:#eceee9;font-weight:500}
+    #digit-lab .close-panel{font-size:14px;min-width:44px}
+    #digit-lab .mode-row{align-items:end;gap:12px}
+    #digit-lab .modes{border-radius:12px;padding:3px}
+    #digit-lab .modes button{font-size:13px;min-width:50px;min-height:44px;border-radius:9px;color:#c3c6c0}
+    #digit-lab .recipe-field{display:grid;gap:6px;color:var(--digit-muted);font-size:12px;flex:1;min-width:0}
+    #digit-lab .recipe{width:100%;max-width:none;background:#303332;border:1px solid #646762;border-radius:10px;color:#eceee9;font-size:14px}
+    #digit-lab .settings{grid-template-columns:1fr 1fr;gap:12px}
+    #digit-lab .setting{font-size:12px;letter-spacing:0;gap:6px;border:0;padding:0;color:var(--digit-muted)}
+    #digit-lab .setting:last-child{grid-column:1/-1}
+    #digit-lab .setting select{min-height:44px;background:#303332;border:1px solid #646762;border-radius:10px;padding:0 10px;color:#eceee9}
+    #digit-lab .setting select:disabled{opacity:.55}
+    #digit-lab .exposure-help{font-size:12px;color:var(--digit-muted);margin:10px 0 0;line-height:1.5}
+    #digit-lab .ev-row{padding-top:12px;font-size:13px}
+    #digit-lab input[type=range]{min-height:44px}
+    #digit-lab .ticks{font-size:11px;color:var(--digit-muted)}
+    #digit-lab .adaptive-row{font-size:14px;min-height:48px}
+    #digit-lab .crop-note{color:var(--digit-muted);line-height:1.5}
+    #digit-lab .screen-bottom{font-size:12px;opacity:1}
+    #digit-lab .gallery-btn{border-radius:10px;color:#eee;background:#282b2a;font-size:11px}
+    #digit-lab .camera-option{min-height:56px;align-items:center;border-radius:10px;font-size:14px}
+    #digit-lab .camera-option.current{border-color:var(--digit-accent)}
+    #digit-lab .session-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+    #digit-lab .shot img{aspect-ratio:1/2;object-fit:contain;border-radius:8px;background:#131515}
+    #digit-lab .shot figcaption{font-size:11px;color:#d4d7d0}
+    #digit-lab .gallery .test-note{color:var(--digit-muted);font-size:13px}
+    #digit-lab .retry-gallery{width:100%;min-height:44px;background:var(--digit-accent);color:#211c14;border:0;border-radius:10px;margin-top:14px}
+    #digit-lab .lab-controls{font-size:13px;color:light-dark(#373b37,#d7dbd4)}
+    #digit-lab .image-credit{font-size:12px;opacity:1;line-height:1.5}
+    #digit-lab .compare-label{gap:10px;margin-bottom:0}
+    #digit-lab .tools{display:grid;grid-template-columns:1fr;gap:14px}
+    #digit-lab .lab-button{min-height:44px;border-radius:10px;font-size:13px;background:light-dark(#f2f3ef,#303330);color:light-dark(#292c28,#e3e7df)}
+    #digit-lab .file-label{display:grid;gap:6px;font-size:13px}
+    #digit-lab .file-label input{max-width:none;font-size:13px;min-height:44px;padding:0}
+    #digit-lab input::file-selector-button{font:inherit;padding:10px 12px;border:1px solid #777;border-radius:10px;cursor:pointer;margin-right:8px;background:light-dark(#f2f3ef,#303330);color:inherit}
+    #digit-lab summary{min-height:44px}
+    #digit-lab .test-row select{min-height:44px}
+    #digit-lab .test-note{font-size:12px;color:light-dark(#50564d,#b8bfb2)}
+    @media(max-width:380px){#digit-lab .phone{border-radius:28px}#digit-lab .recipe{max-width:118px}#digit-lab .mode-row{gap:5px}#digit-lab .tray{left:8px;right:8px;padding:12px;bottom:134px}#digit-lab .system{inset:12px 20px auto}#digit-lab .brand-row{top:48px}#digit-lab .screen-top{top:104px}}
+    /* Landscape camera: image fills the body, capture controls sit under the right thumb. */
+    #digit-lab{max-width:960px}
+    #digit-lab .lab-title,#digit-lab .lab-controls{max-width:780px}
+    #digit-lab .phone{max-width:780px;aspect-ratio:16/9;border-radius:32px}
+    #digit-lab .system,#digit-lab .home-bar{display:none}
+    #digit-lab .brand-row{top:20px;left:24px;right:112px}
+    #digit-lab .screen-top{top:83px;left:24px;right:120px}
+    #digit-lab .screen-bottom{bottom:36px;left:24px;right:120px}
+    #digit-lab .screen:before{background:linear-gradient(90deg,#0003,transparent 30%,transparent 70%,#0009),linear-gradient(#0005,transparent 30%,transparent 70%,#0007)}
+    #digit-lab .shoot-row{top:24px;bottom:24px;left:auto;right:20px;width:76px;flex-direction:column;justify-content:space-between}
+    #digit-lab .gallery-btn{order:3}
+    #digit-lab .shutter{order:2;flex-shrink:0}
+    #digit-lab .options-toggle{order:1}
+    #digit-lab .save-status{left:24px;right:120px;bottom:12px;text-align:left}
+    #digit-lab .tray{top:14px;bottom:14px;left:auto;right:112px;width:350px;max-width:calc(100% - 130px);max-height:none;border-radius:20px}
+    #digit-lab .shot img{aspect-ratio:16/9}
+    #digit-lab .lab-controls{margin-top:24px}
+    @media(max-width:600px){
+      #digit-lab .phone{border-radius:20px}
+      #digit-lab .brand-row{top:8px;left:14px;right:78px}
+      #digit-lab .camera-label{font-size:13px}
+      #digit-lab .model{padding:6px 10px}
+      #digit-lab .screen-top{top:60px;left:14px;right:84px;font-size:11px}
+      #digit-lab .screen-bottom{bottom:31px;left:14px;right:84px;font-size:10px}
+      #digit-lab .shoot-row{top:6px;bottom:6px;right:10px;width:52px;gap:4px}
+      #digit-lab .shutter{width:52px;height:52px;border-width:3px}
+      #digit-lab .options-toggle,#digit-lab .gallery-btn{width:44px;height:44px;min-height:44px}
+      #digit-lab .save-status{left:14px;right:76px;bottom:8px;font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      #digit-lab .tray{top:4px;bottom:4px;right:72px;left:4px;width:auto;max-width:none;padding:12px;border-radius:14px}
+      #digit-lab .mode-row{flex-wrap:wrap}
+      #digit-lab .recipe{max-width:none}
+      #digit-lab .recipe-field{min-width:95px}
+      #digit-lab .panel-heading .tray-title{font-size:14px}
+    }
+    @media(prefers-reduced-motion:reduce){#digit-lab *{transition:none!important}}
+  </style>
+  <div class="lab-title"><span>Digi / G12</span><span>Interactive simulation</span></div>
+  <section class="phone" aria-label="G12 camera interface simulation">
+    <div class="system"><span>9:41</span><span class="island" aria-hidden="true"></span><span>100%</span></div>
+    <div class="brand-row"><span class="camera-label">Digi</span><button class="model" aria-expanded="false" aria-controls="digit-cameras">G12 ▾</button></div>
+    <div class="screen" aria-label="Source and experimental rendering comparison. Tap to position a simulated focus indicator.">
+      <canvas class="processed" width="960" height="540" aria-label="Experimental G12-inspired rendering"></canvas>
+      <canvas class="source" width="960" height="540" aria-label="Unmodified sample image"></canvas>
+      <div class="divider"></div>
+      <div class="screen-top"><strong class="mode-indicator">AUTO</strong><span>FULL&nbsp; · &nbsp;JPEG</span></div>
+      <div class="focus"></div>
+      <div class="screen-bottom"><span class="exposure-readout">1/125&nbsp; ISO 100</span><span class="wb-readout">DAYLIGHT</span></div>
+    </div>
+
+    <div class="shoot-row"><button class="gallery-btn" aria-label="Photos: open simulated session gallery" aria-expanded="false">Photos</button><button class="shutter" aria-label="Take simulated photo"></button><button class="options-toggle" aria-label="Open camera options" aria-expanded="false" aria-controls="digit-options">•••</button></div>
+    <div class="save-status" role="status">Ready · simulated auto-save</div>
+    <button class="scrim" aria-label="Close open panel" hidden></button>
+    <div id="digit-options" class="tray" role="region" aria-label="Camera options" hidden><div class="panel-heading"><p class="tray-title">Shooting options</p><button class="close-panel" aria-label="Done: close camera options">Done</button></div>
+    <div class="mode-row"><div class="modes" aria-label="Exposure mode"><button data-mode="Auto" aria-pressed="true">AUTO</button><button data-mode="Manual" aria-pressed="false">M</button></div><label class="recipe-field">Color<select class="recipe" aria-label="Experimental color treatment"><option>Standard</option><option>Neutral</option><option>Vivid</option></select></label></div>
+    <div class="settings">
+      <label class="setting">ISO<select class="iso" aria-label="Simulated ISO" disabled><option>80</option><option selected>100</option><option>200</option><option>400</option><option>800</option><option>1600</option><option>3200</option></select></label>
+      <label class="setting">Shutter<select class="speed" aria-label="Simulated shutter speed" disabled><option value="15">1/15</option><option value="30">1/30</option><option value="60">1/60</option><option value="125" selected>1/125</option><option value="250">1/250</option><option value="500">1/500</option><option value="1000">1/1000</option></select></label>
+      <label class="setting">White balance<select class="wb" aria-label="White balance"><option>Auto</option><option>Daylight</option><option>Cloudy</option><option>Tungsten</option></select></label>
+    </div>
+    <p class="exposure-help">Switch to M to adjust ISO and shutter speed.</p>
+    <label class="ev-row"><span class="ev-label">EV +0.0</span><input class="ev" type="range" min="-6" max="6" value="0" step="1" aria-label="Exposure compensation"></label>
+    <div class="ticks"><span>−2</span><span>−1</span><span>0</span><span>+1</span><span>+2</span></div>
+      <label class="adaptive-row">Adaptive tone <input class="adaptive" type="checkbox" checked aria-label="Adaptive tone"></label>
+      <p class="crop-note">Full-screen crop · saved as framed</p>
+    </div>
+    <div id="digit-cameras" class="tray" hidden><div class="panel-heading"><p class="tray-title">Your cameras</p><button class="close-panel" aria-label="Done: close camera collection">Done</button></div><button class="camera-option current">PowerShot G12 <small>Selected</small></button><button class="camera-option" disabled>PowerShot S95 <small>Next study</small></button><button class="camera-option" disabled>PowerShot G7 X II <small>Third study</small></button></div>
+    <div class="gallery tray" hidden><div class="panel-heading"><p class="tray-title">Session photos</p><button class="close-panel" aria-label="Done: close session gallery">Done</button></div><div class="session-grid"></div><p class="empty test-note">Your captures will appear here. Take a photo to start.</p><button class="retry-gallery" hidden>Retry pending saves</button></div>
+    <div class="home-bar"></div>
+  </section>
+  <div class="lab-controls">
+    <div class="image-credit" aria-live="polite">Loading NASA sample · not a Canon reference photo</div>
+    <label class="compare-label">Source <input class="compare" type="range" min="0" max="100" value="50" disabled aria-label="Source versus experimental look comparison"> Experimental look</label>
+    <div class="tools"><button class="lab-button compare-toggle" aria-pressed="false">Comparison off</button><label class="file-label">Try your photo <input type="file" accept="image/jpeg,image/png,image/webp" aria-label="Load a local test photo"></label></div>
+    <details><summary>Simulation test controls</summary><div class="test-row"><label>Sample lighting <select class="sample-light" aria-label="Sample lighting perturbation"><option value="original">Original</option><option value="warm">Warm cast</option><option value="dim">Dim</option><option value="contrast">Bright background</option></select></label></div><div class="test-row"><label>Photos outcome <select class="permission" aria-label="Simulated Photos outcome"><option value="allowed">Allowed</option><option value="denied">Permission denied</option><option value="failure">Write failed</option></select></label><button class="lab-button retry">Retry pending saves</button></div><div class="test-row"><button class="lab-button hardware">Volume-button event</button><button class="lab-button lock">Lock Screen handoff</button></div><p class="test-note">Browser session only. Sample lighting applies synthetic pixel changes, not physical lighting. Adaptive tone and Auto WB are untrained heuristics. No real camera, Apple Photos, hardware buttons, or durable storage. Motion blur, sensor noise, and flash are not simulated. Reload clears captures.</p></details>
+  </div>
+</div>
+
+<script>
+(function (root) {
+  class CameraSimulation {
+    constructor() { this.settings = { model: 'G12', mode: 'Auto', iso: 100, shutter: 125, ev: 0, wb: 'Auto', adaptive: true, recipe: 'Standard' }; this.shots = []; this.sequence = 0; }
+    update(patch) {
+      const rules = { model: ['G12'], mode: ['Auto', 'Manual'], iso: [80,100,200,400,800,1600,3200], shutter: [15,30,60,125,250,500,1000], wb: ['Auto','Daylight','Cloudy','Tungsten'], adaptive:[true,false], recipe: ['Standard','Neutral','Vivid'] };
+      for (const [key,value] of Object.entries(patch)) {
+        if(key === 'ev') { if(!Number.isFinite(value) || value < -2 || value > 2) throw Error('Invalid exposure'); }
+        else if(!rules[key]?.includes(value)) throw Error('Unsupported '+key);
+      }
+      this.settings = { ...this.settings, ...patch };
+    }
+    capture(image) {
+      if(!image) throw Error('No image to capture');
+      if(this.shots.length >= 6) {
+        const index = this.shots.findIndex(shot => shot.state === 'saved');
+        if(index < 0) throw Error('Session queue full: retry pending saves first');
+        this.shots.splice(index,1);
+      }
+      const shot = { id: ++this.sequence, settings: Object.freeze({...this.settings}), image, state: 'processing', reason: '' };
+      this.shots.push(shot); return shot;
+    }
+    complete(id,permission) {
+      if(!['allowed','denied','failure'].includes(permission)) throw Error('Invalid permission');
+      const shot = this.shots.find(s=>s.id===id);
+      if(!shot || shot.state === 'saved') return;
+      shot.state = permission === 'allowed' ? 'saved' : 'pending';
+      shot.reason = permission === 'denied' ? 'Photos permission denied' : permission === 'failure' ? 'Photos write failed' : '';
+    }
+    retry(id,permission) { const shot=this.shots.find(s=>s.id===id); if(shot?.state==='pending') this.complete(id,permission); }
+  }
+  function exposureStops(settings) {
+    return settings.mode === 'Manual' ? Math.log2((settings.iso/100)*(125/settings.shutter)) : settings.ev;
+  }
+  const decode=v=>v<=0.04045?v/12.92:((v+0.055)/1.055)**2.4;
+  const encode=v=>v<=0.0031308?12.92*v:1.055*v**(1/2.4)-0.055;
+  function validatePixels(pixels,width,height) {
+    if(!Number.isInteger(width) || !Number.isInteger(height) || width<1 || height<1 || pixels.length!==width*height*4) throw Error('Invalid pixel dimensions');
+  }
+  // Conservative neutral-pixel heuristic. This is NOT ML or illuminant ground truth.
+  function analyzeScene(pixels,width,height) {
+    validatePixels(pixels,width,height);
+    const histogram=new Array(256).fill(0),sum=[0,0,0];let total=0,neutral=0;
+    const step=Math.max(1,Math.floor(width*height/4096));
+    for(let p=0;p<width*height;p+=step) {
+      const i=p*4;if(pixels[i+3]<250)continue;
+      const rgb=[pixels[i]/255,pixels[i+1]/255,pixels[i+2]/255];const hi=Math.max(...rgb),lo=Math.min(...rgb);
+      const l=.2126*rgb[0]+.7152*rgb[1]+.0722*rgb[2];histogram[Math.round(l*255)]++;total++;
+      if(l>.12 && l<.88 && hi>0 && (hi-lo)/hi<.25){for(let c=0;c<3;c++)sum[c]+=decode(rgb[c]);neutral++;}
+    }
+    function quantile(q){let n=0;for(let i=0;i<256;i++){n+=histogram[i];if(n>=Math.max(1,total*q))return i/255;}return 0;}
+    const low=quantile(.1),high=quantile(.9);let whiteBalance=[1,1,1];
+    if(neutral>=8 && neutral/Math.max(1,total)>.05 && high-low>.08) {
+      const mean=sum.reduce((a,b)=>a+b,0)/3;
+      whiteBalance=sum.map(v=>Math.min(1.22,Math.max(.82,mean/Math.max(v,1e-8))));
+    }
+    return {whiteBalance,neutralFraction:neutral/Math.max(1,total),low,high,
+      shadowLift:low<.18?Math.min(.045,(.18-low)*.3):0,
+      highlightCompression:high>.82 && high-low>.45?.35:0};
+  }
+  // Exploratory coefficients, NOT measured Canon processing. Assumes an sRGB input.
+  function renderPixels(pixels,settings,width,height) {
+    validatePixels(pixels,width,height);
+    const output = new Uint8ClampedArray(pixels.length);
+    const gain = 2**exposureStops(settings);
+    const saturation = {Standard:1.04,Neutral:0.86,Vivid:1.25}[settings.recipe];
+    const contrast = {Standard:1.035,Neutral:0.94,Vivid:1.1}[settings.recipe];
+    const scene=analyzeScene(pixels,width,height);
+    const wb = settings.wb==='Auto'?scene.whiteBalance:{Daylight:[1.025,1,0.985],Cloudy:[1.1,1,0.92],Tungsten:[0.83,0.97,1.2]}[settings.wb];
+    for(let i=0;i<pixels.length;i+=4) {
+      const rgb=[0,1,2].map(c=>Math.min(1,decode(pixels[i+c]/255)*gain*wb[c]));
+      let y=0.2126*rgb[0]+0.7152*rgb[1]+0.0722*rgb[2];
+      if(settings.adaptive && y>0) {
+        const mapped=y+scene.shadowLift*Math.sqrt(y)*(1-y)**2-scene.highlightCompression*Math.max(0,y-.6)**2;
+        const scale=Math.max(0,mapped)/y;for(let c=0;c<3;c++)rgb[c]*=scale;y=mapped;
+      }
+      for(let c=0;c<3;c++) {
+        const linear=Math.max(0,Math.min(1,y+(rgb[c]-y)*saturation));
+        const value=(encode(linear)-0.5)*contrast+0.5;
+        output[i+c]=Math.max(0,Math.min(255,value*255));
+      }
+      output[i+3]=pixels[i+3];
+    }
+    return output;
+  }
+  const api = { CameraSimulation, exposureStops, renderPixels, analyzeScene };
+  if (typeof module !== 'undefined') module.exports = api;
+  else root.DigitSimulation = api;
+})(globalThis);
+
+(function () {
+  const root=document.getElementById('digit-lab'); const $=s=>root.querySelector(s);
+  const {CameraSimulation,renderPixels}=globalThis.DigitSimulation;
+  const camera=new CameraSimulation(); const width=960,height=540;
+  const source=$('.source'),processed=$('.processed'); const src=source.getContext('2d',{willReadFrequently:true}); const dst=processed.getContext('2d');
+  let pixels, originalPixels, comparison=false, imageGeneration=0;
+  const status=text=>{$('.save-status').textContent=text;};
+  function render() {
+    const s=camera.settings;
+    if(pixels) dst.putImageData(new ImageData(renderPixels(pixels,s,width,height),width,height),0,0);
+    const manual=s.mode==='Manual'; $('.iso').disabled=!manual; $('.speed').disabled=!manual; $('.ev').disabled=manual;
+    $('.iso').value=manual?s.iso:100;$('.speed').value=manual?s.shutter:125;
+    $('.mode-indicator').textContent=manual?'M':'AUTO'; $('.exposure-readout').textContent=manual?`1/${s.shutter}  ISO ${s.iso}`:'1/125  ISO 100';
+    $('.wb-readout').textContent=s.wb.toUpperCase(); $('.ev-label').textContent=manual?'EV off':`EV ${s.ev>=0?'+':''}${s.ev.toFixed(1)}`;
+    $('.exposure-help').textContent=manual?'ISO and shutter control exposure. EV is off.':'Switch to M to adjust ISO and shutter speed.';
+    $('.recipe').value=s.recipe; root.querySelectorAll('[data-mode]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.mode===s.mode)));
+  }
+  function load(image,label) {
+    src.fillStyle='#333';src.fillRect(0,0,width,height);
+    const scale=Math.max(width/image.naturalWidth,height/image.naturalHeight);
+    src.drawImage(image,(width-image.naturalWidth*scale)/2,(height-image.naturalHeight*scale)/2,image.naturalWidth*scale,image.naturalHeight*scale);
+    originalPixels=src.getImageData(0,0,width,height).data; $('.image-credit').textContent=label; applySampleLighting();
+  }
+  function fallback() {
+    const gradient=src.createLinearGradient(0,0,width,height);gradient.addColorStop(0,'#9bb4bf');gradient.addColorStop(1,'#d6be9d');src.fillStyle=gradient;src.fillRect(0,0,width,height);
+    ['#bd826b','#815b4c','#ecc3a4','#536b4b','#8d353b','#41647d'].forEach((color,i)=>{src.fillStyle=color;src.fillRect(30+(i%3)*110,210+Math.floor(i/3)*130,100,110);});
+    for(let i=0;i<12;i++){src.fillStyle=`rgb(${i*23},${i*23},${i*23})`;src.fillRect(30+i*27,490,27,65);}
+    originalPixels=src.getImageData(0,0,width,height).data;
+    $('.image-credit').textContent='Synthetic swatches · load a photo to assess appearance';applySampleLighting();
+  }
+  function applySampleLighting() {
+    if(!originalPixels)return;
+    pixels=new Uint8ClampedArray(originalPixels);const kind=$('.sample-light').value;
+    for(let i=0;i<pixels.length;i+=4){
+      const x=(i/4)%width,y=Math.floor(i/4/width);
+      const factor=kind==='dim'?.48:kind==='contrast'?(x>width*.67||y<height*.18?1.55:.68):1;
+      for(let c=0;c<3;c++)pixels[i+c]=originalPixels[i+c]*factor*(kind==='warm'?[1.13,1,.86][c]:1);
+    }
+    src.putImageData(new ImageData(pixels,width,height),0,0);render();
+  }
+  fallback();
+  const sample=new Image();sample.crossOrigin='anonymous';const initialGeneration=imageGeneration;
+  sample.onload=()=>{if(imageGeneration!==initialGeneration)return;try{load(sample,'NASA / Eileen Collins · sample, not a Canon reference');}catch{fallback();}};
+  sample.onerror=()=>{if(imageGeneration===initialGeneration)fallback();};
+  sample.src='https://cdn.jsdelivr.net/gh/scikit-image/scikit-image@v0.19.3/skimage/data/astronaut.png';
+  root.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>{camera.update({mode:b.dataset.mode});render();});
+  $('.iso').onchange=e=>{camera.update({iso:Number(e.target.value)});render();};
+  $('.speed').onchange=e=>{camera.update({shutter:Number(e.target.value)});render();};
+  $('.wb').onchange=e=>{camera.update({wb:e.target.value});render();};
+  $('.adaptive').onchange=e=>{camera.update({adaptive:e.target.checked});render();};
+  $('.sample-light').onchange=applySampleLighting;
+  $('.recipe').onchange=e=>{camera.update({recipe:e.target.value});render();};
+  $('.ev').oninput=e=>{camera.update({ev:Number(e.target.value)/3});render();};
+  $('.screen').onclick=e=>{const b=e.currentTarget.getBoundingClientRect();const f=$('.focus');f.style.left=Math.max(10,Math.min(90,(e.clientX-b.left)/b.width*100))+'%';f.style.top=Math.max(15,Math.min(85,(e.clientY-b.top)/b.height*100))+'%';f.classList.add('selected');status('Focus position set · simulated');};
+  function compare(){const value=$('.compare').value;source.style.clipPath=`inset(0 ${100-value}% 0 0)`;source.classList.toggle('hidden',!comparison);$('.divider').style.left=value+'%';$('.divider').hidden=!comparison;$('.compare-toggle').textContent='Comparison '+(comparison?'on':'off');$('.compare-toggle').setAttribute('aria-pressed',String(comparison));$('.compare').disabled=!comparison;}
+  $('.compare').oninput=compare;$('.compare-toggle').onclick=()=>{comparison=!comparison;compare();};
+  const panels=[[$('#digit-options'),$('.options-toggle')],[$('#digit-cameras'),$('.model')],[$('.gallery'),$('.gallery-btn')]];
+  let activePanel=null;
+  function openPanel(panel) {
+    const closing=activePanel && panels.find(([p])=>p===activePanel)?.[1];
+    activePanel=panel;
+    for(const [p,button] of panels){p.hidden=p!==panel;button.setAttribute('aria-expanded',String(p===panel));}
+    $('.scrim').hidden=!panel;
+    if(panel) panel.querySelector('.close-panel').focus();
+    else closing?.focus();
+  }
+  for(const [panel,button] of panels) button.onclick=()=>openPanel(activePanel===panel?null:panel);
+  root.querySelectorAll('.close-panel').forEach(b=>b.onclick=()=>openPanel(null));
+  $('.scrim').onclick=()=>openPanel(null);$('.current').onclick=()=>openPanel(null);
+  root.addEventListener('keydown',e=>{if(e.key==='Escape' && activePanel){e.preventDefault();openPanel(null);}});
+  function gallery() {
+    const list=$('.session-grid');list.replaceChildren();$('.empty').hidden=camera.shots.length>0;
+    const retryFocused=document.activeElement===$('.retry-gallery');
+    $('.retry-gallery').hidden=!camera.shots.some(s=>s.state==='pending');
+    if(retryFocused && $('.retry-gallery').hidden) $('.gallery .close-panel').focus();
+    for(const shot of [...camera.shots].reverse()) {
+      const fig=document.createElement('figure');fig.className='shot';const img=document.createElement('img');img.src=shot.image;img.alt=`Simulated shot ${shot.id}, ${shot.settings.recipe}`;
+      const cap=document.createElement('figcaption');cap.textContent=`#${shot.id} ${shot.settings.recipe} · ${shot.state}`;fig.append(img,cap);list.append(fig);
+    }
+    if(camera.shots.length){const last=camera.shots.at(-1);const img=document.createElement('img');img.src=last.image;img.alt='Last simulated capture';$('.gallery-btn').replaceChildren(img);}
+  }
+  function capture(origin='Shutter') {
+    try {
+      const shot=camera.capture(processed.toDataURL('image/jpeg',.92));const outcome=$('.permission').value;
+      status(`${origin} · processing #${shot.id}…`);gallery();
+      setTimeout(()=>{camera.complete(shot.id,outcome);gallery();status(shot.state==='saved'?`#${shot.id} auto-saved · simulation only`:`#${shot.id} retained · ${shot.reason}`);},380);
+    }catch(e){status(e.message);}
+  }
+  $('.shutter').onclick=()=>capture();$('.hardware').onclick=()=>capture('Modeled volume event');
+  $('.lock').onclick=()=>status('Modeled handoff → G12 ready · real iPhone test required');
+  $('.retry-gallery').onclick=()=>$('.retry').click();
+  $('.retry').onclick=()=>{for(const s of camera.shots)camera.retry(s.id,$('.permission').value);gallery();const pending=camera.shots.filter(s=>s.state==='pending').length;status(pending?`${pending} still pending · check simulated Photos outcome`:'No pending saves · simulation only');};
+  $('input[type=file]').onchange=e=>{
+    const file=e.target.files[0];if(!file)return;
+    if(file.size>20*1024*1024){status('Choose a sample under 20 MB');return;}
+    status('Loading your photo…');
+    const generation=++imageGeneration;const reader=new FileReader();reader.onerror=()=>status('Could not read sample');
+    reader.onload=()=>{const img=new Image();img.onload=()=>{if(generation!==imageGeneration)return;try{load(img,'Your local test photo · experimental rendering');status('Photo ready · simulated capture');}catch{status('Could not process this sample');}};img.onerror=()=>status('Use a JPEG, PNG, or WebP sample');img.src=reader.result;};reader.readAsDataURL(file);
+  };
+  if(globalThis.Tweak){const style={accent:'#d7b57a',lcd:false};const tweak=new Tweak({container:$('.phone'),onChange:()=>{root.style.setProperty('--digit-accent',style.accent);root.style.setProperty('--digit-lcd',style.lcd?'1':'0');}});tweak.addColorPicker(style,'accent',{label:'Dial accent'});tweak.addToggle(style,'lcd',{label:'Preview LCD texture'});}
+  compare();render();
+})();
+
+</script>
+</body></html>

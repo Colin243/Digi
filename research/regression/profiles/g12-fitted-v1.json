@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "device": "iPhone18,1",
+  "lens": "main rear",
+  "dimension": 65,
+  "tone_coefficients": [
+    0.0952067810238242,
+    -0.0048262368579076965
+  ],
+  "saturation_by_opponent_hue": [
+    0.9,
+    0.9666231039034542,
+    1.0233684421743623,
+    1.0094007978828456,
+    1.0195406929895245,
+    0.9
+  ],
+  "hue_coverage_source_target_groups": [
+    [
+      8,
+      17
+    ],
+    [
+      8,
+      17
+    ],
+    [
+      5,
+      15
+    ],
+    [
+      5,
+      17
+    ],
+    [
+      7,
+      17
+    ],
+    [
+      6,
+      16
+    ]
+  ],
+  "source_count": 8,
+  "target_images": 33,
+  "target_groups": 17,
+  "cube_sha256": "da3e30582f271739e1d9007278e3efa11a62038af4a8b39b024612c735c9e104",
+  "status": "experimental unpaired aesthetic profile; not calibrated G12 accuracy",
+  "color_space": "linear sRGB cube; encoded-sRGB fit",
+  "constraints": {
+    "tone_ridge": 5,
+    "tone_strength": 0.65,
+    "saturation_ridge": 0.5,
+    "saturation_bounds": [
+      0.9,
+      1.12
+    ]
+  },
+  "held_out": [
+    "IMG_9707.JPG",
+    "IMG_9708.JPG"
+  ],
+  "excluded_related_source": "IMG_9703.JPG"
+}

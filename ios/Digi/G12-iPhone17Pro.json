@@ -1,0 +1,79 @@
+{
+  "version": 2,
+  "device": "iPhone18,1",
+  "lens": "main rear",
+  "dimension": 65,
+  "tone_coefficients": [
+    0.0952067810238242,
+    -0.0048262368579076965
+  ],
+  "saturation_by_opponent_hue": [
+    0.9,
+    0.9666231039034542,
+    1.0233684421743623,
+    1.0094007978828456,
+    1.0195406929895245,
+    0.9
+  ],
+  "hue_coverage_source_target_groups": [
+    [
+      8,
+      17
+    ],
+    [
+      8,
+      17
+    ],
+    [
+      5,
+      15
+    ],
+    [
+      5,
+      17
+    ],
+    [
+      7,
+      17
+    ],
+    [
+      6,
+      16
+    ]
+  ],
+  "source_count": 8,
+  "target_images": 33,
+  "target_groups": 17,
+  "cube_sha256": "f9a592f2685d8f2a068f29cdb0e2164c437cf009c57caddf636985693cf5a2f7",
+  "status": "G12-inspired Classic: fitted v1 plus explicit reference-guided artistic contrast/hue layer; not calibrated Canon output",
+  "color_space": "linear sRGB cube; encoded-sRGB fit",
+  "constraints": {
+    "tone_ridge": 5,
+    "tone_strength": 0.65,
+    "saturation_ridge": 0.5,
+    "saturation_bounds": [
+      0.9,
+      1.12
+    ]
+  },
+  "held_out": [
+    "IMG_9707.JPG",
+    "IMG_9708.JPG"
+  ],
+  "excluded_related_source": "IMG_9703.JPG",
+  "artistic_layer": {
+    "contrast_coefficients": [
+      0.025,
+      0.85
+    ],
+    "selective_saturation": [
+      1.1,
+      1.02,
+      1.13,
+      1.06,
+      1.08,
+      1.01
+    ],
+    "synthetic_grain": false
+  }
+}
