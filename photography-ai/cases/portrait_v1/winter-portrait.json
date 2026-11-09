@@ -1,0 +1,254 @@
+{
+ "id": "winter-portrait",
+ "suite": "portrait_v1",
+ "category": "portrait",
+ "description": "Snowy winter portraits -> a misty snow-covered tree avenue with lamps and distant walkers.",
+ "subject": "a person (the photographer's friend) posing in the scene",
+ "license_note": "CC0 (Unsplash via Wikimedia Commons); see datasets/portrait_v1/SOURCES.md",
+ "inspiration": [
+  {
+   "file": "photography-ai/samples/portrait_v1/winter-portrait/inspiration_1.jpg",
+   "primary": [
+    "woman",
+    "man",
+    "girl",
+    "boy",
+    "person",
+    "people",
+    "couple",
+    "lady",
+    "guy"
+   ],
+   "objects": [
+    [
+     "woman",
+     "man",
+     "girl",
+     "boy",
+     "person",
+     "people",
+     "couple",
+     "lady",
+     "guy"
+    ],
+    [
+     "snow"
+    ],
+    [
+     "hat"
+    ],
+    [
+     "coat",
+     "jacket"
+    ],
+    [
+     "trees",
+     "forest",
+     "branches"
+    ]
+   ]
+  },
+  {
+   "file": "photography-ai/samples/portrait_v1/winter-portrait/inspiration_2.jpg",
+   "primary": [
+    "woman",
+    "man",
+    "girl",
+    "boy",
+    "person",
+    "people",
+    "couple",
+    "lady",
+    "guy"
+   ],
+   "objects": [
+    [
+     "woman",
+     "man",
+     "girl",
+     "boy",
+     "person",
+     "people",
+     "couple",
+     "lady",
+     "guy"
+    ],
+    [
+     "snow"
+    ],
+    [
+     "hood",
+     "hooded",
+     "coat",
+     "teddy",
+     "beige"
+    ],
+    [
+     "mittens",
+     "gloves"
+    ]
+   ]
+  },
+  {
+   "file": "photography-ai/samples/portrait_v1/winter-portrait/inspiration_3.jpg",
+   "primary": [
+    "woman",
+    "man",
+    "girl",
+    "boy",
+    "person",
+    "people",
+    "couple",
+    "lady",
+    "guy"
+   ],
+   "objects": [
+    [
+     "woman",
+     "man",
+     "girl",
+     "boy",
+     "person",
+     "people",
+     "couple",
+     "lady",
+     "guy"
+    ],
+    [
+     "snow"
+    ],
+    [
+     "path",
+     "trail"
+    ],
+    [
+     "trees",
+     "branches",
+     "forest"
+    ]
+   ]
+  },
+  {
+   "file": "photography-ai/samples/portrait_v1/winter-portrait/inspiration_4.jpg",
+   "primary": [
+    "woman",
+    "man",
+    "girl",
+    "boy",
+    "person",
+    "people",
+    "couple",
+    "lady",
+    "guy"
+   ],
+   "objects": [
+    [
+     "woman",
+     "man",
+     "girl",
+     "boy",
+     "person",
+     "people",
+     "couple",
+     "lady",
+     "guy"
+    ],
+    [
+     "beanie",
+     "hat"
+    ],
+    [
+     "scarf"
+    ],
+    [
+     "snow",
+     "winter"
+    ]
+   ]
+  }
+ ],
+ "target": {
+  "file": "photography-ai/samples/portrait_v1/winter-portrait/target.jpg",
+  "primary": [
+   "snow",
+   "avenue",
+   "trees",
+   "path",
+   "park"
+  ],
+  "objects": [
+   [
+    "snow",
+    "snowy"
+   ],
+   [
+    "trees",
+    "tree",
+    "branches"
+   ],
+   [
+    "path",
+    "avenue",
+    "walkway",
+    "promenade",
+    "road"
+   ],
+   [
+    "lamp",
+    "lamps",
+    "lampposts",
+    "street light"
+   ],
+   [
+    "fog",
+    "mist",
+    "misty",
+    "foggy",
+    "haze"
+   ],
+   [
+    "fence",
+    "railing"
+   ],
+   [
+    "people",
+    "person",
+    "walkers",
+    "figures"
+   ]
+  ]
+ },
+ "leak_terms": [
+  "hood",
+  "mittens",
+  "beanie",
+  "scarf",
+  "trail"
+ ],
+ "style_keywords": [
+  [
+   "snow",
+   "winter",
+   "cold"
+  ],
+  [
+   "white",
+   "bright",
+   "soft",
+   "overcast"
+  ],
+  [
+   "coat",
+   "bundled",
+   "warm clothing",
+   "scarf",
+   "hat"
+  ],
+  [
+   "portrait",
+   "close",
+   "full"
+  ]
+ ],
+ "target_absent": []
+}

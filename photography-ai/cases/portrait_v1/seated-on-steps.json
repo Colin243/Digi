@@ -1,0 +1,256 @@
+{
+ "id": "seated-on-steps",
+ "suite": "portrait_v1",
+ "category": "lifestyle",
+ "description": "Relaxed seated poses on steps and ledges -> an empty covered staircase with red railings.",
+ "subject": "a person (the photographer's friend) posing in the scene",
+ "license_note": "CC0 (Unsplash via Wikimedia Commons); see datasets/portrait_v1/SOURCES.md",
+ "inspiration": [
+  {
+   "file": "photography-ai/samples/portrait_v1/seated-on-steps/inspiration_1.jpg",
+   "primary": [
+    "woman",
+    "man",
+    "girl",
+    "boy",
+    "person",
+    "people",
+    "couple",
+    "lady",
+    "guy"
+   ],
+   "objects": [
+    [
+     "woman",
+     "man",
+     "girl",
+     "boy",
+     "person",
+     "people",
+     "couple",
+     "lady",
+     "guy"
+    ],
+    [
+     "sitting",
+     "seated",
+     "sits"
+    ],
+    [
+     "window",
+     "door",
+     "doorway"
+    ],
+    [
+     "red",
+     "orange"
+    ],
+    [
+     "shorts",
+     "top"
+    ]
+   ]
+  },
+  {
+   "file": "photography-ai/samples/portrait_v1/seated-on-steps/inspiration_2.jpg",
+   "primary": [
+    "woman",
+    "man",
+    "girl",
+    "boy",
+    "person",
+    "people",
+    "couple",
+    "lady",
+    "guy"
+   ],
+   "objects": [
+    [
+     "legs",
+     "jeans",
+     "boots",
+     "shoes"
+    ],
+    [
+     "sitting",
+     "seated",
+     "ledge",
+     "wall"
+    ],
+    [
+     "leaves",
+     "autumn",
+     "fall"
+    ]
+   ]
+  },
+  {
+   "file": "photography-ai/samples/portrait_v1/seated-on-steps/inspiration_3.jpg",
+   "primary": [
+    "woman",
+    "man",
+    "girl",
+    "boy",
+    "person",
+    "people",
+    "couple",
+    "lady",
+    "guy"
+   ],
+   "objects": [
+    [
+     "woman",
+     "man",
+     "girl",
+     "boy",
+     "person",
+     "people",
+     "couple",
+     "lady",
+     "guy"
+    ],
+    [
+     "sitting",
+     "seated",
+     "ledge"
+    ],
+    [
+     "graffiti",
+     "mural",
+     "colorful"
+    ],
+    [
+     "jacket",
+     "leather"
+    ]
+   ]
+  },
+  {
+   "file": "photography-ai/samples/portrait_v1/seated-on-steps/inspiration_4.jpg",
+   "primary": [
+    "woman",
+    "man",
+    "girl",
+    "boy",
+    "person",
+    "people",
+    "couple",
+    "lady",
+    "guy"
+   ],
+   "objects": [
+    [
+     "woman",
+     "man",
+     "girl",
+     "boy",
+     "person",
+     "people",
+     "couple",
+     "lady",
+     "guy"
+    ],
+    [
+     "sitting",
+     "seated",
+     "floor"
+    ],
+    [
+     "door",
+     "doorway",
+     "teal",
+     "turquoise"
+    ],
+    [
+     "hat",
+     "cap"
+    ],
+    [
+     "elderly",
+     "old",
+     "older"
+    ]
+   ]
+  }
+ ],
+ "target": {
+  "file": "photography-ai/samples/portrait_v1/seated-on-steps/target.jpg",
+  "primary": [
+   "stair",
+   "stairs",
+   "staircase",
+   "steps",
+   "stairway"
+  ],
+  "objects": [
+   [
+    "stair",
+    "stairs",
+    "staircase",
+    "steps"
+   ],
+   [
+    "railing",
+    "handrail",
+    "rail"
+   ],
+   [
+    "red",
+    "orange"
+   ],
+   [
+    "roof",
+    "ceiling",
+    "covered",
+    "canopy"
+   ],
+   [
+    "wall",
+    "walls"
+   ]
+  ]
+ },
+ "leak_terms": [
+  "graffiti",
+  "leaves",
+  "doorway",
+  "teal",
+  "turquoise",
+  "jeans"
+ ],
+ "style_keywords": [
+  [
+   "sitting",
+   "seated",
+   "sit"
+  ],
+  [
+   "relaxed",
+   "casual",
+   "candid"
+  ],
+  [
+   "low",
+   "eye level",
+   "eye-level",
+   "level"
+  ],
+  [
+   "steps",
+   "ledge",
+   "doorway"
+  ]
+ ],
+ "target_absent": [
+  "person",
+  "people",
+  "woman",
+  "man",
+  "girl",
+  "boy",
+  "couple",
+  "lady",
+  "guy",
+  "model"
+ ]
+}

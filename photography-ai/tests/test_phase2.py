@@ -122,7 +122,8 @@ def test_scores_saved_next_to_run_and_latest_wins(photos, tmp_path, case):
     stored = json.loads((tmp_path / rid / "scores.json").read_text())
     assert len(stored) == 3
     latest = {e["rater"]: e for e in load_scores(tmp_path, rid)}
-    assert latest["colin"]["total"] == 20 and latest["other"]["total"] == 15
+    assert latest["colin"]["total"] == 24 and latest["other"]["total"] == 18
+    assert latest["colin"]["core_total"] == 20 and latest["colin"]["rubric_version"] == 2
 
 
 @pytest.mark.parametrize("bad", [{k: 6 for k in CATEGORY_KEYS}, {k: 3 for k in CATEGORY_KEYS[:4]}])
@@ -132,7 +133,7 @@ def test_score_validation(bad):
 
 
 def test_cli_score_rejects_unknown_run(tmp_path):
-    assert main(["score", "--run", "nope", "--rater", "c", "--scores", "1", "2", "3", "4", "5",
+    assert main(["score", "--run", "nope", "--rater", "c", "--scores", "1", "2", "3", "4", "5", "3",
                  "--runs-dir", str(tmp_path)]) == 2
 
 
@@ -147,9 +148,11 @@ def test_benchmark_is_resumable_and_reports_manual_scores(case, tmp_path):
     save_score(tmp_path, make_entry(greedy["run_id"], dict.fromkeys(CATEGORY_KEYS, 5), "colin"))
     s = summarize(m2, tmp_path)
     row = next(r for r in s["rows"] if r["strategy"] == "two_stage")
-    assert row["manual_total"] == 25 and row["manual_n"] == 1
+    assert row["human"]["colin"]["core_25"] == 25 and row["human"]["colin"]["n"] == 1
+    assert row["human"]["colin"]["shot_diversity"] == 5
     assert s["consistency"][0]["samples"] == 2
-    assert "Manual rubric" in report_markdown(s)
+    md = report_markdown(s)
+    assert "Human ratings" in md and "Measured" in md
 
 
 # --- UI + shipped cases ----------------------------------------------------------------------

@@ -63,12 +63,15 @@ def main(argv: list[str] | None = None) -> int:
 
     bn = sub.add_parser("bench", help="run models x cases x strategies (resumable)")
     bn.add_argument("--models", nargs="+", default=[DEFAULT_MODEL])
-    bn.add_argument("--case", nargs="*", help="case ids or json paths (default: all in cases/)")
+    bn.add_argument("--case", nargs="*", help="case ids or json paths (default: all cases in the suite)")
+    bn.add_argument("--suite", help="case suite folder, e.g. portrait_v1 (default: Phase 2 cases)")
     bn.add_argument("--strategies", nargs="+", choices=STRATEGIES, default=list(STRATEGIES))
     bn.add_argument("--consistency-strategy", choices=STRATEGIES, default="two_stage")
     bn.add_argument("--consistency-samples", type=int, default=3)
     bn.add_argument("--consistency-temperature", type=float, default=0.7)
     bn.add_argument("--bench-id", help="reuse an id to resume or extend a benchmark")
+    bn.add_argument("--json-format", choices=["shape", "keys"], default="shape",
+                    help="describe the expected JSON as a blank shape (default) or as a list of keys")
     bn.add_argument("--runs-dir", type=Path, default=DEFAULT_RUNS_DIR)
 
     rp = sub.add_parser("report", help="side-by-side comparison for a benchmark")
@@ -79,11 +82,32 @@ def main(argv: list[str] | None = None) -> int:
     sc = sub.add_parser("score", help="record a rubric score from the command line")
     sc.add_argument("--run", required=True, help="run id")
     sc.add_argument("--rater", required=True)
-    sc.add_argument("--scores", type=int, nargs=5, required=True, metavar="1-5",
-                    help="aesthetic_understanding scene_awareness aesthetic_transfer actionability composition_quality")
+    sc.add_argument("--scores", type=int, nargs=6, required=True, metavar="1-5",
+                    help="aesthetic_understanding scene_awareness aesthetic_transfer actionability "
+                         "composition_quality shot_diversity")
+    sc.add_argument("--hallucination", choices=["yes", "no"], help="output claims something not in the photos")
     sc.add_argument("--notes", default="")
     sc.add_argument("--not-blind", action="store_true", help="rater knew which model produced the run")
     sc.add_argument("--runs-dir", type=Path, default=DEFAULT_RUNS_DIR)
+
+    ds = sub.add_parser("dataset", help="download evaluation images listed in a manifest")
+    ds.add_argument("action", choices=["fetch", "attribution"])
+    ds.add_argument("--manifest", type=Path, default=None)
+
+    pf = sub.add_parser("prefer", help="record a blind side-by-side preference for one benchmark case")
+    pf.add_argument("--bench", required=True)
+    pf.add_argument("--case", required=True)
+    pf.add_argument("--rater", required=True)
+    pf.add_argument("--set", dest="pref_set", help="preferred label (A, B, ...) as shown to this rater, or 'none'")
+    pf.add_argument("--shot", help="preferred single composition, e.g. B2, or 'none'")
+    pf.add_argument("--notes", default="")
+    pf.add_argument("--show", action="store_true", help="print the blinded A/B/C order for this rater and exit")
+    pf.add_argument("--strategy", default="decomposed")
+    pf.add_argument("--runs-dir", type=Path, default=DEFAULT_RUNS_DIR)
+
+    cv = sub.add_parser("convert", help="quantize a registered MLX model to 4-bit into models/<key>-4bit")
+    cv.add_argument("model")
+    cv.add_argument("--bits", type=int, default=4)
 
     rn = sub.add_parser("runs", help="summarize saved runs")
     rn.add_argument("--runs-dir", type=Path, default=DEFAULT_RUNS_DIR)
@@ -142,12 +166,12 @@ def main(argv: list[str] | None = None) -> int:
         from .benchmark import run_benchmark
         from .cases import all_cases, load_case
 
-        cases = [load_case(c) for c in a.case] if a.case else all_cases()
+        cases = [load_case(c) for c in a.case] if a.case else all_cases(a.suite)
         for c in [c for c in cases if c.missing_files()]:
             print(f"skip {c.id}: missing {c.missing_files()}", file=sys.stderr)
         cases = [c for c in cases if not c.missing_files()]
         m = run_benchmark(a.models, cases, a.strategies, a.consistency_strategy, a.consistency_samples,
-                          a.consistency_temperature, a.runs_dir, a.bench_id)
+                          a.consistency_temperature, a.runs_dir, a.bench_id, json_format=a.json_format)
         print(f"benchmark {m['bench_id']}: {len(m['runs'])} runs. Next: photo-ai report --bench {m['bench_id']}")
         return 0
 
@@ -168,13 +192,64 @@ def main(argv: list[str] | None = None) -> int:
         from .evaluation import CATEGORY_KEYS, make_entry, save_score
 
         try:
-            entry = make_entry(a.run, dict(zip(CATEGORY_KEYS, a.scores)), a.rater, a.notes, not a.not_blind)
+            hall = None if a.hallucination is None else a.hallucination == "yes"
+            entry = make_entry(a.run, dict(zip(CATEGORY_KEYS, a.scores)), a.rater, a.notes, not a.not_blind, hall)
             path = save_score(a.runs_dir, entry)
         except (ValueError, FileNotFoundError) as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 2
         print(f"saved {entry['total']}/{entry['max_total']} -> {path}")
         return 0
+
+    if a.cmd == "dataset":
+        from .dataset import DEFAULT_MANIFEST, attribution_markdown, fetch, load_manifest
+
+        path = a.manifest or DEFAULT_MANIFEST
+        if a.action == "fetch":
+            lock = fetch(path)
+            print(f"{len(lock)} images present for {load_manifest(path)['dataset']}")
+        else:
+            print(attribution_markdown(load_manifest(path)))
+        return 0
+
+    if a.cmd == "prefer":
+        from .benchmark import load_manifest
+        from .comparison import LABELS, blind_order, candidates, make_preference, save_preference
+
+        manifest = load_manifest(a.runs_dir, a.bench)
+        shown = blind_order(candidates(manifest, a.case, a.strategy), a.rater, a.case, a.bench)
+        label_to_run = {LABELS[i]: r["run_id"] for i, r in enumerate(shown)}
+        if a.show or not (a.pref_set or a.shot):
+            for lab, rid in label_to_run.items():
+                print(f"{lab}: runs/{rid}")
+            return 0
+        try:
+            pref_run = None if (a.pref_set or "none").lower() == "none" else label_to_run[a.pref_set.upper()]
+            shot = None
+            if a.shot and a.shot.lower() != "none":
+                shot = (label_to_run[a.shot[0].upper()], int(a.shot[1:]))
+            entry = make_preference(a.bench, a.case, a.rater, list(label_to_run.values()), pref_run, shot, a.notes)
+        except (KeyError, ValueError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        print(f"saved -> {save_preference(a.runs_dir, entry)}")
+        return 0
+
+    if a.cmd == "convert":
+        import subprocess
+
+        from .backends import resolve_spec
+        from .cases import PROJECT_ROOT
+
+        spec = resolve_spec(a.model)
+        out = PROJECT_ROOT / "models" / f"{spec.key}-{a.bits}bit"
+        if out.exists():
+            print(f"{out} already exists")
+            return 0
+        cmd = [sys.executable, "-m", "mlx_vlm.convert", "--hf-path", spec.repo_id, "--mlx-path", str(out),
+               "-q", "--q-bits", str(a.bits)]
+        print(" ".join(cmd))
+        return subprocess.call(cmd)
 
     if a.cmd == "runs":
         rows = read_index(a.runs_dir)[-a.last :]

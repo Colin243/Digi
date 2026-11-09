@@ -2,8 +2,11 @@
 
 Tab "Analyze":  upload 3-5 inspiration photos + 1 target, get 3 compositions.
 Tab "Evaluate": view any saved run (inspiration, target, recommendations) and score it
-                with the 5-category rubric. Blind by default: the model and strategy are
+                with the 6-category rubric. Blind by default: the model and strategy are
                 hidden until you save, so scores aren't biased by knowing which model wrote it.
+Tab "Compare":  for one benchmark case, every model's recommendations side by side as
+                Set A / B / C in a per-rater shuffled order; pick the set and the single shot
+                you would actually take. Model names appear only after saving.
 """
 
 from __future__ import annotations
@@ -14,6 +17,7 @@ from pathlib import Path
 import gradio as gr
 
 from .backends import DEFAULT_MODEL, MODELS, VLMBackend, make_backend
+from .comparison import LABELS, blind_order, candidates, load_preferences, make_preference, save_preference
 from .evaluation import RUBRIC, load_scores, make_entry, save_score
 from .pipeline import MAX_INSPIRATION, MIN_INSPIRATION, STRATEGIES, InputError, RunConfig, analyze
 from .render import result_markdown, timing_markdown
@@ -94,7 +98,7 @@ def build(runs_dir: Path) -> gr.Blocks:
     def show(run_id, rater, blind):
         empty = [None] * len(RUBRIC)
         if not run_id:
-            return [], None, "Pick a run.", "", "", *empty, ""
+            return [], None, "Pick a run.", "", "", *empty, "", False
         rec = _load(runs_dir, run_id)
         def img(p: dict) -> str:  # Phase-1 runs used the key "path"
             return p.get("saved_as") or p.get("path")
@@ -105,17 +109,18 @@ def build(runs_dir: Path) -> gr.Blocks:
             f"**{rec['model']['key']}** · strategy `{rec['config']['strategy']}` · T={rec['config']['temperature']}")
         auto = "```json\n" + json.dumps(rec.get("auto_metrics", {}), indent=1)[:3000] + "\n```"
         prev = [e for e in load_scores(runs_dir, run_id) if e["rater"] == rater.strip()]
-        vals = [prev[0]["scores"][k] for k, _, _ in RUBRIC] if prev else empty
+        vals = [prev[0]["scores"].get(k) for k, _, _ in RUBRIC] if prev else empty
         notes = prev[0]["notes"] if prev else ""
-        return gallery, target, result_markdown(rec), identity, auto, *vals, notes
+        hall = bool(prev[0].get("hallucination")) if prev else False
+        return gallery, target, result_markdown(rec), identity, auto, *vals, notes, hall
 
-    def save(run_id, rater, blind, notes, *vals):
+    def save(run_id, rater, blind, notes, hall, *vals):
         if not run_id:
             raise gr.Error("Pick a run first.")
         if any(v is None for v in vals):
-            raise gr.Error("Score all five categories before saving.")
+            raise gr.Error(f"Score all {len(RUBRIC)} categories before saving.")
         try:
-            entry = make_entry(run_id, {k: int(v) for (k, _, _), v in zip(RUBRIC, vals)}, rater, notes, blind)
+            entry = make_entry(run_id, {k: int(v) for (k, _, _), v in zip(RUBRIC, vals)}, rater, notes, blind, bool(hall))
         except ValueError as exc:
             raise gr.Error(str(exc)) from exc
         save_score(runs_dir, entry)
@@ -181,6 +186,7 @@ def build(runs_dir: Path) -> gr.Blocks:
                 with gr.Row():
                     for key, title, desc in RUBRIC:
                         radios.append(gr.Radio([1, 2, 3, 4, 5], label=title, info=desc, elem_id=f"score-{key}"))
+                hall = gr.Checkbox(label="Hallucination: the output claims something that is not in the photos")
                 notes = gr.Textbox(label="Notes (optional)", lines=2)
                 save_btn = gr.Button("Save score", variant="primary")
                 status = gr.Markdown()
@@ -191,9 +197,116 @@ def build(runs_dir: Path) -> gr.Blocks:
                     comp.change(refresh, list_inputs, [run_pick, bench])
                 demo.load(refresh, list_inputs, [run_pick, bench])
                 run_pick.change(show, [run_pick, rater, blind],
-                                [ev_gallery, ev_target, ev_result, identity, auto_md, *radios, notes])
-                save_btn.click(save, [run_pick, rater, blind, notes, *radios], status)
+                                [ev_gallery, ev_target, ev_result, identity, auto_md, *radios, notes, hall])
+                save_btn.click(save, [run_pick, rater, blind, notes, hall, *radios], status)
+
+            with gr.Tab("Compare"):
+                _compare_tab(runs_dir, demo)
     return demo
+
+
+MAX_SETS = 4
+
+
+def _benchmarks(runs_dir: Path) -> list[str]:
+    bdir = runs_dir / "benchmarks"
+    return sorted((p.name for p in bdir.iterdir() if (p / "manifest.json").exists()), reverse=True) if bdir.exists() else []
+
+
+def _manifest(runs_dir: Path, bench: str) -> dict:
+    return json.loads((runs_dir / "benchmarks" / bench / "manifest.json").read_text())
+
+
+def _compare_tab(runs_dir: Path, demo: gr.Blocks) -> None:
+    gr.Markdown(
+        "Every model's recommendations for the same case, side by side. Labels A/B/C are shuffled per rater "
+        "and case, and model names are revealed only after you save. Choose the set you prefer overall and the "
+        "single composition you would actually shoot. Saved to `runs/benchmarks/<bench>/preferences.jsonl`."
+    )
+    benches = _benchmarks(runs_dir)
+    with gr.Row():
+        c_rater = gr.Textbox(label="Your name (rater)", value="colin")
+        c_bench = gr.Dropdown(benches, value=benches[0] if benches else None, label="Benchmark")
+        c_strategy = gr.Dropdown(["decomposed", "two_stage", "single_pass"], value="decomposed", label="Strategy")
+        c_case = gr.Dropdown([], label="Case")
+    with gr.Row():
+        c_gallery = gr.Gallery(label="Inspiration photos", columns=5, height=200, interactive=False, scale=3)
+        c_target = gr.Image(label="Target scene", height=240, interactive=False, scale=2)
+    cols, mds = [], []
+    with gr.Row(equal_height=False):
+        for i in range(MAX_SETS):
+            with gr.Column(visible=False, min_width=260) as col:
+                mds.append(gr.Markdown())
+            cols.append(col)
+    pref_set = gr.Radio([], label="Which set would you use?")
+    pref_shot = gr.Radio([], label="Which single composition would you actually shoot?")
+    c_notes = gr.Textbox(label="Notes (optional)", lines=2)
+    c_save = gr.Button("Save preference", variant="primary")
+    c_status = gr.Markdown()
+    state = gr.State({})
+
+    def cases_for(bench, strategy, rater):
+        if not bench:
+            return gr.update(choices=[], value=None)
+        m = _manifest(runs_dir, bench)
+        done = {p["case"] for p in load_preferences(runs_dir, bench) if p["rater"] == rater.strip()}
+        ids = sorted({r["case"] for r in m["runs"] if r["kind"] == "greedy" and r["strategy"] == strategy})
+        choices = [(("✓ " if c in done else "") + c, c) for c in ids]
+        return gr.update(choices=choices, value=ids[0] if ids else None)
+
+    def show(bench, strategy, case, rater):
+        hidden = [gr.update(visible=False)] * MAX_SETS
+        if not (bench and case):
+            return [], None, *hidden, *[""] * MAX_SETS, gr.update(choices=[]), gr.update(choices=[]), {}, ""
+        m = _manifest(runs_dir, bench)
+        shown = blind_order(candidates(m, case, strategy), rater, case, bench)[:MAX_SETS]
+        recs = [_load(runs_dir, r["run_id"]) for r in shown]
+        first = recs[0]["inputs"] if recs else {"inspiration": [], "target": {}}
+        gallery = [p["saved_as"] for p in first["inspiration"]]
+        vis = [gr.update(visible=i < len(recs)) for i in range(MAX_SETS)]
+        texts = []
+        shot_choices = []
+        for i in range(MAX_SETS):
+            if i >= len(recs):
+                texts.append("")
+                continue
+            lab = LABELS[i]
+            comps = (recs[i]["result"] or recs[i].get("partial_result") or {}).get("compositions") or []
+            body = result_markdown(recs[i])
+            for n in range(1, 4):  # number the shots so they can be picked
+                body = body.replace(f"### {n}. ", f"### {lab}{n}. ", 1)
+            texts.append(f"## Set {lab}\n\n" + body)
+            shot_choices += [f"{lab}{n}" for n in range(1, len(comps) + 1)]
+        prev = [p for p in load_preferences(runs_dir, bench) if p["rater"] == rater.strip() and p["case"] == case]
+        st = {"bench": bench, "case": case, "order": [r["run_id"] for r in shown]}
+        note = "*You already saved a preference for this case; saving again replaces it.*" if prev else ""
+        return (gallery, first["target"].get("saved_as"), *vis, *texts,
+                gr.update(choices=[f"Set {LABELS[i]}" for i in range(len(recs))] + ["No preference"], value=None),
+                gr.update(choices=shot_choices + ["None of them"], value=None), st, note)
+
+    def save(st, rater, pset, pshot, notes):
+        if not st:
+            raise gr.Error("Pick a benchmark and case first.")
+        if pset is None or pshot is None:
+            raise gr.Error("Choose a set and a single composition (or the 'No preference' / 'None' options).")
+        order = st["order"]
+        run = None if pset == "No preference" else order[LABELS.index(pset.split()[-1])]
+        shot = None if pshot == "None of them" else (order[LABELS.index(pshot[0])], int(pshot[1:]))
+        try:
+            entry = make_preference(st["bench"], st["case"], rater, order, run, shot, notes)
+        except ValueError as exc:
+            raise gr.Error(str(exc)) from exc
+        save_preference(runs_dir, entry)
+        model_of = {r["run_id"]: r["model"] for r in _manifest(runs_dir, st["bench"])["runs"]}
+        reveal = ", ".join(f"**{LABELS[i]}** = {model_of.get(rid, '?')}" for i, rid in enumerate(order))
+        return f"Saved. {reveal}"
+
+    for comp in (c_bench, c_strategy):
+        comp.change(cases_for, [c_bench, c_strategy, c_rater], c_case)
+    c_case.change(show, [c_bench, c_strategy, c_case, c_rater],
+                  [c_gallery, c_target, *cols, *mds, pref_set, pref_shot, state, c_status])
+    c_save.click(save, [state, c_rater, pref_set, pref_shot, c_notes], c_status)
+    demo.load(cases_for, [c_bench, c_strategy, c_rater], c_case)
 
 
 def launch(host: str, port: int, runs_dir: Path) -> None:

@@ -21,7 +21,7 @@ from pathlib import Path
 from .backends import IMAGE_MARKER, GenerationParams, VLMBackend
 from .cases import Case
 from .images import prepare
-from .metrics import image_recall, leaks
+from .metrics import image_recall, leaks, present_mentions
 from .storage import DEFAULT_RUNS_DIR
 
 DESCRIBE = "Describe this photo in one or two sentences. Name the main objects you can see."
@@ -153,6 +153,27 @@ def run_diagnostics(backend: VLMBackend, case: Case, max_side: int = 1024, runs_
     return record
 
 
+def rescore(record: dict, case: Case | None) -> dict:
+    """Re-derive the role checks from saved probe outputs with the case's `target_absent` list.
+
+    A target description only counts as correct if it names the target AND does not describe
+    something annotated as absent from the target (e.g. "a woman sitting at a table" for an
+    empty café): keyword hits alone let inspiration descriptions pass. Returns a new summary.
+    """
+    summary = dict(record["summary"])
+    if case is None or not case.target_absent:
+        return summary
+    outs = {p["probe"]: p["output"] for p in record["probes"]}
+    for probe, key in (("target_alone", "target_alone_primary"),
+                       ("target_among_inspiration", "target_among_inspiration_primary"),
+                       ("target_with_inspiration_text", "target_with_inspiration_text_primary")):
+        if probe in outs:
+            invented = present_mentions(outs[probe], case.target_absent)
+            summary[key] = bool(summary[key]) and not invented
+            summary[key.replace("_primary", "_invented")] = invented
+    return summary
+
+
 def summary_table(records: list[dict]) -> str:
     keys = [
         ("all_images_reach_model", "all images reach model"),
@@ -166,13 +187,21 @@ def summary_table(records: list[dict]) -> str:
         ("target_with_inspiration_text_primary", "target + inspiration text: named"),
         ("target_with_inspiration_text_leaks", "  …inspiration objects leaked into answer"),
     ]
+    from .cases import load_case
+
+    summaries = []
+    for r in records:
+        try:
+            summaries.append(rescore(r, load_case(r["case"])))
+        except FileNotFoundError:
+            summaries.append(r["summary"])
     head = "| check | " + " | ".join(f"{r['model']['key']} / {r['case']}" for r in records) + " |"
     sep = "|---|" + "---|" * len(records)
     rows = []
     for k, label in keys:
         cells = []
-        for r in records:
-            v = r["summary"][k]
+        for sm in summaries:
+            v = sm[k]
             cells.append(", ".join(v) or "none" if isinstance(v, list) else ("yes" if v is True else "no" if v is False else str(v)))
         rows.append(f"| {label} | " + " | ".join(cells) + " |")
     return "\n".join([head, sep, *rows])

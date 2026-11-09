@@ -1,0 +1,256 @@
+{
+ "id": "minimal-urban-fashion",
+ "suite": "portrait_v1",
+ "category": "fashion",
+ "description": "Full-body fashion against clean architecture -> white wall with a diagonal staircase.",
+ "subject": "a person (the photographer's friend) posing in the scene",
+ "license_note": "CC0 (Unsplash via Wikimedia Commons); see datasets/portrait_v1/SOURCES.md",
+ "inspiration": [
+  {
+   "file": "photography-ai/samples/portrait_v1/minimal-urban-fashion/inspiration_1.jpg",
+   "primary": [
+    "woman",
+    "man",
+    "girl",
+    "boy",
+    "person",
+    "people",
+    "couple",
+    "lady",
+    "guy"
+   ],
+   "objects": [
+    [
+     "woman",
+     "man",
+     "girl",
+     "boy",
+     "person",
+     "people",
+     "couple",
+     "lady",
+     "guy"
+    ],
+    [
+     "dress"
+    ],
+    [
+     "bag",
+     "handbag",
+     "purse"
+    ],
+    [
+     "concrete",
+     "wall"
+    ]
+   ]
+  },
+  {
+   "file": "photography-ai/samples/portrait_v1/minimal-urban-fashion/inspiration_2.jpg",
+   "primary": [
+    "woman",
+    "man",
+    "girl",
+    "boy",
+    "person",
+    "people",
+    "couple",
+    "lady",
+    "guy"
+   ],
+   "objects": [
+    [
+     "woman",
+     "man",
+     "girl",
+     "boy",
+     "person",
+     "people",
+     "couple",
+     "lady",
+     "guy"
+    ],
+    [
+     "coat",
+     "pink"
+    ],
+    [
+     "arcade",
+     "arches",
+     "corridor",
+     "colonnade",
+     "hallway"
+    ],
+    [
+     "boots",
+     "tights"
+    ]
+   ]
+  },
+  {
+   "file": "photography-ai/samples/portrait_v1/minimal-urban-fashion/inspiration_3.jpg",
+   "primary": [
+    "woman",
+    "man",
+    "girl",
+    "boy",
+    "person",
+    "people",
+    "couple",
+    "lady",
+    "guy"
+   ],
+   "objects": [
+    [
+     "woman",
+     "man",
+     "girl",
+     "boy",
+     "person",
+     "people",
+     "couple",
+     "lady",
+     "guy"
+    ],
+    [
+     "dress",
+     "floral"
+    ],
+    [
+     "columns",
+     "colonnade",
+     "arcade",
+     "pillars"
+    ],
+    [
+     "twirl",
+     "motion",
+     "movement",
+     "swirl"
+    ]
+   ]
+  },
+  {
+   "file": "photography-ai/samples/portrait_v1/minimal-urban-fashion/inspiration_4.jpg",
+   "primary": [
+    "woman",
+    "man",
+    "girl",
+    "boy",
+    "person",
+    "people",
+    "couple",
+    "lady",
+    "guy"
+   ],
+   "objects": [
+    [
+     "woman",
+     "man",
+     "girl",
+     "boy",
+     "person",
+     "people",
+     "couple",
+     "lady",
+     "guy"
+    ],
+    [
+     "sunglasses"
+    ],
+    [
+     "sweater",
+     "knit"
+    ],
+    [
+     "shutter",
+     "garage",
+     "metal"
+    ]
+   ]
+  }
+ ],
+ "target": {
+  "file": "photography-ai/samples/portrait_v1/minimal-urban-fashion/target.jpg",
+  "primary": [
+   "stair",
+   "stairs",
+   "staircase",
+   "steps",
+   "wall"
+  ],
+  "objects": [
+   [
+    "stair",
+    "stairs",
+    "staircase",
+    "steps"
+   ],
+   [
+    "railing",
+    "handrail",
+    "rail",
+    "banister"
+   ],
+   [
+    "wall",
+    "white"
+   ],
+   [
+    "pavement",
+    "tiles",
+    "floor",
+    "ground",
+    "paving"
+   ],
+   [
+    "diagonal",
+    "line",
+    "lines"
+   ]
+  ]
+ },
+ "leak_terms": [
+  "arcade",
+  "colonnade",
+  "columns",
+  "shutter",
+  "handbag"
+ ],
+ "style_keywords": [
+  [
+   "full body",
+   "full-body",
+   "full length"
+  ],
+  [
+   "minimal",
+   "clean",
+   "simple",
+   "plain"
+  ],
+  [
+   "architecture",
+   "wall",
+   "concrete",
+   "urban"
+  ],
+  [
+   "fashion",
+   "outfit",
+   "dress"
+  ]
+ ],
+ "target_absent": [
+  "person",
+  "people",
+  "woman",
+  "man",
+  "girl",
+  "boy",
+  "couple",
+  "lady",
+  "guy",
+  "model"
+ ]
+}

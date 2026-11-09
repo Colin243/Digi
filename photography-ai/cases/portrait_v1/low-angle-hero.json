@@ -1,0 +1,259 @@
+{
+ "id": "low-angle-hero",
+ "suite": "portrait_v1",
+ "category": "fashion",
+ "description": "Low-angle shots looking up at the subject -> a corner building on an overcast street.",
+ "subject": "a person (the photographer's friend) posing in the scene",
+ "license_note": "CC0 (Unsplash via Wikimedia Commons); see datasets/portrait_v1/SOURCES.md",
+ "inspiration": [
+  {
+   "file": "photography-ai/samples/portrait_v1/low-angle-hero/inspiration_1.jpg",
+   "primary": [
+    "woman",
+    "man",
+    "girl",
+    "boy",
+    "person",
+    "people",
+    "couple",
+    "lady",
+    "guy"
+   ],
+   "objects": [
+    [
+     "woman",
+     "man",
+     "girl",
+     "boy",
+     "person",
+     "people",
+     "couple",
+     "lady",
+     "guy"
+    ],
+    [
+     "sky",
+     "blue"
+    ],
+    [
+     "cap",
+     "hat"
+    ],
+    [
+     "t-shirt",
+     "shirt",
+     "white"
+    ],
+    [
+     "low angle",
+     "looking up",
+     "from below"
+    ]
+   ]
+  },
+  {
+   "file": "photography-ai/samples/portrait_v1/low-angle-hero/inspiration_2.jpg",
+   "primary": [
+    "woman",
+    "man",
+    "girl",
+    "boy",
+    "person",
+    "people",
+    "couple",
+    "lady",
+    "guy"
+   ],
+   "objects": [
+    [
+     "woman",
+     "man",
+     "girl",
+     "boy",
+     "person",
+     "people",
+     "couple",
+     "lady",
+     "guy"
+    ],
+    [
+     "alley",
+     "buildings",
+     "brick"
+    ],
+    [
+     "jersey",
+     "shirt"
+    ],
+    [
+     "low angle",
+     "looking up",
+     "from below"
+    ]
+   ]
+  },
+  {
+   "file": "photography-ai/samples/portrait_v1/low-angle-hero/inspiration_3.jpg",
+   "primary": [
+    "woman",
+    "man",
+    "girl",
+    "boy",
+    "person",
+    "people",
+    "couple",
+    "lady",
+    "guy"
+   ],
+   "objects": [
+    [
+     "woman",
+     "man",
+     "girl",
+     "boy",
+     "person",
+     "people",
+     "couple",
+     "lady",
+     "guy"
+    ],
+    [
+     "glasses"
+    ],
+    [
+     "tattoo",
+     "tattoos"
+    ],
+    [
+     "sky",
+     "grey",
+     "gray",
+     "overcast",
+     "white"
+    ]
+   ]
+  },
+  {
+   "file": "photography-ai/samples/portrait_v1/low-angle-hero/inspiration_4.jpg",
+   "primary": [
+    "woman",
+    "man",
+    "girl",
+    "boy",
+    "person",
+    "people",
+    "couple",
+    "lady",
+    "guy"
+   ],
+   "objects": [
+    [
+     "woman",
+     "man",
+     "girl",
+     "boy",
+     "person",
+     "people",
+     "couple",
+     "lady",
+     "guy"
+    ],
+    [
+     "black and white",
+     "monochrome",
+     "b&w"
+    ],
+    [
+     "heels",
+     "suit",
+     "jacket"
+    ],
+    [
+     "railing",
+     "rooftop",
+     "stairs",
+     "steps"
+    ]
+   ]
+  }
+ ],
+ "target": {
+  "file": "photography-ai/samples/portrait_v1/low-angle-hero/target.jpg",
+  "primary": [
+   "building",
+   "corner",
+   "facade",
+   "architecture"
+  ],
+  "objects": [
+   [
+    "building",
+    "facade"
+   ],
+   [
+    "corner"
+   ],
+   [
+    "windows",
+    "window"
+   ],
+   [
+    "sky",
+    "clouds",
+    "overcast"
+   ],
+   [
+    "street",
+    "sidewalk",
+    "road"
+   ],
+   [
+    "traffic light",
+    "traffic",
+    "sign",
+    "lamp"
+   ]
+  ]
+ },
+ "leak_terms": [
+  "tattoo",
+  "jersey",
+  "alley",
+  "rooftop"
+ ],
+ "style_keywords": [
+  [
+   "low angle",
+   "low-angle",
+   "from below",
+   "looking up",
+   "worm"
+  ],
+  [
+   "sky",
+   "upward"
+  ],
+  [
+   "tall",
+   "powerful",
+   "dominant",
+   "heroic",
+   "confident",
+   "strong"
+  ],
+  [
+   "full",
+   "waist",
+   "body",
+   "upper body"
+  ]
+ ],
+ "target_absent": [
+  "person",
+  "people",
+  "woman",
+  "girl",
+  "couple",
+  "model"
+ ]
+}

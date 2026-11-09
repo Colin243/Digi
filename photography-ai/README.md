@@ -6,6 +6,7 @@ It runs fully on-device with [MLX-VLM](https://github.com/Blaizzy/mlx-vlm) on Ap
 
 - **Phase 1:** baseline pipeline, upload UI, saved runs with timings.
 - **Phase 2:** diagnostics, a benchmark across models and strategies, a human scoring rubric and an evaluation UI. The findings are in [`docs/phase2-benchmark.md`](docs/phase2-benchmark.md).
+- **Phase 3:** a 14-scenario portrait/lifestyle dataset (CC0), Qwen2.5-VL-3B vs Qwen3-VL-2B vs SmolVLM2-2.2B, blind side-by-side comparison, rubric v2 with shot diversity, and the model-selection report: [`docs/phase3-model-selection.md`](docs/phase3-model-selection.md).
 
 ## Setup
 
@@ -30,6 +31,10 @@ The first real run downloads weights from Hugging Face into `~/.cache/huggingfac
 | `photo-ai bench --models smolvlm2-500m qwen2.5-vl-3b-4bit [--bench-id …]` | Runs every model × case × strategy, plus sampled runs for consistency. It is resumable: rerun with the same `--bench-id` to continue. |
 | `photo-ai report [--bench …] [--out file.md]` | Side-by-side comparison table, including any manual scores saved so far. |
 | `photo-ai score --run <id> --rater <name> --scores A S T C Q` | Records a rubric score without the UI. |
+| `photo-ai dataset fetch` | Downloads the portrait evaluation images listed in `datasets/portrait_v1/manifest.json` into git-ignored `samples/`. `photo-ai dataset attribution` prints sources and licences. |
+| `photo-ai bench --suite portrait_v1 --strategies decomposed --consistency-samples 0 --models …` | Phase 3 benchmark on the portrait suite. `--json-format keys` describes the expected JSON as a key list instead of a blank shape. |
+| `photo-ai prefer --bench … --case … --rater … --set B --shot B2` | Records a blind side-by-side preference from the command line. `--show` prints this rater's A/B/C order. |
+| `photo-ai convert smolvlm2-2.2b` | Quantizes a registered model into git-ignored `models/<key>-4bit`. |
 | `photo-ai runs` | Lists saved runs. |
 
 The `fake` model returns canned output. Use it to try the UI or pipeline without downloading weights.
@@ -45,7 +50,14 @@ The `fake` model returns canned output. Use it to try the UI or pipeline without
 | `flower-closeup` | close, shallow-focus pansies and a rose → broad park flower bed | local references |
 | `minimal-negative-space` (4 inspiration) | sky, lone boat, gull, distant lighthouse → busy sidewalk with a seal sculpture | local references |
 
-There are no portrait or people inspiration photos in the repo, so none of the cases tests "Xiaohongshu-style" posing. **Add your own cases.** Copy a JSON, point it at your photos and annotate what is visible. Keep personal photos in `samples/` (git-ignored).
+These four Phase 2 cases contain no people.
+
+**Portrait suite (`cases/portrait_v1/`, Phase 3):** 14 scenarios across portrait, street, café, fashion and lifestyle. Each has 3–4 Instagram-style inspiration photos sharing one style, plus a different target place. Examples: café window candids → an empty café counter; silhouettes → under a pier at sunset; low-angle hero shots → a corner building. All 69 images are CC0 Unsplash photos hosted on Wikimedia Commons, fetched through the Commons API. Sources, authors and licences are listed in [`datasets/portrait_v1/SOURCES.md`](datasets/portrait_v1/SOURCES.md). The images themselves are never committed: run `photo-ai dataset fetch`. Portrait cases also annotate:
+
+- `style_keywords`: what a correct aesthetic summary should mention.
+- `target_absent`: things not in the target, such as a person in an empty staircase. Claiming one of these is present counts as a hallucination.
+
+**Add your own cases.** Copy a JSON, point it at your photos and annotate what is visible. Keep personal photos in `samples/` (git-ignored).
 
 ## Diagnostics
 
@@ -93,7 +105,7 @@ The prompt includes good and bad examples, such as "Place the subject in the lef
 
 ## Scoring
 
-**Human rubric (`evaluation.py`, UI Evaluate tab).** Each run's recommendation set gets 1–5 in each category, 25 points total:
+**Human rubric (`evaluation.py`, UI Evaluate tab).** Each run's recommendation set gets 1–5 in each category. Rubric v2 (Phase 3) adds **shot diversity**, for 30 points total. Reports also show "core /25" (the first five categories), so Phase 2 scores stay comparable. Raters can also flag a **hallucination**:
 
 | category | question |
 |---|---|
@@ -102,6 +114,9 @@ The prompt includes good and bad examples, such as "Place the subject in the lef
 | Aesthetic transfer | Does it apply the inspiration's principles without copying the original backgrounds? |
 | Actionability | Concrete camera height, angle, distance, framing and subject position? |
 | Composition quality | Are the shots coherent and right for the aesthetic? |
+| Shot diversity (v2) | Are the three shots genuinely different ideas, not one repeated? |
+
+**Blind side-by-side (UI Compare tab, `comparison.py`).** For one benchmark case, every model's recommendations appear as Set A/B/C/D. The order is shuffled per rater and case but stable on reload. You pick the set you'd use and the single shot you'd actually take. Model names are revealed only after saving. Choices are stored in `runs/benchmarks/<bench>/preferences.jsonl`, and the latest choice per rater and case counts.
 
 Scoring is blind by default: the model and strategy stay hidden until you save. Scores are stored in `runs/<run>/scores.json` and `runs/scores.jsonl`, with rater name and time. Saving again as the same rater replaces your earlier score. No model ever scores its own output.
 
@@ -111,7 +126,11 @@ Scoring is blind by default: the model and strategy stay hidden until you save. 
 - target object recall
 - leaked inspiration objects
 - specificity: which of {height, angle, distance, frame position, movement, lens} each composition states concretely
-- count of generic phrases
+- count of generic phrases and of phrases copied from the prompt's own examples
+- style recall: expected style keywords that appear in the aesthetic
+- invented objects in the target (from `target_absent`, ignoring negated sentences)
+- whether the visible-evidence items name real target objects
+- shot diversity: how many of position, height, angle, subject position and framing differ across the three shots
 - text similarity across sampled runs, for consistency
 
 ## What gets saved
@@ -125,7 +144,9 @@ runs/                                   (git-ignored)
     run.json                            config, prompt/schema version, timings, result, errors, auto_metrics
     scores.json                         human rubric scores for this run
   diagnostics/<time>_<model>_<case>/diagnostics.json
-  benchmarks/<bench_id>/manifest.json
+  benchmarks/<bench_id>/manifest.json, preferences.jsonl
+samples/portrait_v1/…                   downloaded evaluation images (git-ignored)
+models/<key>-4bit/                      local quantized models (git-ignored)
 ```
 
 ## Layout and adding models
@@ -141,6 +162,8 @@ src/photo_ai/
   diagnostics.py       plumbing + perception probes
   benchmark.py         model x case x strategy runner, report
   evaluation.py        rubric + score storage
+  comparison.py        blind side-by-side preferences
+  dataset.py           manifest-driven image download + attribution
   images.py storage.py render.py cli.py app.py
 ```
 

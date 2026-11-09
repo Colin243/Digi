@@ -4,8 +4,14 @@ runs/<run_id>/scores.json   list of score entries for that run (append-only)
 runs/scores.jsonl           one line per entry across all runs (for reports)
 
 Each entry scores the run's whole recommendation set (aesthetic + target reading
-+ 3 compositions) from 1-5 in five categories, 25 points total. A model's own
-opinion of its output is never recorded here.
++ 3 compositions) from 1-5 per category. A model's own opinion of its output is never
+recorded here.
+
+Rubric v1 (Phase 2): five categories, 25 points.
+Rubric v2 (Phase 3): the same five plus shot_diversity, 30 points. Reports show the
+five-category "core /25" for every entry so v1 and v2 scores stay comparable, and
+diversity separately. An entry may also flag `hallucination` (the rater saw something
+claimed in the output that is not in the photos).
 """
 
 from __future__ import annotations
@@ -25,12 +31,22 @@ RUBRIC = [
      "Concrete camera height, angle, distance, framing and subject position you could follow on the spot?"),
     ("composition_quality", "Composition quality",
      "Are the suggested shots visually coherent and right for the requested aesthetic?"),
+    ("shot_diversity", "Shot diversity",
+     "Are the three shots genuinely different (position, height, angle, framing), not one idea repeated?"),
 ]
+RUBRIC_VERSION = 2
 CATEGORY_KEYS = [k for k, _, _ in RUBRIC]
+CORE_KEYS = CATEGORY_KEYS[:5]  # rubric v1 categories
 MAX_TOTAL = 5 * len(RUBRIC)
+MAX_CORE = 5 * len(CORE_KEYS)
 
 
-def make_entry(run_id: str, scores: dict[str, int], rater: str, notes: str = "", blind: bool = True) -> dict:
+def core_total(entry: dict) -> int:
+    return sum(entry["scores"][k] for k in CORE_KEYS)
+
+
+def make_entry(run_id: str, scores: dict[str, int], rater: str, notes: str = "", blind: bool = True,
+               hallucination: bool | None = None) -> dict:
     missing = [k for k in CATEGORY_KEYS if k not in scores]
     if missing:
         raise ValueError(f"missing categories: {missing}")
@@ -48,6 +64,9 @@ def make_entry(run_id: str, scores: dict[str, int], rater: str, notes: str = "",
         "scores": {k: scores[k] for k in CATEGORY_KEYS},
         "total": sum(scores[k] for k in CATEGORY_KEYS),
         "max_total": MAX_TOTAL,
+        "core_total": sum(scores[k] for k in CORE_KEYS),
+        "rubric_version": RUBRIC_VERSION,
+        "hallucination": hallucination,
         "notes": notes.strip(),
     }
 

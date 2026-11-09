@@ -12,12 +12,16 @@ History
      specificity rules with good/bad examples; new "decomposed" strategy prompts.
      Benchmark bench-phase2 ran on v3.
   v4 (2026-11-09.4) adds "do not reuse the example sentences" after SmolVLM2 copied them
-     verbatim into titles. Not yet benchmarked.
+     verbatim into titles. Benchmark bench-phase3 (portrait suite) ran on v4.
+  json_format="keys" (variant of v4, same wording): the answer format is described as
+     "a JSON object with keys: ..." instead of a blank JSON shape to fill in. Added after
+     SmolVLM2-2.2B returned the blank shape unchanged; recorded in each run's config.
 """
 
 from __future__ import annotations
 
 import json
+from contextlib import contextmanager
 
 from .backends import IMAGE_MARKER
 
@@ -100,6 +104,40 @@ def _shape(obj) -> str:
     return json.dumps(obj, separators=(", ", ": "), ensure_ascii=False)
 
 
+JSON_FORMATS = ("shape", "keys")
+_format = "shape"
+
+
+@contextmanager
+def json_format(fmt: str):
+    """Temporarily switch how the expected JSON is described ("shape" = blank JSON, "keys" = prose)."""
+    global _format
+    if fmt not in JSON_FORMATS:
+        raise ValueError(f"json_format must be one of {JSON_FORMATS}")
+    old, _format = _format, fmt
+    try:
+        yield
+    finally:
+        _format = old
+
+
+def _describe(obj) -> str:
+    if isinstance(obj, dict):
+        return "an object with keys: " + "; ".join(f'"{k}" ({_describe(v)})' for k, v in obj.items())
+    if isinstance(obj, list):
+        if obj and isinstance(obj[0], dict):
+            return f"a list of exactly {len(obj)} objects, each with keys: " + "; ".join(
+                f'"{k}" ({_describe(v)})' for k, v in obj[0].items())
+        return "a list of strings"
+    return "a string"
+
+
+def _answer(shape) -> str:
+    if _format == "keys":
+        return "Return only a JSON " + _describe(shape).replace("an object", "object", 1) + "."
+    return f"Fill in this JSON:\n{_shape(shape)}"
+
+
 def _labeled_inspiration(n: int) -> str:
     return "".join(f"Inspiration photo {i}: {IMAGE_MARKER}\n" for i in range(1, n + 1))
 
@@ -122,7 +160,7 @@ def single_pass(n_inspiration: int, subject: str = DEFAULT_SUBJECT) -> str:
         "compositions for shooting in the TARGET scene with that aesthetic.\n\n"
         f"{_guide('aesthetic', AESTHETIC_FIELDS)}\n{_guide('target_scene', TARGET_FIELDS)}\n"
         f"{_guide('each of the 3 compositions', COMPOSITION_FIELDS)}\n\n"
-        f"{SPECIFICITY_RULES}\n{_RULES}\nFill in this JSON:\n{_shape(shape)}"
+        f"{SPECIFICITY_RULES}\n{_RULES}\n{_answer(shape)}"
     )
 
 
@@ -132,7 +170,7 @@ def stage1_aesthetic(n_inspiration: int) -> str:
         f"You are a photography director. These {n_inspiration} inspiration photos show the style a "
         "photographer wants to recreate somewhere else. Describe each photo, then the style they share "
         "and the techniques that could transfer to a different location.\n\n"
-        f"{_guide('Fields', AESTHETIC_FIELDS)}\n\n{_RULES}\nFill in this JSON:\n{_shape(_blank(AESTHETIC_FIELDS))}"
+        f"{_guide('Fields', AESTHETIC_FIELDS)}\n\n{_RULES}\n{_answer(_blank(AESTHETIC_FIELDS))}"
     )
 
 
@@ -146,7 +184,7 @@ def stage2_compositions(aesthetic: dict, subject: str = DEFAULT_SUBJECT) -> str:
         f"{_shape(style)}\n\n"
         "Describe the TARGET scene, then give exactly 3 different compositions for shooting in it with that style.\n\n"
         f"{_guide('target_scene', TARGET_FIELDS)}\n{_guide('each of the 3 compositions', COMPOSITION_FIELDS)}\n\n"
-        f"{SPECIFICITY_RULES}\n{_RULES}\nFill in this JSON:\n{_shape(shape)}"
+        f"{SPECIFICITY_RULES}\n{_RULES}\n{_answer(shape)}"
     )
 
 
@@ -164,7 +202,7 @@ def target_scene_only() -> str:
     return (
         TARGET_LABEL + "\n"
         "Describe this scene for a photographer who is standing there now.\n\n"
-        f"{_guide('Fields', TARGET_FIELDS)}\n\n{_RULES}\nFill in this JSON:\n{_shape(_blank(TARGET_FIELDS))}"
+        f"{_guide('Fields', TARGET_FIELDS)}\n\n{_RULES}\n{_answer(_blank(TARGET_FIELDS))}"
     )
 
 
@@ -176,7 +214,7 @@ def aesthetic_from_notes(notes: list[str]) -> str:
         f"{listed}\n\n"
         "Describe the style they share and the techniques that could transfer to a different location. "
         "For per_image, summarize each note in one line, in order.\n\n"
-        f"{_guide('Fields', AESTHETIC_FIELDS)}\n\n{_RULES}\nFill in this JSON:\n{_shape(shape)}"
+        f"{_guide('Fields', AESTHETIC_FIELDS)}\n\n{_RULES}\n{_answer(shape)}"
     )
 
 
@@ -190,7 +228,7 @@ def compositions_from_parts(aesthetic: dict, target: dict, subject: str = DEFAUL
         f"The subject will be {subject}. Give exactly 3 different compositions for shooting in the "
         "TARGET scene with that style.\n\n"
         f"{_guide('each of the 3 compositions', COMPOSITION_FIELDS)}\n\n"
-        f"{SPECIFICITY_RULES}\n{_RULES}\nFill in this JSON:\n{_shape(shape)}"
+        f"{SPECIFICITY_RULES}\n{_RULES}\n{_answer(shape)}"
     )
 
 

@@ -1,0 +1,249 @@
+{
+ "id": "night-street-moody",
+ "suite": "portrait_v1",
+ "category": "street",
+ "description": "Low-key night portraits with bokeh lights -> a café with a pink neon sign at night.",
+ "subject": "a person (the photographer's friend) posing in the scene",
+ "license_note": "CC0 (Unsplash via Wikimedia Commons); see datasets/portrait_v1/SOURCES.md",
+ "inspiration": [
+  {
+   "file": "photography-ai/samples/portrait_v1/night-street-moody/inspiration_1.jpg",
+   "primary": [
+    "woman",
+    "man",
+    "girl",
+    "boy",
+    "person",
+    "people",
+    "couple",
+    "lady",
+    "guy"
+   ],
+   "objects": [
+    [
+     "woman",
+     "man",
+     "girl",
+     "boy",
+     "person",
+     "people",
+     "couple",
+     "lady",
+     "guy"
+    ],
+    [
+     "beanie",
+     "hat"
+    ],
+    [
+     "night",
+     "dark"
+    ],
+    [
+     "bokeh",
+     "lights",
+     "street"
+    ],
+    [
+     "brick",
+     "wall"
+    ]
+   ]
+  },
+  {
+   "file": "photography-ai/samples/portrait_v1/night-street-moody/inspiration_2.jpg",
+   "primary": [
+    "woman",
+    "man",
+    "girl",
+    "boy",
+    "person",
+    "people",
+    "couple",
+    "lady",
+    "guy"
+   ],
+   "objects": [
+    [
+     "woman",
+     "man",
+     "girl",
+     "boy",
+     "person",
+     "people",
+     "couple",
+     "lady",
+     "guy"
+    ],
+    [
+     "phone"
+    ],
+    [
+     "denim",
+     "jacket"
+    ],
+    [
+     "night",
+     "lights",
+     "street"
+    ],
+    [
+     "curly",
+     "hair"
+    ]
+   ]
+  },
+  {
+   "file": "photography-ai/samples/portrait_v1/night-street-moody/inspiration_3.jpg",
+   "primary": [
+    "woman",
+    "man",
+    "girl",
+    "boy",
+    "person",
+    "people",
+    "couple",
+    "lady",
+    "guy"
+   ],
+   "objects": [
+    [
+     "woman",
+     "man",
+     "girl",
+     "boy",
+     "person",
+     "people",
+     "couple",
+     "lady",
+     "guy"
+    ],
+    [
+     "cap",
+     "hat"
+    ],
+    [
+     "dark",
+     "black",
+     "shadow"
+    ]
+   ]
+  },
+  {
+   "file": "photography-ai/samples/portrait_v1/night-street-moody/inspiration_4.jpg",
+   "primary": [
+    "woman",
+    "man",
+    "girl",
+    "boy",
+    "person",
+    "people",
+    "couple",
+    "lady",
+    "guy"
+   ],
+   "objects": [
+    [
+     "woman",
+     "man",
+     "girl",
+     "boy",
+     "person",
+     "people",
+     "couple",
+     "lady",
+     "guy"
+    ],
+    [
+     "sunglasses"
+    ],
+    [
+     "jacket",
+     "denim"
+    ],
+    [
+     "dark",
+     "black",
+     "shadow"
+    ]
+   ]
+  }
+ ],
+ "target": {
+  "file": "photography-ai/samples/portrait_v1/night-street-moody/target.jpg",
+  "primary": [
+   "neon",
+   "sign",
+   "cafe",
+   "café",
+   "crepe",
+   "storefront",
+   "shop",
+   "building"
+  ],
+  "objects": [
+   [
+    "neon"
+   ],
+   [
+    "sign"
+   ],
+   [
+    "window",
+    "windows"
+   ],
+   [
+    "bike",
+    "bicycle"
+   ],
+   [
+    "night",
+    "dark"
+   ],
+   [
+    "building",
+    "brick"
+   ],
+   [
+    "people",
+    "person",
+    "diners",
+    "customers",
+    "staff",
+    "pedestrian"
+   ]
+  ]
+ },
+ "leak_terms": [
+  "beanie",
+  "sunglasses",
+  "scaffolding"
+ ],
+ "style_keywords": [
+  [
+   "night",
+   "dark",
+   "low-key",
+   "low key"
+  ],
+  [
+   "bokeh",
+   "blur",
+   "blurred"
+  ],
+  [
+   "street light",
+   "streetlight",
+   "lights",
+   "artificial light",
+   "neon"
+  ],
+  [
+   "moody",
+   "mysterious",
+   "dramatic"
+  ]
+ ],
+ "target_absent": [],
+ "annotation_note": "2026-11-09: corrected; the target shows staff/diners in the window and a pedestrian, so people are not absent."
+}

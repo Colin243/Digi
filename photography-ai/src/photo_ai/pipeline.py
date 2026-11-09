@@ -44,6 +44,7 @@ class RunConfig:
     seed: int = 0
     json_retries: int = 1  # extra attempts when output is not valid JSON for the schema
     subject: str = prompts.DEFAULT_SUBJECT
+    json_format: str = "shape"  # how the expected JSON is described; see prompts.JSON_FORMATS
 
     def params(self, max_tokens: int | None = None) -> GenerationParams:
         return GenerationParams(max_tokens or self.max_tokens, self.temperature, self.repetition_penalty, self.seed)
@@ -198,7 +199,8 @@ def analyze(
     load_s = backend.load()
 
     t0 = time.perf_counter()
-    result, partial, stages = _STRATEGY_FUNCS[cfg.strategy](backend, run_dir, insp_paths, tgt.saved_as, cfg)
+    with prompts.json_format(cfg.json_format):
+        result, partial, stages = _STRATEGY_FUNCS[cfg.strategy](backend, run_dir, insp_paths, tgt.saved_as, cfg)
     inference_s = time.perf_counter() - t0
 
     errors = [f"{s['name']}: {e}" for s in stages for e in s["attempts"][-1]["errors"]]

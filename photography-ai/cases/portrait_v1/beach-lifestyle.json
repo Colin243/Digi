@@ -1,0 +1,250 @@
+{
+ "id": "beach-lifestyle",
+ "suite": "portrait_v1",
+ "category": "lifestyle",
+ "description": "Bright beach lifestyle shots -> mountain lake with forest and reflection.",
+ "subject": "a person (the photographer's friend) posing in the scene",
+ "license_note": "CC0 (Unsplash via Wikimedia Commons); see datasets/portrait_v1/SOURCES.md",
+ "inspiration": [
+  {
+   "file": "photography-ai/samples/portrait_v1/beach-lifestyle/inspiration_1.jpg",
+   "primary": [
+    "woman",
+    "man",
+    "girl",
+    "boy",
+    "person",
+    "people",
+    "couple",
+    "lady",
+    "guy"
+   ],
+   "objects": [
+    [
+     "woman",
+     "man",
+     "girl",
+     "boy",
+     "person",
+     "people",
+     "couple",
+     "lady",
+     "guy"
+    ],
+    [
+     "beach",
+     "sand",
+     "shore"
+    ],
+    [
+     "waves",
+     "ocean",
+     "sea"
+    ],
+    [
+     "walking",
+     "from behind",
+     "back"
+    ]
+   ]
+  },
+  {
+   "file": "photography-ai/samples/portrait_v1/beach-lifestyle/inspiration_2.jpg",
+   "primary": [
+    "woman",
+    "man",
+    "girl",
+    "boy",
+    "person",
+    "people",
+    "couple",
+    "lady",
+    "guy"
+   ],
+   "objects": [
+    [
+     "woman",
+     "man",
+     "girl",
+     "boy",
+     "person",
+     "people",
+     "couple",
+     "lady",
+     "guy"
+    ],
+    [
+     "bikini",
+     "swimsuit"
+    ],
+    [
+     "sand",
+     "beach"
+    ],
+    [
+     "sunglasses"
+    ],
+    [
+     "sky",
+     "clouds"
+    ]
+   ]
+  },
+  {
+   "file": "photography-ai/samples/portrait_v1/beach-lifestyle/inspiration_3.jpg",
+   "primary": [
+    "woman",
+    "man",
+    "girl",
+    "boy",
+    "person",
+    "people",
+    "couple",
+    "lady",
+    "guy"
+   ],
+   "objects": [
+    [
+     "woman",
+     "man",
+     "girl",
+     "boy",
+     "person",
+     "people",
+     "couple",
+     "lady",
+     "guy"
+    ],
+    [
+     "dress"
+    ],
+    [
+     "rocks",
+     "rock"
+    ],
+    [
+     "sea",
+     "ocean",
+     "waves"
+    ]
+   ]
+  },
+  {
+   "file": "photography-ai/samples/portrait_v1/beach-lifestyle/inspiration_4.jpg",
+   "primary": [
+    "woman",
+    "man",
+    "girl",
+    "boy",
+    "person",
+    "people",
+    "couple",
+    "lady",
+    "guy"
+   ],
+   "objects": [
+    [
+     "woman",
+     "man",
+     "girl",
+     "boy",
+     "person",
+     "people",
+     "couple",
+     "lady",
+     "guy"
+    ],
+    [
+     "bikini",
+     "swimsuit"
+    ],
+    [
+     "water",
+     "turquoise",
+     "shallow"
+    ],
+    [
+     "island"
+    ]
+   ]
+  }
+ ],
+ "target": {
+  "file": "photography-ai/samples/portrait_v1/beach-lifestyle/target.jpg",
+  "primary": [
+   "lake",
+   "mountain",
+   "mountains"
+  ],
+  "objects": [
+   [
+    "lake",
+    "water"
+   ],
+   [
+    "mountain",
+    "mountains",
+    "peak",
+    "peaks"
+   ],
+   [
+    "forest",
+    "trees",
+    "pine"
+   ],
+   [
+    "snow",
+    "snowy"
+   ],
+   [
+    "reflection"
+   ],
+   [
+    "sky",
+    "clouds"
+   ]
+  ]
+ },
+ "leak_terms": [
+  "beach",
+  "bikini",
+  "swimsuit",
+  "sand",
+  "turquoise",
+  "ocean"
+ ],
+ "style_keywords": [
+  [
+   "beach",
+   "sea",
+   "water",
+   "coast"
+  ],
+  [
+   "bright",
+   "airy",
+   "sunny",
+   "daylight"
+  ],
+  [
+   "full body",
+   "full-body"
+  ],
+  [
+   "horizon",
+   "sky"
+  ]
+ ],
+ "target_absent": [
+  "person",
+  "people",
+  "woman",
+  "man",
+  "girl",
+  "boy",
+  "couple",
+  "lady",
+  "guy",
+  "model"
+ ]
+}

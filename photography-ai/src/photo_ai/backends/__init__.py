@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from .base import IMAGE_MARKER, Generation, GenerationParams, ModelSpec, VLMBackend
 
 MODELS: dict[str, ModelSpec] = {
@@ -25,10 +27,13 @@ MODELS: dict[str, ModelSpec] = {
             "mlx",
             "Comparison target. 8-bit, ~4.1 GB download.",
         ),
-        # Registered for future benchmarks; repos exist on Hugging Face but have NOT been run here yet.
-        ModelSpec("smolvlm2-2.2b", "mlx-community/SmolVLM2-2.2B-Instruct-mlx", "mlx", "Candidate, not yet benchmarked."),
-        ModelSpec("qwen3-vl-2b-4bit", "mlx-community/Qwen3-VL-2B-Instruct-4bit", "mlx", "Candidate, not yet benchmarked."),
-        ModelSpec("qwen3-vl-4b-4bit", "mlx-community/Qwen3-VL-4B-Instruct-4bit", "mlx", "Candidate, not yet benchmarked."),
+        ModelSpec("qwen3-vl-2b-4bit", "mlx-community/Qwen3-VL-2B-Instruct-4bit", "mlx", "Phase 3 candidate. ~1.8 GB download."),
+        ModelSpec("smolvlm2-2.2b", "mlx-community/SmolVLM2-2.2B-Instruct-mlx", "mlx",
+                  "Phase 3 candidate, bf16 (only official MLX build). ~4.5 GB download."),
+        ModelSpec("smolvlm2-2.2b-4bit", str(Path(__file__).resolve().parents[3] / "models" / "smolvlm2-2.2b-4bit"), "mlx",
+                  "Local 4-bit conversion of smolvlm2-2.2b: `photo-ai convert smolvlm2-2.2b` (git-ignored models/)."),
+        # Registered, not benchmarked yet.
+        ModelSpec("qwen3-vl-4b-4bit", "mlx-community/Qwen3-VL-4B-Instruct-4bit", "mlx", "Not yet benchmarked."),
         ModelSpec("fake", "fake", "fake", "Canned output for UI/pipeline testing; no model."),
     ]
 }

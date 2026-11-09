@@ -111,6 +111,37 @@ def pairwise_similarity(texts: list[str]) -> float | None:
     return round(sum(jaccard(a, b) for a, b in pairs) / len(pairs), 3)
 
 
+_NEGATION = re.compile(r"\b(no|not|without|empty|absent|nobody|none|free of|devoid)\b")
+
+
+def present_mentions(text: str, terms: list[str]) -> list[str]:
+    """Terms mentioned as present: sentences that negate ("no people", "empty of people") are skipped."""
+    found = []
+    for sentence in re.split(r"(?<=[.;!?\n])\s*", text):
+        if not sentence.strip() or _NEGATION.search(sentence.lower()):
+            continue
+        found += [t for t in mentions(sentence, terms) if t not in found]
+    return found
+
+
+DIVERSITY_FIELDS = ("camera_position", "camera_height", "camera_angle", "subject_position", "distance_and_framing")
+
+
+def diversity(comps: list[dict]) -> dict:
+    """How different the three shots are. 0 = identical on every field, 1 = all different."""
+    if len(comps) < 2:
+        return {"field_distinct": None, "text_dissimilarity": None}
+    per_field = {}
+    for f in DIVERSITY_FIELDS:
+        vals = [_normalize(str(c.get(f, ""))) for c in comps]
+        per_field[f] = (len(set(vals)) - 1) / (len(vals) - 1)
+    return {
+        "field_distinct": round(sum(per_field.values()) / len(per_field), 3),
+        "per_field": per_field,
+        "text_dissimilarity": round(1 - (pairwise_similarity([composition_text(c) for c in comps]) or 0), 3),
+    }
+
+
 def evaluate_result(result: dict | None, case: Case | None) -> dict:
     """Auto metrics for one run's parsed result. Works with partial results."""
     if not result:
@@ -124,6 +155,7 @@ def evaluate_result(result: dict | None, case: Case | None) -> dict:
         out["copied_prompt_examples"] = sum(s["copied_prompt_examples"] for s in specs)
         out["per_composition"] = specs
         out["distinct_compositions"] = round(1 - (pairwise_similarity([composition_text(c) for c in comps]) or 0), 3)
+        out["diversity"] = diversity(comps)
     if case is None:
         return out
     target_text = composition_text(result.get("target_scene") or {})
@@ -133,6 +165,19 @@ def evaluate_result(result: dict | None, case: Case | None) -> dict:
     out["leaks_in_target"] = leaks(target_text, case)
     out["leaks_in_compositions"] = leaks(comps_text, case)
     aes = result.get("aesthetic") or {}
+    if case.style_keywords and aes:
+        aes_text = composition_text(aes)
+        hits = [g for g in case.style_keywords if mentions(aes_text, g)]
+        out["style_recall"] = round(len(hits) / len(case.style_keywords), 3)
+    if case.target_absent:
+        ts = result.get("target_scene") or {}
+        claimed = composition_text({"d": ts.get("description", ""), "k": ts.get("key_elements", [])})
+        claimed += "\n" + "\n".join(str(e) for c in comps for e in c.get("visible_evidence", []))
+        out["hallucinated_in_target"] = present_mentions(claimed, case.target_absent)
+    evidence = [str(e) for c in comps for e in c.get("visible_evidence", [])]
+    if evidence:
+        target_terms = [t for g in case.target.objects for t in g] + case.target.primary
+        out["evidence_grounded_rate"] = round(sum(bool(mentions(e, target_terms)) for e in evidence) / len(evidence), 3)
     per_image = aes.get("per_image") or []
     if per_image:
         out["inspiration_primary_hits"] = [
