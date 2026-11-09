@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .base import Generation, GenerationParams, ModelSpec, VLMBackend
+from .base import IMAGE_MARKER, Generation, GenerationParams, ModelSpec, VLMBackend
 
 MODELS: dict[str, ModelSpec] = {
     spec.key: spec
@@ -25,6 +25,10 @@ MODELS: dict[str, ModelSpec] = {
             "mlx",
             "Comparison target. 8-bit, ~4.1 GB download.",
         ),
+        # Registered for future benchmarks; repos exist on Hugging Face but have NOT been run here yet.
+        ModelSpec("smolvlm2-2.2b", "mlx-community/SmolVLM2-2.2B-Instruct-mlx", "mlx", "Candidate, not yet benchmarked."),
+        ModelSpec("qwen3-vl-2b-4bit", "mlx-community/Qwen3-VL-2B-Instruct-4bit", "mlx", "Candidate, not yet benchmarked."),
+        ModelSpec("qwen3-vl-4b-4bit", "mlx-community/Qwen3-VL-4B-Instruct-4bit", "mlx", "Candidate, not yet benchmarked."),
         ModelSpec("fake", "fake", "fake", "Canned output for UI/pipeline testing; no model."),
     ]
 }
@@ -55,6 +59,7 @@ def make_backend(name: str) -> VLMBackend:
 
 __all__ = [
     "DEFAULT_MODEL",
+    "IMAGE_MARKER",
     "MODELS",
     "Generation",
     "GenerationParams",

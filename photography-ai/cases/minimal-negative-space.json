@@ -1,0 +1,19 @@
+{
+  "id": "minimal-negative-space",
+  "description": "Minimal shoreline shots with a small subject and large empty sky/sand -> a busy downtown sidewalk with a seal sculpture. Uses 4 inspiration images.",
+  "subject": "a person (the photographer's friend) posing in the scene",
+  "license_note": "Local reference images (9to5mac); copyrighted, inspection only, not in git.",
+  "inspiration": [
+    {"file": "output/iphone17-portrait-references/IMG_6853-2.jpeg", "primary": ["sky", "cloud", "water", "lake", "sea", "ocean"],
+     "objects": [["sky", "cloud", "contrail"], ["water", "lake", "sea", "ocean"], ["horizon"]]},
+    {"file": "output/iphone17-portrait-references/IMG_6856-2.jpeg", "primary": ["boat", "pontoon", "ship", "vessel"],
+     "objects": [["boat", "pontoon", "ship", "vessel"], ["water", "lake", "sea", "ocean"], ["horizon", "sky"]]},
+    {"file": "output/iphone17-portrait-references/IMG_6868_023101.jpeg", "primary": ["gull", "seagull", "bird"],
+     "objects": [["gull", "seagull", "bird"], ["sand", "beach"], ["footprint", "footprints"]]},
+    {"file": "output/iphone17-portrait-references/IMG_6909.jpeg", "primary": ["lighthouse", "pier"],
+     "objects": [["lighthouse", "pier"], ["water", "lake", "sea", "ocean"], ["beach", "sand", "shore"], ["sky"]]}
+  ],
+  "target": {"file": "output/iphone17-portrait-references/IMG_6974.jpeg", "primary": ["seal", "sculpture", "statue"],
+    "objects": [["seal", "sculpture", "statue"], ["sidewalk", "pavement", "street", "walkway"], ["table", "chair", "cafe", "patio"], ["planter", "plant", "pot"], ["building"], ["tree"], ["shadow", "shade"]]},
+  "leak_terms": ["boat", "gull", "seagull", "lighthouse", "pier", "sand", "beach", "ocean", "lake"]
+}

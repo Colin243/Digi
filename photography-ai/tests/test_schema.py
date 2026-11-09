@@ -1,6 +1,6 @@
 from photo_ai import schema
 
-COMP = {"title": "t", "steps": "a; b"}
+COMP = {"title": "t", "steps": "a; b", "camera_position": "p", "camera_height": "waist", "camera_angle": "up", "subject_position": "left third"}
 
 
 def test_string_lists_are_wrapped_and_compositions_trimmed():
@@ -39,3 +39,14 @@ def test_template_echo_rejected():
     echoed = {"summary": AESTHETIC_FIELDS["summary"], "mood": "calm"}
     out, errs = schema.validate(schema.Aesthetic, echoed, ALL_FIELD_DESCRIPTIONS)
     assert out is None and errs == ["summary: copied the prompt's field description"]
+
+
+def test_composition_requires_actionable_fields():
+    out, errs = schema.validate(schema.Composition, {"title": "Wide shot"})
+    assert out is None
+    assert {e.split(":")[0] for e in errs} >= {"camera_position", "camera_height", "camera_angle", "subject_position"}
+
+
+def test_list_given_for_prose_field_is_joined():
+    out, errs = schema.validate(schema.TargetScene, {"description": ["a bench", "brick paving"]})
+    assert not errs and out["description"] == "a bench; brick paving"

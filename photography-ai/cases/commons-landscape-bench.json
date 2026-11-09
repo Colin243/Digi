@@ -1,0 +1,17 @@
+{
+  "id": "commons-landscape-bench",
+  "description": "Freely licensed Wikimedia Commons set (same images as the Phase 1 baseline). Wide natural landscapes -> an urban park bench.",
+  "subject": "a person (the photographer's friend) posing in the scene",
+  "license_note": "CC0 / CC BY-SA / public domain; see research/g12/collection/commons-manifest.json",
+  "inspiration": [
+    {"file": "research/g12/collection/files/commons-32659883.jpg", "primary": ["canyon", "cliff", "plateau", "mesa", "mountain", "rock"],
+     "objects": [["canyon", "cliff", "plateau", "mesa", "rock"], ["valley"], ["sky"], ["vegetation", "bush", "shrub", "tree", "plant"]]},
+    {"file": "research/g12/collection/files/commons-29702554.jpg", "primary": ["painting", "landscape", "hills", "valley"],
+     "objects": [["painting", "painted"], ["hill", "mountain"], ["tree", "blossom"], ["path", "road", "track"], ["house", "farmhouse", "building"]]},
+    {"file": "research/g12/collection/files/commons-63191988.jpg", "primary": ["boat", "canoe"],
+     "objects": [["boat", "canoe"], ["man", "person", "fisherman"], ["paddle", "oar"], ["water", "lake"], ["tree", "forest", "shore"]]}
+  ],
+  "target": {"file": "research/g12/collection/files/commons-29828949.jpg", "primary": ["bench"],
+    "objects": [["bench"], ["brick", "paving", "pavement", "tile", "paved"], ["bin", "trash", "garbage", "waste"], ["grass", "lawn"], ["wall"], ["car", "vehicle"]]},
+  "leak_terms": ["boat", "canoe", "paddle", "canyon", "cliff", "mesa", "painting", "lake", "fisherman"]
+}

@@ -54,6 +54,9 @@ def save_run(run_dir: Path, record: dict, runs_dir: Path) -> Path:
         "inference_s": record["timing"]["inference_s"],
         "peak_memory_gb": record["timing"]["peak_memory_gb"],
         "label": record.get("label"),
+        "case": record.get("case"),
+        "temperature": record["config"].get("temperature"),
+        "seed": record["config"].get("seed"),
     }
     with open(runs_dir / "index.jsonl", "a", encoding="utf-8") as f:
         f.write(json.dumps(summary) + "\n")

@@ -1,5 +1,11 @@
 """MLX-VLM backend (Apple silicon). Works for any model family mlx-vlm supports,
-including SmolVLM2 and Qwen2.5-VL, so comparing models is just a different repo id."""
+including SmolVLM2 and Qwen2.5-VL, so comparing models is just a different repo id.
+
+Prompts are formatted with the model's own Hugging Face chat template
+(processor.apply_chat_template). Diagnostics showed this matches mlx-vlm's helper
+for images-first prompts, while mlx-vlm 0.7.12's helper mangles interleaved
+text/image content (it emits empty user turns), so we never use it for those.
+"""
 
 from __future__ import annotations
 
@@ -7,7 +13,10 @@ import gc
 import time
 from importlib import metadata
 
-from .base import Generation, GenerationParams, ModelSpec
+from .base import IMAGE_MARKER, Generation, GenerationParams, ModelSpec
+
+# Tokens that open one image block, used to count images that reached the model.
+_IMAGE_START_TOKENS = ("<global-img>", "<|vision_start|>")
 
 
 def _version(pkg: str) -> str | None:
@@ -15,6 +24,23 @@ def _version(pkg: str) -> str | None:
         return metadata.version(pkg)
     except metadata.PackageNotFoundError:
         return None
+
+
+def build_messages(prompt: str, n_images: int) -> list[dict]:
+    """User message content: images at marker positions, or all images first."""
+    if IMAGE_MARKER in prompt:
+        pieces = prompt.split(IMAGE_MARKER)
+        if len(pieces) - 1 != n_images:
+            raise ValueError(f"prompt has {len(pieces) - 1} image markers but {n_images} images")
+        content: list[dict] = []
+        for i, text in enumerate(pieces):
+            if text.strip():
+                content.append({"type": "text", "text": text})
+            if i < n_images:
+                content.append({"type": "image"})
+    else:
+        content = [{"type": "image"}] * n_images + [{"type": "text", "text": prompt}]
+    return [{"role": "user", "content": content}]
 
 
 class MLXVLMBackend:
@@ -38,16 +64,23 @@ class MLXVLMBackend:
         self.load_seconds = time.perf_counter() - t0
         return self.load_seconds
 
+    def format_prompt(self, prompt: str, n_images: int) -> str:
+        self.load()
+        msgs = build_messages(prompt, n_images)
+        if getattr(self._processor, "chat_template", None):
+            return self._processor.apply_chat_template(msgs, add_generation_prompt=True, tokenize=False)
+        from mlx_vlm.prompt_utils import apply_chat_template  # fallback for template-less processors
+
+        if IMAGE_MARKER in prompt:
+            raise ValueError("interleaved images need a processor chat template")
+        return apply_chat_template(self._processor, self._model.config, prompt, num_images=n_images)
+
     def generate(self, prompt: str, images: list[str], params: GenerationParams) -> Generation:
         import mlx.core as mx
         from mlx_vlm import generate
-        from mlx_vlm.prompt_utils import apply_chat_template
 
-        self.load()
+        formatted = self.format_prompt(prompt, len(images))
         mx.random.seed(params.seed)
-        formatted = apply_chat_template(
-            self._processor, self._model.config, prompt, num_images=len(images)
-        )
         kwargs = {"max_tokens": params.max_tokens, "temperature": params.temperature}
         if params.repetition_penalty:
             kwargs["repetition_penalty"] = params.repetition_penalty
@@ -69,6 +102,35 @@ class MLXVLMBackend:
             peak_memory_gb=result.peak_memory,
             finish_reason=getattr(result, "finish_reason", None),
         )
+
+    def inspect_inputs(self, prompt: str, images: list[str]) -> dict:
+        import numpy as np
+        from mlx_vlm.utils import prepare_inputs
+
+        formatted = self.format_prompt(prompt, len(images))
+        cfg = self._model.config
+        itok = getattr(cfg, "image_token_id", None) or getattr(cfg, "image_token_index", None)
+        inputs = prepare_inputs(self._processor, images=images, prompts=formatted, image_token_index=itok)
+        ids = np.array(inputs["input_ids"]).ravel()
+        tok = getattr(self._processor, "tokenizer", self._processor)
+        starts = {}
+        for t in _IMAGE_START_TOKENS:
+            tid = tok.convert_tokens_to_ids(t)
+            if isinstance(tid, int) and tid != getattr(tok, "unk_token_id", None):
+                starts[t] = int((ids == tid).sum())
+        pv = inputs.get("pixel_values")
+        ip = getattr(self._processor, "image_processor", None)
+        size = getattr(ip, "size", None)
+        return {
+            "formatted_prompt": formatted,
+            "n_images_given": len(images),
+            "image_start_tokens": starts,
+            "images_seen": sum(starts.values()) if starts else None,
+            "input_tokens": int(ids.size),
+            "image_tokens": int((ids == itok).sum()) if itok is not None else None,
+            "pixel_values_shape": list(getattr(pv, "shape", []) or []),
+            "image_processor_size": dict(size) if hasattr(size, "keys") else str(size),
+        }
 
     def unload(self) -> None:
         self._model = self._processor = None

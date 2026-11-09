@@ -1,0 +1,17 @@
+{
+  "id": "flower-closeup",
+  "description": "Low, close, shallow-depth-of-field single-flower shots -> a broad park flower bed beside a sidewalk.",
+  "subject": "the flowers in the scene (no person)",
+  "license_note": "Local reference images (dkamera.de, 9to5mac); copyrighted, inspection only, not in git.",
+  "inspiration": [
+    {"file": "research/g12/collection/files/dkamera-02.jpg", "primary": ["pansy", "pansies", "viola", "flower"],
+     "objects": [["pansy", "pansies", "viola", "flower"], ["yellow"], ["leaves", "leaf", "foliage"], ["flower bed", "flowerbed", "garden", "soil"]]},
+    {"file": "research/g12/collection/files/dkamera-07.jpg", "primary": ["pansy", "pansies", "viola", "flower"],
+     "objects": [["pansy", "pansies", "viola", "flower"], ["purple", "violet", "white"], ["leaves", "leaf", "foliage"], ["soil", "dirt", "ground"]]},
+    {"file": "research/g12/collection/files/dkamera-09.jpg", "primary": ["rose", "flower"],
+     "objects": [["rose", "flower"], ["white", "cream", "pale yellow", "yellow"], ["leaves", "leaf", "foliage"], ["dark", "black", "night"]]}
+  ],
+  "target": {"file": "output/iphone17-portrait-references/IMG_6962.jpeg", "primary": ["flower bed", "flowerbed", "flowers", "garden"],
+    "objects": [["flower bed", "flowerbed", "flowers", "garden"], ["red", "orange"], ["path", "sidewalk", "walkway", "pavement", "footpath"], ["tree"], ["park"], ["lamp", "pole", "street light", "lamppost"]]},
+  "leak_terms": ["pansy", "pansies", "rose", "viola", "purple", "violet"]
+}

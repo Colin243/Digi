@@ -5,6 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Protocol
 
+# Put this marker in a prompt where each image should go (one per image, in order).
+# Without markers, images are placed before the text (the models' default layout).
+IMAGE_MARKER = "<<image>>"
+
 
 @dataclass(frozen=True)
 class ModelSpec:
@@ -48,5 +52,8 @@ class VLMBackend(Protocol):
     def generate(self, prompt: str, images: list[str], params: GenerationParams) -> Generation: ...
 
     def unload(self) -> None: ...
+
+    def inspect_inputs(self, prompt: str, images: list[str]) -> dict:
+        """Tokenize without generating; report how images reached the model."""
 
     def runtime_info(self) -> dict: ...

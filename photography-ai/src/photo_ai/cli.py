@@ -55,6 +55,36 @@ def main(argv: list[str] | None = None) -> int:
     ui.add_argument("--port", type=int, default=7860)
     ui.add_argument("--runs-dir", type=Path, default=DEFAULT_RUNS_DIR)
 
+    dg = sub.add_parser("diagnose", help="check image plumbing and perception on benchmark cases")
+    dg.add_argument("--model", default=DEFAULT_MODEL)
+    dg.add_argument("--case", nargs="*", help="case ids or json paths (default: all in cases/)")
+    dg.add_argument("--max-side", type=int, default=1024)
+    dg.add_argument("--runs-dir", type=Path, default=DEFAULT_RUNS_DIR)
+
+    bn = sub.add_parser("bench", help="run models x cases x strategies (resumable)")
+    bn.add_argument("--models", nargs="+", default=[DEFAULT_MODEL])
+    bn.add_argument("--case", nargs="*", help="case ids or json paths (default: all in cases/)")
+    bn.add_argument("--strategies", nargs="+", choices=STRATEGIES, default=list(STRATEGIES))
+    bn.add_argument("--consistency-strategy", choices=STRATEGIES, default="two_stage")
+    bn.add_argument("--consistency-samples", type=int, default=3)
+    bn.add_argument("--consistency-temperature", type=float, default=0.7)
+    bn.add_argument("--bench-id", help="reuse an id to resume or extend a benchmark")
+    bn.add_argument("--runs-dir", type=Path, default=DEFAULT_RUNS_DIR)
+
+    rp = sub.add_parser("report", help="side-by-side comparison for a benchmark")
+    rp.add_argument("--bench", help="benchmark id (default: latest)")
+    rp.add_argument("--runs-dir", type=Path, default=DEFAULT_RUNS_DIR)
+    rp.add_argument("--out", type=Path, help="also write the markdown here")
+
+    sc = sub.add_parser("score", help="record a rubric score from the command line")
+    sc.add_argument("--run", required=True, help="run id")
+    sc.add_argument("--rater", required=True)
+    sc.add_argument("--scores", type=int, nargs=5, required=True, metavar="1-5",
+                    help="aesthetic_understanding scene_awareness aesthetic_transfer actionability composition_quality")
+    sc.add_argument("--notes", default="")
+    sc.add_argument("--not-blind", action="store_true", help="rater knew which model produced the run")
+    sc.add_argument("--runs-dir", type=Path, default=DEFAULT_RUNS_DIR)
+
     rn = sub.add_parser("runs", help="summarize saved runs")
     rn.add_argument("--runs-dir", type=Path, default=DEFAULT_RUNS_DIR)
     rn.add_argument("--last", type=int, default=20)
@@ -88,6 +118,62 @@ def main(argv: list[str] | None = None) -> int:
         from .app import launch
 
         launch(a.host, a.port, a.runs_dir)
+        return 0
+
+    if a.cmd == "diagnose":
+        from .cases import all_cases, load_case
+        from .diagnostics import run_diagnostics, summary_table
+
+        cases = [load_case(c) for c in a.case] if a.case else all_cases()
+        backend = make_backend(a.model)
+        records = []
+        for case in cases:
+            if case.missing_files():
+                print(f"skip {case.id}: missing {case.missing_files()}", file=sys.stderr)
+                continue
+            rec = run_diagnostics(backend, case, a.max_side, a.runs_dir)
+            print(f"saved {rec['dir']}/diagnostics.json")
+            records.append(rec)
+        if records:
+            print(summary_table(records))
+        return 0
+
+    if a.cmd == "bench":
+        from .benchmark import run_benchmark
+        from .cases import all_cases, load_case
+
+        cases = [load_case(c) for c in a.case] if a.case else all_cases()
+        for c in [c for c in cases if c.missing_files()]:
+            print(f"skip {c.id}: missing {c.missing_files()}", file=sys.stderr)
+        cases = [c for c in cases if not c.missing_files()]
+        m = run_benchmark(a.models, cases, a.strategies, a.consistency_strategy, a.consistency_samples,
+                          a.consistency_temperature, a.runs_dir, a.bench_id)
+        print(f"benchmark {m['bench_id']}: {len(m['runs'])} runs. Next: photo-ai report --bench {m['bench_id']}")
+        return 0
+
+    if a.cmd == "report":
+        from .benchmark import latest_bench_id, load_manifest, report_markdown, summarize
+
+        bid = a.bench or latest_bench_id(a.runs_dir)
+        if not bid:
+            print("no benchmarks found", file=sys.stderr)
+            return 1
+        md = report_markdown(summarize(load_manifest(a.runs_dir, bid), a.runs_dir))
+        print(md)
+        if a.out:
+            a.out.write_text(md + "\n")
+        return 0
+
+    if a.cmd == "score":
+        from .evaluation import CATEGORY_KEYS, make_entry, save_score
+
+        try:
+            entry = make_entry(a.run, dict(zip(CATEGORY_KEYS, a.scores)), a.rater, a.notes, not a.not_blind)
+            path = save_score(a.runs_dir, entry)
+        except (ValueError, FileNotFoundError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        print(f"saved {entry['total']}/{entry['max_total']} -> {path}")
         return 0
 
     if a.cmd == "runs":
