@@ -8,6 +8,7 @@ It runs fully on-device with [MLX-VLM](https://github.com/Blaizzy/mlx-vlm) on Ap
 - **Phase 2:** diagnostics, a benchmark across models and strategies, a human scoring rubric and an evaluation UI. The findings are in [`docs/phase2-benchmark.md`](docs/phase2-benchmark.md).
 - **Phase 3:** a 14-scenario portrait/lifestyle dataset (CC0), Qwen2.5-VL-3B vs Qwen3-VL-2B vs SmolVLM2-2.2B, blind side-by-side comparison, rubric v2 with shot diversity, and the model-selection report: [`docs/phase3-model-selection.md`](docs/phase3-model-selection.md).
 - **Phase 4 (in progress):** licensed training-data pipeline, AI-drafted labels that only become training data after human approval (the **Label** tab), and LoRA training for Qwen3-VL-2B on MLX with a verified smoke test. How it works, what LoRA changes, and current status: [`docs/phase4-finetuning.md`](docs/phase4-finetuning.md). Labelling standard: [`docs/annotation-guide.md`](docs/annotation-guide.md).
+- **Offline iPhone benchmark (issue #7, in progress):** a standalone on-device harness in [`ios-bench/`](ios-bench/README.md) that runs Qwen3-VL-2B with mlx-swift-lm and measures latency, memory, thermals and camera recovery. The method, budgets and go/no-go criteria are in [`docs/iphone-benchmark.md`](docs/iphone-benchmark.md).
 
 ## Setup
 

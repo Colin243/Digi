@@ -1,0 +1,355 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		1B0000000000000000000101 /* Model in Resources */ = {isa = PBXBuildFile; fileRef = 1B0000000000000000000201 /* Model */; };
+		1B0000000000000000000102 /* BenchImages in Resources */ = {isa = PBXBuildFile; fileRef = 1B0000000000000000000202 /* BenchImages */; };
+		1B0000000000000000000103 /* prompts.json in Resources */ = {isa = PBXBuildFile; fileRef = 1B0000000000000000000203 /* prompts.json */; };
+		1B0000000000000000000104 /* Package.resolved in Resources */ = {isa = PBXBuildFile; fileRef = 1B0000000000000000000204 /* Package.resolved */; };
+		1B0000000000000000000111 /* MLXVLM in Frameworks */ = {isa = PBXBuildFile; productRef = 1B0000000000000000000601 /* MLXVLM */; };
+		1B0000000000000000000112 /* MLXLMCommon in Frameworks */ = {isa = PBXBuildFile; productRef = 1B0000000000000000000602 /* MLXLMCommon */; };
+		1B0000000000000000000113 /* MLX in Frameworks */ = {isa = PBXBuildFile; productRef = 1B0000000000000000000603 /* MLX */; };
+		1B0000000000000000000114 /* Tokenizers in Frameworks */ = {isa = PBXBuildFile; productRef = 1B0000000000000000000604 /* Tokenizers */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		1B0000000000000000000200 /* IOSBench.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = IOSBench.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		1B0000000000000000000201 /* Model */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Model; path = Resources/Model; sourceTree = "<group>"; };
+		1B0000000000000000000202 /* BenchImages */ = {isa = PBXFileReference; lastKnownFileType = folder; name = BenchImages; path = Resources/BenchImages; sourceTree = "<group>"; };
+		1B0000000000000000000203 /* prompts.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = prompts.json; path = Resources/prompts.json; sourceTree = "<group>"; };
+		1B0000000000000000000204 /* Package.resolved */ = {isa = PBXFileReference; lastKnownFileType = text; name = Package.resolved; path = IOSBench.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved; sourceTree = "<group>"; };
+		1B0000000000000000000205 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; name = Info.plist; path = Config/Info.plist; sourceTree = "<group>"; };
+		1B0000000000000000000206 /* IOSBench.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; name = IOSBench.entitlements; path = Config/IOSBench.entitlements; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		1B0000000000000000000300 /* IOSBench */ = {isa = PBXFileSystemSynchronizedRootGroup; path = IOSBench; sourceTree = "<group>"; };
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		1B0000000000000000000401 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1B0000000000000000000111 /* MLXVLM in Frameworks */,
+				1B0000000000000000000112 /* MLXLMCommon in Frameworks */,
+				1B0000000000000000000113 /* MLX in Frameworks */,
+				1B0000000000000000000114 /* Tokenizers in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		1B0000000000000000000500 = {
+			isa = PBXGroup;
+			children = (
+				1B0000000000000000000300 /* IOSBench */,
+				1B0000000000000000000501 /* Resources */,
+				1B0000000000000000000502 /* Config */,
+				1B0000000000000000000503 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		1B0000000000000000000501 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				1B0000000000000000000201 /* Model */,
+				1B0000000000000000000202 /* BenchImages */,
+				1B0000000000000000000203 /* prompts.json */,
+				1B0000000000000000000204 /* Package.resolved */,
+			);
+			name = Resources;
+			sourceTree = "<group>";
+		};
+		1B0000000000000000000502 /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				1B0000000000000000000205 /* Info.plist */,
+				1B0000000000000000000206 /* IOSBench.entitlements */,
+			);
+			name = Config;
+			sourceTree = "<group>";
+		};
+		1B0000000000000000000503 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				1B0000000000000000000200 /* IOSBench.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		1B0000000000000000000700 /* IOSBench */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 1B0000000000000000000902 /* Build configuration list for PBXNativeTarget "IOSBench" */;
+			buildPhases = (
+				1B0000000000000000000402 /* Sources */,
+				1B0000000000000000000401 /* Frameworks */,
+				1B0000000000000000000403 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				1B0000000000000000000300 /* IOSBench */,
+			);
+			name = IOSBench;
+			packageProductDependencies = (
+				1B0000000000000000000601 /* MLXVLM */,
+				1B0000000000000000000602 /* MLXLMCommon */,
+				1B0000000000000000000603 /* MLX */,
+				1B0000000000000000000604 /* Tokenizers */,
+			);
+			productName = IOSBench;
+			productReference = 1B0000000000000000000200 /* IOSBench.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		1B0000000000000000000800 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2700;
+				LastUpgradeCheck = 2700;
+				TargetAttributes = {
+					1B0000000000000000000700 = {
+						CreatedOnToolsVersion = 27.2;
+					};
+				};
+			};
+			buildConfigurationList = 1B0000000000000000000901 /* Build configuration list for PBXProject "IOSBench" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 1B0000000000000000000500;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				1B0000000000000000000A01 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */,
+				1B0000000000000000000A02 /* XCRemoteSwiftPackageReference "mlx-swift" */,
+				1B0000000000000000000A03 /* XCRemoteSwiftPackageReference "swift-transformers" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 1B0000000000000000000503 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				1B0000000000000000000700 /* IOSBench */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		1B0000000000000000000403 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1B0000000000000000000101 /* Model in Resources */,
+				1B0000000000000000000102 /* BenchImages in Resources */,
+				1B0000000000000000000103 /* prompts.json in Resources */,
+				1B0000000000000000000104 /* Package.resolved in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		1B0000000000000000000402 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		1B0000000000000000000911 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		1B0000000000000000000912 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		1B0000000000000000000921 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Config/IOSBench.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = R4G4Q3AW87;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Config/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Digi Bench";
+				INFOPLIST_KEY_NSCameraUsageDescription = "The benchmark pauses and restarts the camera around on-device inference to time capture recovery.";
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.colin.digit.iosbench;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		1B0000000000000000000922 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Config/IOSBench.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = R4G4Q3AW87;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Config/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Digi Bench";
+				INFOPLIST_KEY_NSCameraUsageDescription = "The benchmark pauses and restarts the camera around on-device inference to time capture recovery.";
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.colin.digit.iosbench;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		1B0000000000000000000901 /* Build configuration list for PBXProject "IOSBench" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1B0000000000000000000911 /* Debug */,
+				1B0000000000000000000912 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		1B0000000000000000000902 /* Build configuration list for PBXNativeTarget "IOSBench" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1B0000000000000000000921 /* Debug */,
+				1B0000000000000000000922 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		1B0000000000000000000A01 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/ml-explore/mlx-swift-lm";
+			requirement = {
+				kind = exactVersion;
+				version = 3.32.3;
+			};
+		};
+		1B0000000000000000000A02 /* XCRemoteSwiftPackageReference "mlx-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/ml-explore/mlx-swift";
+			requirement = {
+				kind = upToNextMinorVersion;
+				minimumVersion = 0.32.3;
+			};
+		};
+		1B0000000000000000000A03 /* XCRemoteSwiftPackageReference "swift-transformers" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/huggingface/swift-transformers";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.3.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		1B0000000000000000000601 /* MLXVLM */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 1B0000000000000000000A01 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */;
+			productName = MLXVLM;
+		};
+		1B0000000000000000000602 /* MLXLMCommon */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 1B0000000000000000000A01 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */;
+			productName = MLXLMCommon;
+		};
+		1B0000000000000000000603 /* MLX */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 1B0000000000000000000A02 /* XCRemoteSwiftPackageReference "mlx-swift" */;
+			productName = MLX;
+		};
+		1B0000000000000000000604 /* Tokenizers */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 1B0000000000000000000A03 /* XCRemoteSwiftPackageReference "swift-transformers" */;
+			productName = Tokenizers;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 1B0000000000000000000800 /* Project object */;
+}
