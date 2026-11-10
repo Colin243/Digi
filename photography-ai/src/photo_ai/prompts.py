@@ -16,6 +16,10 @@ History
   json_format="keys" (variant of v4, same wording): the answer format is described as
      "a JSON object with keys: ..." instead of a blank JSON shape to fill in. Added after
      SmolVLM2-2.2B returned the blank shape unchanged; recorded in each run's config.
+  v5 (2026-11-10.5) shot-v2 and the Scene Director. New prompts only: the v4 prompts above are
+     byte-identical when shot_format="v1", so the Phase 3 benchmark and LoRA training templates
+     are unchanged. Runs record PROMPT_VERSION for shot-v1 inspiration runs and
+     PROMPT_VERSION_V5 for scene-mode or shot-v2 runs (see version_for).
 """
 
 from __future__ import annotations
@@ -26,6 +30,11 @@ from contextlib import contextmanager
 from .backends import IMAGE_MARKER
 
 PROMPT_VERSION = "2026-11-09.4"
+PROMPT_VERSION_V5 = "2026-11-10.5"
+
+
+def version_for(mode: str = "inspiration", shot_format: str = "v1") -> str:
+    return PROMPT_VERSION if (mode == "inspiration" and shot_format == "v1") else PROMPT_VERSION_V5
 
 DEFAULT_SUBJECT = "a person (the photographer's friend) posing in the scene"
 
@@ -63,9 +72,76 @@ COMPOSITION_FIELDS = {
     "steps[]": "2-4 short actionable steps",
 }
 
-ALL_FIELD_DESCRIPTIONS = {
-    d for f in (AESTHETIC_FIELDS, TARGET_FIELDS, COMPOSITION_FIELDS) for d in f.values()
+# shot-v2: the subject-direction fields shared by Scene Director and Inspiration Director.
+DIRECTION_FIELDS = {
+    "body_pose": "stance or seated position, weight, arms and hands, using only surfaces visible in the photo",
+    "head_direction": "which way the head turns and whether the chin lifts, drops or stays level",
+    "gaze": "exactly where the eyes look: the lens, a named thing in the scene, or a direction out of frame",
+    "expression_cue": "optional: one small expression the subject may choose, such as a soft closed-mouth smile; leave empty if it adds little",
 }
+COMPOSITION_FIELDS_V2 = {**COMPOSITION_FIELDS, **DIRECTION_FIELDS}
+SCENE_SHOT_FIELDS = {
+    **COMPOSITION_FIELDS_V2,
+    "title": "a short name for this look",
+    "uses_principle": "which part of the style brief this look puts into practice",
+}
+DIRECTOR_TARGET_FIELDS = {
+    **TARGET_FIELDS,
+    "people_in_frame": "who is visible in the photo, where they are and what they are physically doing, or the word none; describe only what can be seen",
+}
+
+ALL_FIELD_DESCRIPTIONS = {
+    d for f in (AESTHETIC_FIELDS, TARGET_FIELDS, COMPOSITION_FIELDS, DIRECTION_FIELDS, SCENE_SHOT_FIELDS,
+                DIRECTOR_TARGET_FIELDS) for d in f.values()
+}
+
+# Starter style briefs (XHS / 小红书 portrait vocabulary). Each brief steers camera, light, pose,
+# gaze and expression; the model still has to ground every shot in the scene photo.
+STYLE_BRIEFS = {
+    "relaxed_candid": {
+        "zh": "松弛感", "en": "relaxed candid",
+        "brief": "Unforced and lived-in, as if caught between moments. Eye level or slightly below, half-body to "
+                 "full-body, the subject a little off-centre with room around them. Soft available light. Poses "
+                 "that look mid-action: a slow step, a hand loosely in a pocket or brushing hair back, leaning "
+                 "lightly on something stable. Gaze mostly away from the lens or a casual glance back. "
+                 "Expression optional: an easy half-smile or simply relaxed.",
+    },
+    "dreamy_atmospheric": {
+        "zh": "氛围感", "en": "dreamy atmospheric",
+        "brief": "Soft, hazy and layered. Use backlight, glow, reflections or out-of-focus foreground (shoot "
+                 "past something close to the lens). Warm or pastel tones, gentle highlights, plenty of air "
+                 "around the subject. Slow, quiet poses: turning the head over the shoulder, a hand near the "
+                 "face, standing still in the light. Gaze down, into the distance or eyes softly closed. "
+                 "Expression optional: calm, lips relaxed.",
+    },
+    "cool_editorial": {
+        "zh": "清冷感", "en": "cool editorial",
+        "brief": "Clean, quiet and composed. Strong lines and clear negative space, cool or neutral tones, "
+                 "even light from shade or overcast sky. Upright posture, shoulders relaxed, minimal gestures; "
+                 "chin level or slightly down. Gaze steady into the lens or a clean profile looking past the "
+                 "frame. Expression optional: neutral, no big smile.",
+    },
+    "vintage_ccd": {
+        "zh": "复古 CCD", "en": "vintage CCD",
+        "brief": "Early-2000s compact-camera snapshot. Straight-on or slightly high point-and-shoot angle, 4:3 "
+                 "framing, subject fairly central, a bit of everyday background clutter is fine. Hard direct "
+                 "light such as the phone flash at night or indoors, bright highlights and slight motion are "
+                 "part of the look; in lighting_tip, say whether to turn the phone flash on. Playful, spontaneous poses: a peace sign, a hand toward the lens, a "
+                 "half-turn mid-laugh. Gaze straight into the lens. Expression optional: a big natural grin "
+                 "or a playful pout.",
+    },
+}
+
+
+def style_label(key: str | None) -> str:
+    s = STYLE_BRIEFS.get(key or "")
+    return f"{s['zh']} {s['en']}" if s else "custom brief"
+
+
+DIRECTION_RULES = """Direct the subject as a photographer would, using only what the scene allows.
+- body_pose, head_direction and gaze must be specific instructions (where the hands go, which way the chin turns, the exact thing the eyes look at).
+- expression_cue is optional creative direction the subject may choose to follow. Never guess what anyone in the photo feels, and never describe someone's mood or emotion. Leave expression_cue empty when it adds little.
+- Keep every direction safe and checkable: no stepping into traffic, onto ledges, railings or water, and no climbing. Only use walls, seats, steps and ground you can see in the photo; if a pose needs a surface or space the photo does not show, list it in needs_on_site_check."""
 
 GOOD_EXAMPLES = [
     "Hold the camera slightly below the subject's waist.",
@@ -218,17 +294,82 @@ def aesthetic_from_notes(notes: list[str]) -> str:
     )
 
 
-def compositions_from_parts(aesthetic: dict, target: dict, subject: str = DEFAULT_SUBJECT) -> str:
+def compositions_from_parts(aesthetic: dict, target: dict, subject: str = DEFAULT_SUBJECT,
+                            shot_format: str = "v1") -> str:
+    """shot_format "v1" returns exactly the v4 prompt (benchmark and training-template parity)."""
     style = {k: v for k, v in aesthetic.items() if k != "per_image"}
-    shape = {"compositions": [_blank(COMPOSITION_FIELDS)] * 3}
+    fields = COMPOSITION_FIELDS_V2 if shot_format == "v2" else COMPOSITION_FIELDS
+    shape = {"compositions": [_blank(fields)] * 3}
+    direction = f"\n{DIRECTION_RULES}" if shot_format == "v2" else ""
     return (
         TARGET_LABEL + "\n"
         f"You are a photography director. The TARGET scene photo is described as:\n{_shape(target)}\n\n"
         f"The photographer wants to recreate this style from other photos:\n{_shape(style)}\n\n"
         f"The subject will be {subject}. Give exactly 3 different compositions for shooting in the "
         "TARGET scene with that style.\n\n"
-        f"{_guide('each of the 3 compositions', COMPOSITION_FIELDS)}\n\n"
-        f"{SPECIFICITY_RULES}\n{_RULES}\n{_answer(shape)}"
+        f"{_guide('each of the 3 compositions', fields)}\n\n"
+        f"{SPECIFICITY_RULES}{direction}\n{_RULES}\n{_answer(shape)}"
+    )
+
+
+# --- Scene Director: one scene photo + a style brief, no reference images ---------------
+
+SCENE_LABEL = f"SCENE photo: {IMAGE_MARKER}\n"
+
+
+def director_scene() -> str:
+    return (
+        SCENE_LABEL + "\n"
+        "Describe this scene for a photographer who is standing there now and wants to make portraits in it. "
+        "If people are visible, say only where they are and what they are physically doing.\n\n"
+        f"{_guide('Fields', DIRECTOR_TARGET_FIELDS)}\n\n{_RULES}\n{_answer(_blank(DIRECTOR_TARGET_FIELDS))}"
+    )
+
+
+# Each look is generated in its own call with a different plan. Asked for all three at once,
+# Qwen3-VL-2B wrote look 1 and repeated it twice (scene-demo-v1: field diversity 0.00-0.36).
+LOOK_PLANS = (
+    "WIDE: full body, the subject small to medium in the frame, the camera far enough back to show the "
+    "most useful part of the scene.",
+    "MEDIUM: waist up or three-quarter body, the camera in a different place from the earlier looks, and a "
+    "different pose.",
+    "CLOSE: head and shoulders, using the light or a foreground element in a new way, with a different gaze "
+    "from the earlier looks.",
+)
+
+PEOPLE_RULE = ("If people are already visible in the photo, treat them as passers-by: direct only the subject, "
+               "place the subject where the photo shows free space, and do not ask strangers to do anything.")
+
+
+def _style_text(style_key: str | None, brief: str) -> str:
+    starter = STYLE_BRIEFS.get(style_key or "")
+    parts = []
+    if starter:
+        parts.append(f"Style: {starter['zh']} ({starter['en']}). {starter['brief']}")
+    if brief.strip():
+        parts.append(f"The photographer adds: {brief.strip()}")
+    return "\n".join(parts) or "Style: natural, flattering portraits that suit this scene."
+
+
+def scene_look(scene: dict, style_key: str | None = None, brief: str = "", subject: str = DEFAULT_SUBJECT,
+               look: int = 1, previous: list[dict] | None = None) -> str:
+    """Prompt for ONE shot-v2 look (look = 1..3); earlier looks are listed so this one differs."""
+    shot = _blank(SCENE_SHOT_FIELDS)
+    avoid = ""
+    if previous:
+        lines = [f"- Look {i}: {p.get('title', '')}: camera {p.get('camera_position', '')}; "
+                 f"{p.get('distance_and_framing', '')}; pose {p.get('body_pose', '')}; gaze {p.get('gaze', '')}"
+                 for i, p in enumerate(previous, 1)]
+        avoid = ("Earlier looks for this scene (this one must be clearly different in camera position, framing "
+                 "and pose):\n" + "\n".join(lines) + "\n\n")
+    return (
+        SCENE_LABEL + "\n"
+        f"You are a portrait photography director. The SCENE photo is described as:\n{_shape(scene)}\n\n"
+        f"{_style_text(style_key, brief)}\n\n"
+        f"The subject will be {subject}. {PEOPLE_RULE}\n"
+        f"{avoid}Propose ONE portrait look, look {look} of 3, in that style. Plan for this look: {LOOK_PLANS[look - 1]}\n\n"
+        f"{_guide('Fields', SCENE_SHOT_FIELDS)}\n\n"
+        f"{SPECIFICITY_RULES}\n{DIRECTION_RULES}\n{_RULES}\n{_answer(shot)}"
     )
 
 

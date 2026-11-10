@@ -1,0 +1,16 @@
+{
+ "about": "Scene Director demo fixtures (issue #19). Targets are the CC0 portrait_v1 scene photos; `photo-ai dataset fetch` downloads them. Each fixture is one scene photo + one starter style; the stair fixture runs all four styles to show how the brief changes the looks.",
+ "max_side": 1024,
+ "json_format": "keys",
+ "fixtures": [
+  {"id": "indoor-empty-cafe", "case": "cafe-window-candid", "style": "relaxed_candid", "tags": ["indoor", "empty"]},
+  {"id": "outdoor-white-stair", "case": "minimal-urban-fashion", "style": "cool_editorial", "tags": ["outdoor", "empty"]},
+  {"id": "lowlight-neon-cafe", "case": "night-street-moody", "style": "vintage_ccd", "tags": ["outdoor", "low-light", "night"]},
+  {"id": "park-path-shade", "case": "golden-hour-backlight", "style": "dreamy_atmospheric", "tags": ["outdoor", "empty"]},
+  {"id": "street-with-people", "case": "bw-street-portrait", "style": "relaxed_candid", "tags": ["outdoor", "people-in-scene"]},
+  {"id": "red-stair-relaxed", "case": "seated-on-steps", "style": "relaxed_candid", "tags": ["indoor", "empty", "style-sweep"]},
+  {"id": "red-stair-dreamy", "case": "seated-on-steps", "style": "dreamy_atmospheric", "tags": ["indoor", "empty", "style-sweep"]},
+  {"id": "red-stair-editorial", "case": "seated-on-steps", "style": "cool_editorial", "tags": ["indoor", "empty", "style-sweep"]},
+  {"id": "red-stair-ccd", "case": "seated-on-steps", "style": "vintage_ccd", "tags": ["indoor", "empty", "style-sweep"]}
+ ]
+}
