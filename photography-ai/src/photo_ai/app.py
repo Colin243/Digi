@@ -431,7 +431,11 @@ def _compare_tab(runs_dir: Path, demo: gr.Blocks) -> None:
     demo.load(cases_for, [c_bench, c_strategy, c_rater], c_case)
 
 
-def launch(host: str, port: int, runs_dir: Path) -> None:
+def launch(host: str, port: int, runs_dir: Path, inbrowser: bool = True) -> None:
+    from .cases import PROJECT_ROOT
+
+    # runs/ for benchmark outputs, data/ for Label-tab training photos, samples/ for evaluation images
+    allowed = [str(Path(runs_dir).resolve()), str(PROJECT_ROOT / "data"), str(PROJECT_ROOT / "samples")]
     build(runs_dir).queue().launch(
-        server_name=host, server_port=port, share=False, inbrowser=True, allowed_paths=[str(runs_dir)]
+        server_name=host, server_port=port, share=False, inbrowser=inbrowser, allowed_paths=allowed
     )
