@@ -152,7 +152,7 @@ def test_benchmark_is_resumable_and_reports_manual_scores(case, tmp_path):
     assert row["human"]["colin"]["shot_diversity"] == 5
     assert s["consistency"][0]["samples"] == 2
     md = report_markdown(s)
-    assert "Human ratings" in md and "Measured" in md
+    assert "Your ratings (human raters" in md and "Measured" in md
 
 
 # --- UI + shipped cases ----------------------------------------------------------------------

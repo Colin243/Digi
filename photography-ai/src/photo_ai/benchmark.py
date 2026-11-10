@@ -19,7 +19,7 @@ from pathlib import Path
 from .backends import make_backend
 from .cases import Case, load_case
 from .comparison import load_preferences, summarize_preferences
-from .evaluation import CATEGORY_KEYS, CORE_KEYS, MAX_CORE, load_scores
+from .evaluation import CATEGORY_KEYS, CORE_KEYS, MAX_CORE, load_scores, rater_kind
 from .metrics import composition_text, evaluate_result, pairwise_similarity
 from .pipeline import STRATEGIES, RunConfig, analyze
 from .storage import DEFAULT_RUNS_DIR
@@ -184,6 +184,7 @@ def _human(entries: list[dict]) -> dict:
         v2 = [e for e in es if "shot_diversity" in e["scores"]]
         flagged = [e for e in es if e.get("hallucination") is not None]
         out[rater] = {
+            "kind": rater_kind(es[0]),
             "n": len(es),
             "blind": all(e.get("blind") for e in es),
             "core_25": _mean([_core(e) for e in es]),
@@ -231,22 +232,27 @@ def report_markdown(summary: dict) -> str:
             f"{a['generic_or_copied']} ({a['copied_prompt_examples']} copied) | "
             f"{_cell(a['diversity_fields'])} / {_cell(a['diversity_text'])} |")
     rated = [(r, rater, h) for r in summary["rows"] for rater, h in r["human"].items()]
-    out += ["", f"### Human ratings (subjective; rubric 1-5 per category, core = first five categories /{MAX_CORE})", ""]
-    if rated:
+    for kind, title, empty in (
+        ("human", "Your ratings (human raters; subjective)", "_No human scores yet. Use the UI's Evaluate tab or `photo-ai score`._"),
+        ("ai", "AI reviewer ratings (model-made, subjective; provisional second opinion, not human judgment)", "_No AI reviewer scores._"),
+    ):
+        rows_k = [(r, rater, h) for r, rater, h in rated if h.get("kind", "human") == kind]
+        out += ["", f"### {title} — rubric 1-5 per category, core = first five categories /{MAX_CORE}", ""]
+        if not rows_k:
+            out.append(empty)
+            continue
         out.append("| model | strategy | rater | blind | n | " + " | ".join(CATEGORY_KEYS) + f" | core /{MAX_CORE} | rater-flagged hallucination |")
         out.append("|---|---|---|---|---|" + "---|" * (len(CATEGORY_KEYS) + 2))
-        for r, rater, h in rated:
+        for r, rater, h in rows_k:
             out.append(f"| {r['model']} | {r['strategy']} | {rater} | {'yes' if h['blind'] else 'no'} | {h['n']} | "
                        + " | ".join(_cell(h["by_category"][k]) for k in CATEGORY_KEYS)
                        + f" | {_cell(h['core_25'])} | {_cell(h['hallucination_rate'], True)} |")
-    else:
-        out.append("_No human scores yet. Use the UI's Evaluate tab or `photo-ai score`._")
     out += ["", "### Blind side-by-side preferences (subjective)", ""]
     if summary["preferences"]:
-        out.append("| rater | model | times shown | preferred set | preferred single shot |")
-        out.append("|---|---|---|---|---|")
+        out.append("| rater | kind | model | times shown | preferred set | preferred single shot |")
+        out.append("|---|---|---|---|---|---|")
         for p in summary["preferences"]:
-            out.append(f"| {p['rater']} | {p['model']} | {p['shown']} | {p['set_wins']} ({_cell(p['set_win_rate'], True)}) | "
+            out.append(f"| {p['rater']} | {p.get('rater_kind', 'human')} | {p['model']} | {p['shown']} | {p['set_wins']} ({_cell(p['set_win_rate'], True)}) | "
                        f"{p['shot_wins']} ({_cell(p['shot_win_rate'], True)}) |")
     else:
         out.append("_No preferences yet. Use the UI's Compare tab or `photo-ai prefer`._")

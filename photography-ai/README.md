@@ -7,6 +7,7 @@ It runs fully on-device with [MLX-VLM](https://github.com/Blaizzy/mlx-vlm) on Ap
 - **Phase 1:** baseline pipeline, upload UI, saved runs with timings.
 - **Phase 2:** diagnostics, a benchmark across models and strategies, a human scoring rubric and an evaluation UI. The findings are in [`docs/phase2-benchmark.md`](docs/phase2-benchmark.md).
 - **Phase 3:** a 14-scenario portrait/lifestyle dataset (CC0), Qwen2.5-VL-3B vs Qwen3-VL-2B vs SmolVLM2-2.2B, blind side-by-side comparison, rubric v2 with shot diversity, and the model-selection report: [`docs/phase3-model-selection.md`](docs/phase3-model-selection.md).
+- **Phase 4 (in progress):** licensed training-data pipeline, AI-drafted labels that only become training data after human approval (the **Label** tab), and LoRA training for Qwen3-VL-2B on MLX with a verified smoke test. How it works, what LoRA changes, and current status: [`docs/phase4-finetuning.md`](docs/phase4-finetuning.md). Labelling standard: [`docs/annotation-guide.md`](docs/annotation-guide.md).
 
 ## Setup
 
@@ -35,7 +36,16 @@ The first real run downloads weights from Hugging Face into `~/.cache/huggingfac
 | `photo-ai bench --suite portrait_v1 --strategies decomposed --consistency-samples 0 --models …` | Phase 3 benchmark on the portrait suite. `--json-format keys` describes the expected JSON as a key list instead of a blank shape. |
 | `photo-ai prefer --bench … --case … --rater … --set B --shot B2` | Records a blind side-by-side preference from the command line. `--show` prints this rater's A/B/C order. |
 | `photo-ai convert smolvlm2-2.2b` | Quantizes a registered model into git-ignored `models/<key>-4bit`. |
+| `photo-ai train-data pool / fetch / assemble / status / qa / export` | Phase 4 training data: Commons search → licence-tracked download with held-out dedup and author split → technique-matched examples → label status and heuristic QA → export **approved** labels as SFT rows (`data/`, git-ignored). |
+| `photo-ai train-data import-tags / import-labels --file …` | Imports AI-drafted tags or answers as provisional drafts. |
+| `photo-ai train-data draft --ids …` | Drafts answers with Claude via the API (`uv sync --extra drafting`; paid; drafts stay provisional). |
+| `photo-ai lora smoke --config configs/lora_smoke.json` | LoRA feasibility smoke test (architecture, template parity, masking, gradients, learning, checkpoint reload, adapter inference, memory). |
+| `photo-ai lora train --config configs/lora_pilot.json` | LoRA pilot on approved labels only; adapters in `data/adapters/<run>/`. |
 | `photo-ai runs` | Lists saved runs. |
+
+A fine-tuned adapter runs anywhere a model name is accepted: `--model "qwen3-vl-2b-4bit+adapter=data/adapters/pilot-v1"`.
+
+Ratings are tagged `human` or `ai`. Names starting `claude` are AI reviewers. Reports show your ratings and AI reviewer ratings in separate tables.
 
 The `fake` model returns canned output. Use it to try the UI or pipeline without downloading weights.
 

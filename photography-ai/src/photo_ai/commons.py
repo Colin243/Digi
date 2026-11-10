@@ -1,10 +1,10 @@
-"""Search Wikimedia Commons for freely licensed photos and build a numbered contact sheet.
+"""Wikimedia Commons search for freely licensed photos (used by the portrait_v1 and train_v1 datasets).
 
-Used to hand-pick evaluation images. Only free licenses are kept (CC0, public domain,
-CC BY, CC BY-SA). Results (with author/license/source) go to <out>/<name>.json and a
-contact sheet to <out>/<name>.jpg.
+Only free licenses are kept (CC0, public domain, CC BY, CC BY-SA), and every result carries
+author, license and source page. Requests are sequential with a descriptive User-Agent and
+backoff on HTTP 429, per Wikimedia API etiquette. No social-media platform is touched.
 
-  uv run python scripts/commons_search.py "portrait woman cafe window" --name cafe --out /tmp/x
+  uv run python -m photo_ai.commons "portrait cafe" --category "Images from Unsplash" --name cafe --out /tmp/x
 """
 
 from __future__ import annotations
@@ -45,11 +45,11 @@ def _strip_html(s: str) -> str:
     return re.sub(r"<[^>]+>", "", s or "").strip()
 
 
-def search(query: str, limit: int = 40, category: str | None = None) -> list[dict]:
+def search(query: str, limit: int = 40, category: str | None = None, offset: int = 0) -> list[dict]:
     q = f"{query} filetype:bitmap" + (f' incategory:"{category}"' if category else "")
     params = {
         "action": "query", "format": "json", "generator": "search", "gsrnamespace": 6,
-        "gsrsearch": q, "gsrlimit": limit, "prop": "imageinfo",
+        "gsrsearch": q, "gsrlimit": limit, "gsroffset": offset, "prop": "imageinfo",
         "iiprop": "url|extmetadata|size|mime|sha1", "iiurlwidth": 1280,
     }
     data = json.loads(_get(API + "?" + urllib.parse.urlencode(params)))

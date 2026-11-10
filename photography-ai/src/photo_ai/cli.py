@@ -88,6 +88,7 @@ def main(argv: list[str] | None = None) -> int:
     sc.add_argument("--hallucination", choices=["yes", "no"], help="output claims something not in the photos")
     sc.add_argument("--notes", default="")
     sc.add_argument("--not-blind", action="store_true", help="rater knew which model produced the run")
+    sc.add_argument("--rater-kind", choices=["human", "ai"], help="default: inferred from the name (claude-* = ai)")
     sc.add_argument("--runs-dir", type=Path, default=DEFAULT_RUNS_DIR)
 
     ds = sub.add_parser("dataset", help="download evaluation images listed in a manifest")
@@ -108,6 +109,24 @@ def main(argv: list[str] | None = None) -> int:
     cv = sub.add_parser("convert", help="quantize a registered MLX model to 4-bit into models/<key>-4bit")
     cv.add_argument("model")
     cv.add_argument("--bits", type=int, default=4)
+
+    td = sub.add_parser("train-data", help="Phase 4 training data: pool, fetch, tags, examples, labels, export")
+    td.add_argument("action", choices=["pool", "fetch", "status", "attribution", "assemble", "qa", "export",
+                                       "import-tags", "import-labels", "draft"])
+    td.add_argument("--model", default="claude-opus-5-5", help="draft: reference model (Anthropic API)")
+    td.add_argument("--dataset", default="train_v1")
+    td.add_argument("--ids", nargs="*", help="limit fetch to these pool ids")
+    td.add_argument("--file", type=Path, help="JSON file for import-tags / import-labels")
+    td.add_argument("--source", default="ai-draft", help="provenance label for imported drafts")
+    td.add_argument("--n-examples", type=int, default=24)
+    td.add_argument("--include-unapproved", action="store_true",
+                    help="export drafts too (ONLY for pipeline smoke tests; never for real training)")
+
+    lr = sub.add_parser("lora", help="Phase 4 LoRA: smoke test or training run")
+    lr.add_argument("action", choices=["smoke", "train"])
+    lr.add_argument("--config", type=Path, required=True)
+    lr.add_argument("--rows", type=int, default=4, help="smoke: rows to use")
+    lr.add_argument("--steps", type=int, default=12, help="smoke: overfit steps")
 
     rn = sub.add_parser("runs", help="summarize saved runs")
     rn.add_argument("--runs-dir", type=Path, default=DEFAULT_RUNS_DIR)
@@ -193,7 +212,8 @@ def main(argv: list[str] | None = None) -> int:
 
         try:
             hall = None if a.hallucination is None else a.hallucination == "yes"
-            entry = make_entry(a.run, dict(zip(CATEGORY_KEYS, a.scores)), a.rater, a.notes, not a.not_blind, hall)
+            entry = make_entry(a.run, dict(zip(CATEGORY_KEYS, a.scores)), a.rater, a.notes, not a.not_blind, hall,
+                               a.rater_kind)
             path = save_score(a.runs_dir, entry)
         except (ValueError, FileNotFoundError) as exc:
             print(f"error: {exc}", file=sys.stderr)
@@ -250,6 +270,24 @@ def main(argv: list[str] | None = None) -> int:
                "-q", "--q-bits", str(a.bits)]
         print(" ".join(cmd))
         return subprocess.call(cmd)
+
+    if a.cmd == "train-data":
+        from .training.cli import run_train_data
+
+        return run_train_data(a)
+
+    if a.cmd == "lora":
+        from .training.lora import LoraConfig, train
+
+        cfg = LoraConfig.load(a.config)
+        if a.action == "smoke":
+            from .training.smoke import run_smoke
+
+            rep = run_smoke(cfg, a.rows, a.steps)
+            print(f"smoke test {'PASSED' if rep['all_pass'] else 'FAILED'} -> {cfg.out_dir / 'smoke_report.json'}")
+            return 0 if rep["all_pass"] else 1
+        print(json.dumps(train(cfg), indent=1))
+        return 0
 
     if a.cmd == "runs":
         rows = read_index(a.runs_dir)[-a.last :]

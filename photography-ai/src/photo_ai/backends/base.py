@@ -16,6 +16,7 @@ class ModelSpec:
     repo_id: str  # Hugging Face repo (or local path)
     backend: str  # "mlx" | "fake"
     notes: str = ""
+    adapter_path: str | None = None  # LoRA adapter directory (adapters.safetensors + adapter_config.json)
 
 
 @dataclass

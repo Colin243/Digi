@@ -60,7 +60,10 @@ class MLXVLMBackend:
         from mlx_vlm import load  # imported lazily so tests/fake backend never need MLX
 
         t0 = time.perf_counter()
-        self._model, self._processor = load(self.spec.repo_id)
+        if self.spec.adapter_path:
+            self._model, self._processor = load(self.spec.repo_id, adapter_path=self.spec.adapter_path)
+        else:
+            self._model, self._processor = load(self.spec.repo_id)
         self.load_seconds = time.perf_counter() - t0
         return self.load_seconds
 

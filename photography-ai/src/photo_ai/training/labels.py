@@ -1,0 +1,169 @@
+"""Reference answers ("labels") for training examples, with provenance and approval state.
+
+One file per example: data/<dataset>/labels/<example_id>.json
+
+  {
+    "example_id": "...",
+    "status": "draft" | "approved" | "rejected",
+    "answer": {
+      "inspiration_notes": ["one note per inspiration photo, in order"],
+      "target_scene": {...TargetScene...},
+      "aesthetic": {...Aesthetic...},
+      "compositions": [{...Composition...} x 3]
+    },
+    "provenance": {
+      "drafted_by": "ai-draft:<model/agent>" | "human:<name>",
+      "drafted_at": ...,
+      "edited_by": [names of humans who edited],
+      "approved_by": "<human name>" | null,
+      "approved_at": ... | null
+    },
+    "history": [{"at", "by", "action", "note"}],
+    "review_notes": "..."
+  }
+
+Rules enforced here (not just by convention):
+  * imported drafts always start as status "draft", whatever the file says;
+  * only a human rater name can approve (AI-reserved names such as claude-* are refused);
+  * approving requires the answer to pass schema validation;
+  * editing an approved label sends it back to "draft" until re-approved;
+  * export.py only ever reads status == "approved" (except an explicit smoke-test flag).
+"""
+
+from __future__ import annotations
+
+import json
+from collections import Counter
+from datetime import datetime
+
+from .. import schema
+from ..evaluation import rater_kind
+from .assemble import load_examples
+from .pool import data_dir
+
+
+def labels_dir(dataset: str = "train_v1"):
+    d = data_dir(dataset) / "labels"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _now() -> str:
+    return datetime.now().isoformat(timespec="seconds")
+
+
+def load_label(dataset: str, example_id: str) -> dict | None:
+    p = labels_dir(dataset) / f"{example_id}.json"
+    return json.loads(p.read_text()) if p.exists() else None
+
+
+def load_labels(dataset: str = "train_v1") -> list[dict]:
+    return [json.loads(p.read_text()) for p in sorted(labels_dir(dataset).glob("*.json"))]
+
+
+def save_label(dataset: str, label: dict) -> None:
+    (labels_dir(dataset) / f"{label['example_id']}.json").write_text(json.dumps(label, indent=1, ensure_ascii=False))
+
+
+def validate_answer(answer: dict, n_inspiration: int | None = None) -> list[str]:
+    errs = []
+    notes = answer.get("inspiration_notes")
+    if not isinstance(notes, list) or not all(isinstance(n, str) and n.strip() for n in notes):
+        errs.append("inspiration_notes must be a list of non-empty strings")
+    elif n_inspiration is not None and len(notes) != n_inspiration:
+        errs.append(f"inspiration_notes has {len(notes)} entries for {n_inspiration} photos")
+    for key, model in (("target_scene", schema.TargetScene), ("aesthetic", schema.Aesthetic)):
+        _, e = schema.validate(model, answer.get(key), None)
+        errs += [f"{key}.{x}" for x in e]
+    comps = answer.get("compositions")
+    if not isinstance(comps, list) or len(comps) != 3:
+        errs.append("exactly 3 compositions required")
+    else:
+        _, e = schema.validate(schema.CompositionSet, {"compositions": comps}, None)
+        errs += e
+    return errs
+
+
+def import_drafts(dataset: str, drafts: list[dict], source: str) -> int:
+    """Add AI (or other) drafted answers. Never overwrites an approved label."""
+    examples = {e["example_id"]: e for e in load_examples(dataset)}
+    n = 0
+    for d in drafts:
+        eid = d["example_id"]
+        if eid not in examples:
+            raise KeyError(f"unknown example {eid}")
+        current = load_label(dataset, eid)
+        if current and current["status"] == "approved":
+            continue
+        label = {
+            "example_id": eid,
+            "status": "draft",
+            "answer": d["answer"],
+            "provenance": {"drafted_by": source, "drafted_at": _now(), "edited_by": [],
+                           "approved_by": None, "approved_at": None},
+            "schema_errors": validate_answer(d["answer"], len(examples[eid]["inspiration"])),
+            "history": [{"at": _now(), "by": source, "action": "draft-imported", "note": d.get("note", "")}],
+            "review_notes": "",
+        }
+        save_label(dataset, label)
+        n += 1
+    return n
+
+
+def _require_human(name: str) -> str:
+    name = (name or "").strip()
+    if not name:
+        raise ValueError("reviewer name is required")
+    if rater_kind(name) != "human":
+        raise ValueError(f"{name!r} is an AI reviewer name; only humans can edit or approve training labels")
+    return name
+
+
+def edit_answer(dataset: str, example_id: str, answer: dict, reviewer: str, note: str = "") -> dict:
+    reviewer = _require_human(reviewer)
+    label = load_label(dataset, example_id)
+    example = {e["example_id"]: e for e in load_examples(dataset)}[example_id]
+    label["answer"] = answer
+    label["schema_errors"] = validate_answer(answer, len(example["inspiration"]))
+    if reviewer not in label["provenance"]["edited_by"]:
+        label["provenance"]["edited_by"].append(reviewer)
+    if label["status"] == "approved":  # any edit needs a fresh approval
+        label["status"] = "draft"
+        label["provenance"]["approved_by"] = label["provenance"]["approved_at"] = None
+    label["history"].append({"at": _now(), "by": reviewer, "action": "edited", "note": note})
+    save_label(dataset, label)
+    return label
+
+
+def set_status(dataset: str, example_id: str, status: str, reviewer: str, note: str = "") -> dict:
+    reviewer = _require_human(reviewer)
+    if status not in ("draft", "approved", "rejected"):
+        raise ValueError("status must be draft, approved or rejected")
+    label = load_label(dataset, example_id)
+    if status == "approved" and label.get("schema_errors"):
+        raise ValueError("cannot approve: fix schema errors first: " + "; ".join(label["schema_errors"][:3]))
+    label["status"] = status
+    if status == "approved":
+        label["provenance"]["approved_by"], label["provenance"]["approved_at"] = reviewer, _now()
+    else:
+        label["provenance"]["approved_by"] = label["provenance"]["approved_at"] = None
+    label["review_notes"] = note or label.get("review_notes", "")
+    label["history"].append({"at": _now(), "by": reviewer, "action": status, "note": note})
+    save_label(dataset, label)
+    return label
+
+
+def status_summary(dataset: str = "train_v1") -> dict:
+    examples = load_examples(dataset)
+    labels = {lab["example_id"]: lab for lab in load_labels(dataset)}
+    by_split = Counter()
+    for e in examples:
+        lab = labels.get(e["example_id"])
+        by_split[(e["split"], lab["status"] if lab else "unlabeled")] += 1
+    return {
+        "examples": len(examples),
+        "labels": dict(Counter(lab["status"] for lab in labels.values())),
+        "by_split_status": {f"{s}/{st}": n for (s, st), n in sorted(by_split.items())},
+        "approved_human": sum(1 for lab in labels.values() if lab["status"] == "approved"),
+        "drafted_by": dict(Counter(lab["provenance"]["drafted_by"] for lab in labels.values())),
+    }

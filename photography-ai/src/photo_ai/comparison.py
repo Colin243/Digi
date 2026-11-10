@@ -40,7 +40,9 @@ def blind_order(runs: list[dict], rater: str, case_id: str, bench_id: str) -> li
 
 
 def make_preference(bench_id: str, case_id: str, rater: str, order: list[str], preferred_run: str | None,
-                    preferred_shot: tuple[str, int] | None, notes: str = "") -> dict:
+                    preferred_shot: tuple[str, int] | None, notes: str = "", kind: str | None = None) -> dict:
+    from .evaluation import rater_kind
+
     if not rater.strip():
         raise ValueError("rater name is required")
     if preferred_run is not None and preferred_run not in order:
@@ -51,6 +53,7 @@ def make_preference(bench_id: str, case_id: str, rater: str, order: list[str], p
         "bench_id": bench_id,
         "case": case_id,
         "rater": rater.strip(),
+        "rater_kind": kind or rater_kind(rater),
         "created_at": datetime.now().isoformat(timespec="seconds"),
         "shown_order": order,
         "preferred_run": preferred_run,  # None = no preference / all equally bad
@@ -79,6 +82,12 @@ def load_preferences(runs_dir: Path, bench_id: str) -> list[dict]:
     return list(latest.values())
 
 
+def _kind(e: dict) -> str:
+    from .evaluation import rater_kind
+
+    return rater_kind(e)
+
+
 def summarize_preferences(manifest: dict, prefs: list[dict]) -> list[dict]:
     """Per model and rater: how often its set / one of its shots was preferred when shown."""
     model_of = {r["run_id"]: r["model"] for r in manifest["runs"]}
@@ -86,11 +95,12 @@ def summarize_preferences(manifest: dict, prefs: list[dict]) -> list[dict]:
     for e in prefs:
         for rid in e["shown_order"]:
             key = (model_of.get(rid, "?"), e["rater"])
-            s = stats.setdefault(key, {"model": key[0], "rater": key[1], "shown": 0, "set_wins": 0, "shot_wins": 0})
+            s = stats.setdefault(key, {"model": key[0], "rater": key[1], "rater_kind": _kind(e),
+                                       "shown": 0, "set_wins": 0, "shot_wins": 0})
             s["shown"] += 1
             s["set_wins"] += int(e["preferred_run"] == rid)
             s["shot_wins"] += int(bool(e["preferred_shot"]) and e["preferred_shot"]["run_id"] == rid)
     for s in stats.values():
         s["set_win_rate"] = round(s["set_wins"] / s["shown"], 3) if s["shown"] else None
         s["shot_win_rate"] = round(s["shot_wins"] / s["shown"], 3) if s["shown"] else None
-    return sorted(stats.values(), key=lambda s: (s["rater"], -(s["set_win_rate"] or 0)))
+    return sorted(stats.values(), key=lambda s: (s["rater_kind"] != "human", s["rater"], -(s["set_win_rate"] or 0)))

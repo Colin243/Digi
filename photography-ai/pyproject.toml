@@ -12,6 +12,10 @@ dependencies = [
     "pillow-heif>=0.18",
 ]
 
+[project.optional-dependencies]
+# Phase 4: draft candidate training labels with Claude (photo_ai/training/draft_api.py). Costs money per call.
+drafting = ["anthropic>=0.75"]
+
 [project.scripts]
 photo-ai = "photo_ai.cli:main"
 

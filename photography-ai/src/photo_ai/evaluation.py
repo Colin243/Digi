@@ -12,6 +12,11 @@ Rubric v2 (Phase 3): the same five plus shot_diversity, 30 points. Reports show 
 five-category "core /25" for every entry so v1 and v2 scores stay comparable, and
 diversity separately. An entry may also flag `hallucination` (the rater saw something
 claimed in the output that is not in the photos).
+
+Rater kinds (Phase 4): every entry carries `rater_kind` = "human" or "ai". Entries written
+before Phase 4 have no field; they are classified by name (`claude-*` raters are AI
+reviewers). Reports and the UI keep the two kinds apart, and decisions should rest on
+human scores; AI reviewer scores are a provisional second opinion.
 """
 
 from __future__ import annotations
@@ -41,12 +46,27 @@ MAX_TOTAL = 5 * len(RUBRIC)
 MAX_CORE = 5 * len(CORE_KEYS)
 
 
+RATER_KINDS = ("human", "ai")
+AI_RATER_PREFIXES = ("claude", "ai-", "gpt", "model-")
+
+
+def rater_kind(entry_or_name: dict | str) -> str:
+    """'human' or 'ai'. Uses the stored field when present, else the rater name."""
+    if isinstance(entry_or_name, dict):
+        if entry_or_name.get("rater_kind") in RATER_KINDS:
+            return entry_or_name["rater_kind"]
+        name = entry_or_name.get("rater", "")
+    else:
+        name = entry_or_name
+    return "ai" if name.strip().lower().startswith(AI_RATER_PREFIXES) else "human"
+
+
 def core_total(entry: dict) -> int:
     return sum(entry["scores"][k] for k in CORE_KEYS)
 
 
 def make_entry(run_id: str, scores: dict[str, int], rater: str, notes: str = "", blind: bool = True,
-               hallucination: bool | None = None) -> dict:
+               hallucination: bool | None = None, kind: str | None = None) -> dict:
     missing = [k for k in CATEGORY_KEYS if k not in scores]
     if missing:
         raise ValueError(f"missing categories: {missing}")
@@ -56,9 +76,15 @@ def make_entry(run_id: str, scores: dict[str, int], rater: str, notes: str = "",
             raise ValueError(f"{k} must be an integer 1-5, got {v!r}")
     if not rater.strip():
         raise ValueError("rater name is required")
+    kind = kind or rater_kind(rater)
+    if kind not in RATER_KINDS:
+        raise ValueError(f"rater kind must be one of {RATER_KINDS}")
+    if kind == "human" and rater_kind(rater) == "ai":
+        raise ValueError(f"{rater!r} is reserved for AI reviewers; choose another name for human ratings")
     return {
         "run_id": run_id,
         "rater": rater.strip(),
+        "rater_kind": kind,
         "scored_at": datetime.now().isoformat(timespec="seconds"),
         "blind": blind,
         "scores": {k: scores[k] for k in CATEGORY_KEYS},

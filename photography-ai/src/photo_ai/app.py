@@ -202,7 +202,129 @@ def build(runs_dir: Path) -> gr.Blocks:
 
             with gr.Tab("Compare"):
                 _compare_tab(runs_dir, demo)
+            with gr.Tab("Label"):
+                _label_tab(demo)
     return demo
+
+
+def _answer_markdown(answer: dict) -> str:
+    """Readable preview of a training label, reusing the run renderer."""
+    fake = {"result": {"aesthetic": answer.get("aesthetic"), "target_scene": answer.get("target_scene"),
+                       "compositions": answer.get("compositions", [])},
+            "validation": {"ok": True, "errors": []}}
+    notes = "\n".join(f"{i}. {n}" for i, n in enumerate(answer.get("inspiration_notes", []), 1))
+    return f"### Inspiration notes\n{notes}\n\n" + result_markdown(fake)
+
+
+def _label_tab(demo: gr.Blocks, dataset: str = "train_v1") -> None:
+    """Review AI-drafted training labels: inspect, edit, approve or reject (human reviewers only)."""
+    from .cases import REPO_ROOT
+    from .training import labels as L
+    from .training.assemble import load_examples
+    from .training.pool import data_dir, load_pool
+    from .training.qa import check_label
+
+    gr.Markdown(
+        "Training labels are **provisional AI drafts** until a human approves them. Check every claim against the "
+        "photos, edit the JSON if needed (**Save edits**), then **Approve** or **Reject**. Only approved labels are "
+        "exported for LoRA training. Guide: `docs/annotation-guide.md`."
+    )
+    if not (data_dir(dataset) / "examples.json").exists():
+        gr.Markdown(f"_No training examples yet. Run `photo-ai train-data assemble` (dataset `{dataset}`)._")
+        return
+    with gr.Row():
+        reviewer = gr.Textbox(label="Your name (reviewer)", value="colin")
+        status_filter = gr.Dropdown(["all", "draft", "approved", "rejected", "unlabeled"], value="draft",
+                                    label="Show")
+        pick = gr.Dropdown([], label="Example")
+        refresh = gr.Button("Refresh", scale=0)
+    summary = gr.Markdown()
+    with gr.Row():
+        insp = gr.Gallery(label="Inspiration photos", columns=4, height=220, interactive=False, scale=3)
+        tgt = gr.Image(label="Target place", height=240, interactive=False, scale=2)
+    info = gr.Markdown()
+    qa_md = gr.Markdown()
+    with gr.Row():
+        with gr.Column(scale=1):
+            editor = gr.Code(label="Answer JSON (editable)", language="json", interactive=True, lines=30)
+        with gr.Column(scale=1):
+            preview = gr.Markdown()
+    note = gr.Textbox(label="Review note (why you edited, approved or rejected)", lines=2)
+    with gr.Row():
+        save_btn = gr.Button("Save edits")
+        approve_btn = gr.Button("Approve as training data", variant="primary")
+        reject_btn = gr.Button("Reject")
+        draft_btn = gr.Button("Back to draft")
+    status = gr.Markdown()
+
+    def paths():
+        pool = {i["id"]: i for i in load_pool(dataset)["images"]}
+        return lambda pid: str(REPO_ROOT / pool[pid]["file"])
+
+    def listing(filt):
+        labels = {lab["example_id"]: lab for lab in L.load_labels(dataset)}
+        out = []
+        for e in load_examples(dataset):
+            st = labels[e["example_id"]]["status"] if e["example_id"] in labels else "unlabeled"
+            if filt in ("all", st):
+                out.append((f"{e['example_id']} · {e['split']} · {st} · {e['technique']['description']}", e["example_id"]))
+        s = L.status_summary(dataset)
+        text = (f"**{s['examples']} examples** · labels {s['labels']} · approved by a human: **{s['approved_human']}** · "
+                f"by split {s['by_split_status']}")
+        return gr.update(choices=out, value=out[0][1] if out else None), text
+
+    def show(eid):
+        if not eid:
+            return [], None, "", "", "", ""
+        p = paths()
+        ex = {e["example_id"]: e for e in load_examples(dataset)}[eid]
+        lab = L.load_label(dataset, eid)
+        head = (f"**{eid}** ({ex['split']}) — shared technique: *{ex['technique']['description']}* — subject: {ex['subject']}")
+        if not lab:
+            return [p(x) for x in ex["inspiration"]], p(ex["target"]), head, "_No draft yet._", "", ""
+        prov = lab["provenance"]
+        head += (f"\n\nStatus **{lab['status']}** · drafted by `{prov['drafted_by']}` · edited by {prov['edited_by'] or '—'} · "
+                 f"approved by {prov['approved_by'] or '—'}")
+        drafter_notes = [h["note"] for h in lab.get("history", []) if h.get("note") and h["action"] == "draft-imported"]
+        if drafter_notes:
+            head += f"\n\n> **Drafter's note to the reviewer:** {drafter_notes[-1]}"
+        issues = check_label(lab, dataset)
+        qa = ("**Heuristic warnings** (not a verdict; check the photos):\n" + "\n".join(f"- {i}" for i in issues)
+              if issues else "_No heuristic warnings — still verify every claim against the photos._")
+        return ([p(x) for x in ex["inspiration"]], p(ex["target"]), head, qa,
+                json.dumps(lab["answer"], indent=2, ensure_ascii=False), _answer_markdown(lab["answer"]))
+
+    def act(eid, who, text, nt, action):
+        if not eid:
+            raise gr.Error("Pick an example.")
+        try:
+            if action in ("save", "approve"):
+                try:
+                    answer = json.loads(text)
+                except json.JSONDecodeError as exc:
+                    raise gr.Error(f"Answer is not valid JSON: {exc}") from exc
+                if answer != L.load_label(dataset, eid)["answer"]:
+                    L.edit_answer(dataset, eid, answer, who, nt)
+            if action == "approve":
+                L.set_status(dataset, eid, "approved", who, nt)
+            elif action in ("rejected", "draft"):
+                L.set_status(dataset, eid, action, who, nt)
+        except ValueError as exc:
+            raise gr.Error(str(exc)) from exc
+        lab = L.load_label(dataset, eid)
+        return f"Saved. **{eid}** is now **{lab['status']}**" + (f" (approved by {lab['provenance']['approved_by']})"
+                                                                  if lab["status"] == "approved" else "")
+
+    outs = [insp, tgt, info, qa_md, editor, preview]
+    for c in (status_filter,):
+        c.change(listing, status_filter, [pick, summary])
+    refresh.click(listing, status_filter, [pick, summary])
+    demo.load(listing, status_filter, [pick, summary])
+    pick.change(show, pick, outs)
+    save_btn.click(lambda *a: act(*a, "save"), [pick, reviewer, editor, note], status).then(show, pick, outs)
+    approve_btn.click(lambda *a: act(*a, "approve"), [pick, reviewer, editor, note], status).then(show, pick, outs)
+    reject_btn.click(lambda *a: act(*a, "rejected"), [pick, reviewer, editor, note], status).then(show, pick, outs)
+    draft_btn.click(lambda *a: act(*a, "draft"), [pick, reviewer, editor, note], status).then(show, pick, outs)
 
 
 MAX_SETS = 4

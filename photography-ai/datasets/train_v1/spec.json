@@ -1,0 +1,67 @@
+{
+ "dataset": "train_v1",
+ "purpose": "LoRA training pool for photography-direction examples. Images and labels live in git-ignored data/train_v1/; this spec makes the pool reproducible.",
+ "source": "Wikimedia Commons, Category:Images from Unsplash (CC0 Unsplash photos, pre-June 2017), via the Commons API. No social-media scraping.",
+ "category": "Images from Unsplash",
+ "per_query": 30,
+ "people_queries": [
+  "portrait woman",
+  "portrait man",
+  "fashion",
+  "model posing",
+  "street style",
+  "woman sitting",
+  "man sitting",
+  "woman walking",
+  "couple",
+  "silhouette",
+  "golden hour woman",
+  "backlit portrait",
+  "cafe woman",
+  "stairs woman",
+  "woman city",
+  "man city",
+  "night portrait",
+  "beach woman",
+  "girl field",
+  "woman wall"
+ ],
+ "place_queries": [
+  "cafe interior",
+  "empty street",
+  "alley",
+  "staircase",
+  "bridge",
+  "park path",
+  "building facade",
+  "station platform",
+  "rooftop",
+  "colorful wall",
+  "doorway",
+  "garden",
+  "library interior",
+  "market street",
+  "waterfront",
+  "corridor"
+ ],
+ "heldout_manifests": [
+  "datasets/portrait_v1/manifest.json"
+ ],
+ "near_duplicate_hamming": 6,
+ "split": {
+  "by": "author",
+  "val_fraction": 0.2,
+  "seed": 0
+ },
+ "licenses_allowed": [
+  "CC0",
+  "Public domain",
+  "CC BY",
+  "CC BY-SA"
+ ],
+ "fetch_sample": {
+  "person_per_query": 12,
+  "place_per_query": 5,
+  "note": "Starter subset: the first N results per query (Commons relevance order). Increase to scale up."
+ }
+}

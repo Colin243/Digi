@@ -134,7 +134,7 @@ def test_cli_prefer_and_report_end_to_end(pcase, tmp_path, capsys):
     assert main(["prefer", "--bench", "b3", "--case", "c1", "--rater", "colin", "--set", "Z",
                  "--runs-dir", str(tmp_path)]) == 2
     md = report_markdown(summarize(json.loads((tmp_path / "benchmarks/b3/manifest.json").read_text()), tmp_path))
-    assert "Blind side-by-side preferences" in md and "| colin | fake | 1 | 1 (100%) | 1 (100%) |" in md
+    assert "Blind side-by-side preferences" in md and "| colin | human | fake | 1 | 1 (100%) | 1 (100%) |" in md
 
 
 def test_score_cli_records_hallucination_flag(pcase, tmp_path):
@@ -173,3 +173,13 @@ def test_keys_json_format_describes_keys_instead_of_blank_shape(pcase, tmp_path)
                   RunConfig(strategy="decomposed", json_format="keys", max_side=256), tmp_path)
     assert rec["config"]["json_format"] == "keys"
     assert all("Fill in this JSON" not in prompt for prompt, _ in backend.calls)
+
+
+def test_rater_kinds_are_separated():
+    from photo_ai.evaluation import CATEGORY_KEYS, make_entry, rater_kind
+
+    assert rater_kind("claude-blind-reviewer") == "ai" and rater_kind("colin") == "human"
+    assert rater_kind({"rater": "claude-reviewer"}) == "ai"  # legacy entry without the field
+    assert make_entry("r", dict.fromkeys(CATEGORY_KEYS, 3), "colin")["rater_kind"] == "human"
+    with pytest.raises(ValueError):  # AI-reserved names can't be recorded as human
+        make_entry("r", dict.fromkeys(CATEGORY_KEYS, 3), "claude-me", kind="human")

@@ -42,7 +42,16 @@ DEFAULT_MODEL = "smolvlm2-500m"
 
 
 def resolve_spec(name: str) -> ModelSpec:
-    """Accept a registry key, or any Hugging Face repo id / local path for an MLX model."""
+    """Accept a registry key, any Hugging Face repo id / local path for an MLX model, or
+    "<base>+adapter=<dir>" for a base model with a LoRA adapter (e.g. a Phase 4 run)."""
+    if "+adapter=" in name:
+        base_name, adapter = name.split("+adapter=", 1)
+        base = resolve_spec(base_name)
+        adapter_dir = Path(adapter).expanduser()
+        if not adapter_dir.is_absolute():
+            adapter_dir = Path(__file__).resolve().parents[3] / adapter_dir
+        return ModelSpec(f"{base.key}+{adapter_dir.name}", base.repo_id, base.backend,
+                         f"LoRA adapter {adapter_dir}", adapter_path=str(adapter_dir))
     if name in MODELS:
         return MODELS[name]
     key = name.rstrip("/").split("/")[-1].lower()
