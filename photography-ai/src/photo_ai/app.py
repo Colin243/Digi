@@ -288,6 +288,15 @@ def _label_tab(demo: gr.Blocks, dataset: str = "train_v1") -> None:
         drafter_notes = [h["note"] for h in lab.get("history", []) if h.get("note") and h["action"] == "draft-imported"]
         if drafter_notes:
             head += f"\n\n> **Drafter's note to the reviewer:** {drafter_notes[-1]}"
+        reviews = [h for h in lab.get("history", []) if h.get("note") and h["action"] != "draft-imported"]
+        if reviews:
+            from .evaluation import rater_kind
+
+            head += "\n\n**Review history**"
+            for h in reviews:
+                who = h["by"]
+                kind = "AI" if who.lower().startswith(("ai-", "ai:", "claude", "codex")) or rater_kind(who) == "ai" else "human"
+                head += f"\n- `{h['at']}` **{who}** ({kind}, {h['action']}): {h['note']}"
         issues = check_label(lab, dataset)
         qa = ("**Heuristic warnings** (not a verdict; check the photos):\n" + "\n".join(f"- {i}" for i in issues)
               if issues else "_No heuristic warnings — still verify every claim against the photos._")
