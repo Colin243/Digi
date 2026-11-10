@@ -72,6 +72,23 @@ def main(argv: list[str] | None = None) -> int:
     sd.add_argument("--demo-id")
     sd.add_argument("--runs-dir", type=Path, default=DEFAULT_RUNS_DIR)
 
+    se = sub.add_parser("scene-eval", help="held-out Scene Director evaluation (issue #21)")
+    se.add_argument("action", choices=["validate", "fetch", "audit", "run", "report", "pack", "import-review", "score"])
+    se.add_argument("--manifest", type=Path, default=None, help="default: datasets/scene_eval_v1/manifest.json")
+    se.add_argument("--lock", action="store_true", help="fetch: record sha256 and dHash for fixtures that have none")
+    se.add_argument("--pool", type=Path, nargs="*", default=None,
+                    help="audit: training pool.json file(s) (default: data/train_v1/pool.json)")
+    se.add_argument("--out", type=Path, help="audit: write JSON + markdown here (default: next to the manifest)")
+    se.add_argument("--split", choices=["heldout", "dev"], default="heldout")
+    se.add_argument("--model", default=SELECTED_MODEL)
+    se.add_argument("--only", nargs="*", help="run: only these fixture ids (smoke runs)")
+    se.add_argument("--eval-id", help="run/report: evaluation id; pack: one or two ids (baseline first)", nargs="*")
+    se.add_argument("--pack", type=Path, help="import-review/score: review pack folder")
+    se.add_argument("--pack-id", help="pack: id for the new pack (default: derived from the eval ids)")
+    se.add_argument("--file", type=Path, help="import-review: exported review JSON")
+    se.add_argument("--reviewer", help="import-review: override the reviewer name in the file")
+    se.add_argument("--runs-dir", type=Path, default=DEFAULT_RUNS_DIR)
+
     ui = sub.add_parser("ui", help="launch the local upload interface")
     ui.add_argument("--host", default="127.0.0.1")
     ui.add_argument("--port", type=int, default=7860)
@@ -204,6 +221,9 @@ def main(argv: list[str] | None = None) -> int:
         demo = run_demo(load_config(a.config), a.model, a.runs_dir, a.demo_id)
         print(f"{len(demo['rows'])} runs; report: {a.runs_dir / (demo['demo_id'] + '.md')}")
         return 0
+
+    if a.cmd == "scene-eval":
+        return _scene_eval(a)
 
     if a.cmd == "ui":
         from .app import launch
@@ -349,6 +369,74 @@ def main(argv: list[str] | None = None) -> int:
                 f"{r['run_id']:42} {r['strategy']:12} {str(r['valid']):5} {f(r['model_load_s']):>7} "
                 f"{f(r['inference_s']):>8} {f(r['peak_memory_gb'], 2):>7}  {r.get('label') or ''}"
             )
+        return 0
+    return 1
+
+
+def _scene_eval(a: argparse.Namespace) -> int:
+    from . import scene_eval as se
+
+    manifest_path = a.manifest or se.MANIFEST
+    if a.action == "validate":
+        problems = se.validate_manifest(se.load_manifest(manifest_path), check_files=True)
+        for p in problems:
+            print(f"problem: {p}", file=sys.stderr)
+        print(f"{len(problems)} problem(s) in {manifest_path}")
+        return 1 if problems else 0
+    if a.action == "fetch":
+        res = se.fetch(manifest_path, lock=a.lock)
+        for p in res["problems"]:
+            print(f"problem: {p}", file=sys.stderr)
+        print(f"{res['fixtures']} fixtures; locked={res['locked']}")
+        return 1 if res["problems"] else 0
+    if a.action == "audit":
+        from .training.pool import data_dir
+
+        pools = a.pool or [data_dir("train_v1") / "pool.json"]
+        refs = [se.training_reference(p) for p in pools]
+        refs.append(se.manifest_reference(se.PROJECT_ROOT / "datasets" / "portrait_v1" / "manifest.json"))
+        audit = se.audit_overlap(se.load_manifest(manifest_path), refs)
+        out = a.out or Path(manifest_path).parent
+        out.mkdir(parents=True, exist_ok=True)
+        (out / "overlap_audit.json").write_text(json.dumps(audit, indent=1, ensure_ascii=False) + "\n")
+        (out / "overlap_audit.md").write_text(se.overlap_markdown(audit))
+        print(se.overlap_markdown(audit))
+        return 1 if audit["summary"]["fail"] else 0
+    if a.action == "run":
+        doc = se.run_eval(a.split, a.model, a.runs_dir, (a.eval_id or [None])[0], manifest_path, only=a.only)
+        print(f"{len(doc['rows'])} runs; report: {se.eval_dir(a.runs_dir, doc['eval_id']) / 'report.md'}")
+        return 0
+    if a.action == "report":
+        doc = se.load_eval(a.runs_dir, a.eval_id[0])
+        md = se.report_markdown(doc)
+        (se.eval_dir(a.runs_dir, doc["eval_id"]) / "report.md").write_text(md)
+        print(md)
+        return 0
+    from . import scene_review as sr
+
+    if a.action == "pack":
+        if not a.eval_id or len(a.eval_id) > 2:
+            print("error: pass one eval id (base only) or two (baseline first, then candidate)", file=sys.stderr)
+            return 2
+        try:
+            res = sr.build_pack([se.load_eval(a.runs_dir, e) for e in a.eval_id], a.runs_dir, a.pack_id, manifest_path)
+        except sr.PackError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        print(f"pack {res['pack_id']}: {res['fixtures']} fixtures -> {res['page']}\n"
+              f"key (do not send to reviewers): {res['key']}")
+        return 0
+    if a.action == "import-review":
+        try:
+            path = sr.import_review(a.pack, a.file, a.reviewer)
+        except sr.PackError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        print(f"saved -> {path}")
+        return 0
+    if a.action == "score":
+        res = sr.score_pack(a.pack, se.load_criteria())
+        print(res["markdown"])
         return 0
     return 1
 
