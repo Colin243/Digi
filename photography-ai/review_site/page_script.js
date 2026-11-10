@@ -1,6 +1,10 @@
 (() => {
   const EX = JSON.parse(document.getElementById("data").textContent);
   const KEY = "shot-review-v1";
+  // the exact answer version each reviewed example showed, so an approval can't carry over to edited text
+  const shaOf = Object.fromEntries(EX.map((e) => [e.id, e.answer_sha]));
+  const exportDoc = () => ({ name: state.name, reviews: state.reviews, updated_at: state.updated_at,
+    answer_sha: Object.fromEntries(Object.keys(state.reviews).filter((id) => shaOf[id]).map((id) => [id, shaOf[id]])) });
   const $ = (id) => document.getElementById(id);
   const el = (tag, attrs = {}, ...kids) => {
     const n = document.createElement(tag);
@@ -42,7 +46,7 @@
     setSave("Saving…");
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
-      const body = JSON.parse(JSON.stringify({ name: state.name, reviews: state.reviews, updated_at: state.updated_at, version: 1 }));
+      const body = JSON.parse(JSON.stringify({ ...exportDoc(), version: 1 }));
       inflight = inflight.then(() => docRef.set(body)).then(
         () => setSave("Saved", "ok"),
         (e) => { if (e && e.code === "invalid_argument") { docRef = null; setSave("Can't save to the shared review here · saved in this browser · use Copy my review", "warn"); }
@@ -176,7 +180,7 @@
   for (const [id, f] of [["f-all", "all"], ["f-todo", "todo"]]) $(id).addEventListener("click", () => {
     filter = f; $("f-all").setAttribute("aria-pressed", String(f === "all")); $("f-todo").setAttribute("aria-pressed", String(f === "todo")); renderList(); });
   $("copy").addEventListener("click", () => {
-    const text = JSON.stringify({ name: state.name, reviews: state.reviews, updated_at: state.updated_at }, null, 1);
+    const text = JSON.stringify(exportDoc(), null, 1);
     const box = $("copybox"); box.value = text;
     navigator.clipboard?.writeText(text).then(() => { $("copy-status").textContent = "Copied. Paste it into a message to send it."; },
       () => { box.hidden = false; box.select(); $("copy-status").textContent = "Select all and copy the text below."; })
@@ -185,7 +189,7 @@
   const standalone = !window.claude;  // a normal website (e.g. Vercel), not a claude.ai artifact
   if (standalone) { $("download").hidden = false; $("send-hint").hidden = false; }
   $("download").addEventListener("click", () => {
-    const text = JSON.stringify({ name: state.name, reviews: state.reviews, updated_at: state.updated_at }, null, 1);
+    const text = JSON.stringify(exportDoc(), null, 1);
     const who = (state.name || "review").trim().replace(/[^A-Za-z0-9_-]+/g, "-").toLowerCase() || "review";
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([text], { type: "application/json" }));

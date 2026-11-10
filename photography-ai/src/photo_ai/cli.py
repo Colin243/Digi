@@ -136,6 +136,8 @@ def main(argv: list[str] | None = None) -> int:
     td.add_argument("action", choices=["pool", "fetch", "status", "attribution", "assemble", "qa", "export",
                                        "import-tags", "import-labels", "draft", "import-review", "review-site"])
     td.add_argument("--reviewer", help="import-review: the human reviewer's name (default: the name in the file)")
+    td.add_argument("--site", type=Path, help="import-review: the review page folder (or HTML file) the reviewer was "
+                                               "sent; ties the review to the answer versions it showed")
     td.add_argument("--target", choices=["artifact", "vercel"], default="artifact", help="review-site: where it will be hosted")
     td.add_argument("--model", default="claude-opus-5-5", help="draft: reference model (Anthropic API)")
     td.add_argument("--dataset", default="train_v1")
