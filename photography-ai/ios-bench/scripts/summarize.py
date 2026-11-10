@@ -27,7 +27,39 @@ BUDGETS = {
 }
 
 
-BUDGET_ROWS: list[tuple[str, bool]] = []
+BUDGET_ROWS: list[tuple[str, bool | None]] = []  # (check, True pass / False fail / None no data); reset per file
+
+
+def camera_checks(r: dict) -> list[tuple[str, bool | None]]:
+    """Camera pause/resume passes only if EVERY trial's restart delivered a frame within budget.
+
+    The app's per-workload summary takes the max over recovered trials only, so a timeout (no first frame) was
+    invisible and one good restart could turn the check green. Here any timeout, camera error, unavailable camera
+    or missing sample fails, and a run with camera checks on but no samples is "no data", never a pass.
+    """
+    budget = BUDGETS["camera_recovery_s"]
+    if not (r.get("config") or {}).get("camera_pause_resume", True):
+        return []
+    groups: dict[tuple[str, int], list] = {}
+    for t in r.get("trials", []):
+        groups.setdefault((t["workload"], t["size"]), []).append(t.get("camera"))
+    if not groups:
+        return [("camera pause/resume: trials recorded", None)]
+    out = []
+    for (wl, size), cams in sorted(groups.items()):
+        n = len(cams)
+        missing = sum(c is None for c in cams)
+        errored = sum(1 for c in cams if c is not None and (c.get("error") or c.get("available") is False))
+        timed_out = sum(1 for c in cams if c is not None and not (c.get("error") or c.get("available") is False)
+                        and (c.get("recovered") is not True or c.get("first_frame_seconds") is None))
+        ok = [c for c in cams if c is not None and not (c.get("error") or c.get("available") is False)
+              and c.get("recovered") is True and c.get("first_frame_seconds") is not None]
+        slow = sum(c["first_frame_seconds"] > budget for c in ok)
+        within = len(ok) - slow
+        name = (f"{wl}@{size} camera recovered within {budget} s on every trial "
+                f"({within} ok / {slow} slow / {timed_out} timed out / {errored} errored / {missing} missing, of {n})")
+        out.append((name, within == n if n else None))
+    return out
 
 
 def med(xs):
@@ -43,12 +75,20 @@ def gb(b):
     return "" if b is None else f"{b / GB:.2f}"
 
 
+def overall(checks: list[tuple[str, bool | None]]) -> str:
+    """FAIL if anything failed; NO DATA if nothing failed but something is missing (or there are no checks)."""
+    if any(ok is False for _, ok in checks):
+        return "FAIL"
+    return "PASS" if checks and all(ok is True for _, ok in checks) else "NO DATA"
+
+
 def main(paths: list[str]) -> None:
     if not paths:
         sys.exit(__doc__)
     for p in paths:
         BUDGET_ROWS.clear()
         r = json.loads(Path(p).read_text())
+        BUDGET_ROWS = []
         d, rt, m, c = r["device"], r["runtime"], r.get("model") or {}, r["config"]
         print(f"## {r['id']} ({r['status']}{': ' + r['abort_reason'] if r.get('abort_reason') else ''})\n")
         print(f"- Device: {d.get('model_name') or d['machine']} ({d['machine']}), {d['system_name']} {d['system_version']} "
@@ -131,15 +171,20 @@ def main(paths: list[str]) -> None:
                            s["peak_footprint_max"] / GB <= BUDGETS["peak_footprint_gb"]))
             checks.append((f"{s['workload']}@{s['size']} min available >= {BUDGETS['min_available_gb']} GB",
                            s["min_available_min"] / GB >= BUDGETS["min_available_gb"]))
-            if s.get("camera_recovery_max") is not None:
-                checks.append((f"{s['workload']}@{s['size']} camera recovery max <= {BUDGETS['camera_recovery_s']} s",
-                               s["camera_recovery_max"] <= BUDGETS["camera_recovery_s"]))
+        checks += camera_checks(r)
+        for (wl, size) in sorted({(t["workload"], t["size"]) for t in r.get("trials", [])}):
+            ts = [t for t in r["trials"] if (t["workload"], t["size"]) == (wl, size)]
+            bad = sum(bool(t.get("error")) for t in ts)
+            checks.append((f"{wl}@{size} every trial finished without error ({len(ts) - bad}/{len(ts)})", bad == 0))
+        if not r.get("trials"):
+            checks.append(("trials recorded", None))
         if r.get("load", {}).get("seconds") is not None:
             checks.append((f"cold load <= {BUDGETS['cold_load_s']} s", r["load"]["seconds"] <= BUDGETS["cold_load_s"]))
         if checks:
             print("Budget check:")
             for name, ok in checks:
-                print(f"- [{'x' if ok else ' '}] {name}")
+                print(f"- [{'x' if ok else ' '}] {'PASS' if ok else 'NO DATA' if ok is None else 'FAIL'}: {name}")
+            print(f"\n**Overall: {overall(checks)}**")
             print()
 
 
