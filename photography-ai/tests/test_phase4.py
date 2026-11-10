@@ -229,3 +229,37 @@ def test_creative_review_import_applies_verdicts(ds):
     assert b["status"] == "rejected" and "don't share a look" in b["review_notes"]
     with pytest.raises(ValueError):
         L.import_creative_review(ds, {**review, "name": "claude-bot"})
+
+
+def test_reserve_batch_uses_only_unused_images_and_leaves_batch_one_alone(ds, tmp_path):
+    from photo_ai.training import review_site as R
+
+    root = tmp_path / "data" / ds
+    doc = json.loads((root / "pool.json").read_text())
+    for i in range(10, 17):  # more train photos: 6 people + 1 place
+        f = _img(root / "images" / f"p{i}.jpg", i + 1)
+        doc["images"].append({"id": f"p{i}", "title": f"File:P{i}.jpg", "author": "carol", "license": "CC0",
+                              "page_url": "https://commons.wikimedia.org/x", "role_hint": "person" if i < 16 else "place",
+                              "queries": ["q"], "file": str(f), "split": "train"})
+    (root / "pool.json").write_text(json.dumps(doc))
+    person = {"role": "person", "camera_angle": "low", "framing": "full-body", "pose": "standing", "light": ["side"], "n_people": 1}
+    T.import_tags(ds, {f"p{i}": person for i in range(10, 16)}, "ai-draft:test")
+
+    first = A.assemble(ds, n_examples=3)
+    T.import_tags(ds, {"p16": {"role": "place", "elements": ["brick wall"], "people_present": False}}, "ai-draft:test")
+    snapshot = json.loads(json.dumps(first))
+    reserve = A.assemble_reserve(ds, n_train=1, n_valid=1)
+    assert [e["split"] for e in reserve] == ["train"]  # no unused valid place left, so no valid reserve
+    r = reserve[0]
+    assert r["example_id"] == f"{ds}-rt201" and r["batch"] == 2
+    used_before = {p for e in first for p in e["inspiration"] + [e["target"]]}
+    assert not used_before & set(r["inspiration"] + [r["target"]])
+    assert A.load_examples(ds) == snapshot + reserve  # batch 1 untouched, reserve appended
+    with pytest.raises(ValueError):
+        A.assemble_reserve(ds, n_train=1, n_valid=0, batch=2)
+
+    L.import_drafts(ds, [{"example_id": e["example_id"], "answer": _answer(len(e["inspiration"]))}
+                         for e in A.load_examples(ds)], "ai-draft:test")
+    built = R.build(ds, target="vercel", batch=2)
+    assert built["examples"] == 1 and built["page"].endswith("review_site_vercel_batch2/index.html")
+    assert R.build(ds, target="vercel")["examples"] == len(first) + 1

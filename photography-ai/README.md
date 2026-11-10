@@ -36,7 +36,7 @@ The first real run downloads weights from Hugging Face into `~/.cache/huggingfac
 | `photo-ai bench --suite portrait_v1 --strategies decomposed --consistency-samples 0 --models …` | Phase 3 benchmark on the portrait suite. `--json-format keys` describes the expected JSON as a key list instead of a blank shape. |
 | `photo-ai prefer --bench … --case … --rater … --set B --shot B2` | Records a blind side-by-side preference from the command line. `--show` prints this rater's A/B/C order. |
 | `photo-ai convert smolvlm2-2.2b` | Quantizes a registered model into git-ignored `models/<key>-4bit`. |
-| `photo-ai train-data pool / fetch / assemble / status / qa / export` | Phase 4 training data: Commons search → licence-tracked download with held-out dedup and author split → technique-matched examples → label status and heuristic QA → export **approved** labels as SFT rows (`data/`, git-ignored). |
+| `photo-ai train-data pool / fetch / assemble [--reserve] / status / qa / export` | Phase 4 training data: Commons search → licence-tracked download with held-out dedup and author split → technique-matched examples → label status and heuristic QA → export **approved** labels as SFT rows (`data/`, git-ignored). |
 | `photo-ai train-data import-tags / import-labels --file …` | Imports AI-drafted tags or answers as provisional drafts. |
 | `photo-ai train-data draft --ids …` | Drafts answers with Claude via the API (`uv sync --extra drafting`; paid; drafts stay provisional). |
 | `photo-ai lora smoke --config configs/lora_smoke.json` | LoRA feasibility smoke test (architecture, template parity, masking, gradients, learning, checkpoint reload, adapter inference, memory). |

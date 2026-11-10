@@ -121,6 +121,11 @@ def main(argv: list[str] | None = None) -> int:
     td.add_argument("--file", type=Path, help="JSON file for import-tags / import-labels")
     td.add_argument("--source", default="ai-draft", help="provenance label for imported drafts")
     td.add_argument("--n-examples", type=int, default=24)
+    td.add_argument("--reserve", action="store_true",
+                    help="assemble: append a reserve batch from unused images instead of rebuilding examples.json")
+    td.add_argument("--n-train", type=int, default=10, help="assemble --reserve: training examples to add")
+    td.add_argument("--n-valid", type=int, default=3, help="assemble --reserve: validation examples to add")
+    td.add_argument("--batch", type=int, help="assemble --reserve: new batch number (default 2); review-site: only this batch")
     td.add_argument("--include-unapproved", action="store_true",
                     help="export drafts too (ONLY for pipeline smoke tests; never for real training)")
 

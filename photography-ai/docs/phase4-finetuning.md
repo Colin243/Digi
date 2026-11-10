@@ -222,6 +222,28 @@ Run on 4 real rows (one of each stage) from the unreviewed drafts. Report: `data
    - `photo-ai lora train --config configs/lora_pilot.json`;
    - the held-out evaluation (§7).
 
+### Reserve batch (batch 2, 2026-11-10)
+
+The first review batch has little slack. The pilot needs about 15 approved training examples and all 3 validation examples. Batch 1 has 19 and 3, so rejecting 5 training examples, or any 1 validation example, would block the pilot. A reserve batch is ready so a second review round can start right away. It goes out only if it's needed.
+
+| item | count |
+|---|---|
+| Extra photos downloaded | 69, all validation-split photographers (53 people, 16 places), same CC0 Commons source. They were downloaded because no validation photos were left unused. Every held-out image was re-checked. One unused *training* photo was then excluded as a near-duplicate of a new validation photo, so no shoot spans both splits. |
+| Tags for the new photos | 69, drafted by AI (provisional) |
+| Reserve examples | 13 (`train_v1-rt201…rt210`, `train_v1-rv201…rv203`), all marked `"batch": 2`. They use only photos that no batch-1 example uses, and batch-1 examples were not changed. |
+| Reference answers drafted (provisional) | 13. Heuristic warnings on 3 (inspiration notes with a missing framing or angle word) |
+| Drafter flags | rv201 and rt203 are likely rejects (loose set, or a target with no visible ground). rt205 has one shot on a public road's centre line. rt202's target has a stranger in frame. |
+
+How to build and use it:
+
+```bash
+photo-ai train-data assemble --reserve --n-train 10 --n-valid 3     # appends batch 2; refuses to rebuild examples.json
+photo-ai train-data review-site --target vercel --batch 2           # -> data/train_v1/review_site_vercel_batch2/
+photo-ai train-data import-review --file <her json>                 # same import for either batch
+```
+
+Deploy batch 2 to its own address, separate from batch 1. Answers are saved in the reviewer's browser for each site, so batch 1 progress stays where it is. A plain `assemble` now refuses to run when `examples.json` already exists, because rebuilding it would leave existing labels attached to examples that no longer exist.
+
 ## 9. Next iteration
 
 - **Review first.** Approve or fix the 22 drafts. Their reviewer notes show the assembly's weak spot.

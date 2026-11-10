@@ -26,11 +26,13 @@ TEMPLATE = PROJECT_ROOT / "review_site"
 VERCEL_JSON = {"headers": [{"source": "/(.*)", "headers": [{"key": "X-Robots-Tag", "value": "noindex, nofollow"}]}]}
 
 
-def build(dataset: str = "train_v1", max_side: int = 900, target: str = "artifact") -> dict:
+def build(dataset: str = "train_v1", max_side: int = 900, target: str = "artifact", batch: int | None = None) -> dict:
     """target "artifact": a claude.ai page (the publish adds the document skeleton; answers go to its db).
     target "vercel": a standalone static site (full HTML document + vercel.json, not indexed); answers stay in
-    the reviewer's browser and come back as a downloaded or copied JSON file."""
-    out = data_dir(dataset) / ("review_site" if target == "artifact" else "review_site_vercel")
+    the reviewer's browser and come back as a downloaded or copied JSON file.
+    batch: only examples of that batch (examples without a "batch" field are batch 1), built into a separate folder."""
+    out = data_dir(dataset) / (("review_site" if target == "artifact" else "review_site_vercel")
+                               + (f"_batch{batch}" if batch else ""))
     (out / "img").mkdir(parents=True, exist_ok=True)
     pool = {i["id"]: i for i in load_pool(dataset)["images"]}
 
@@ -45,6 +47,8 @@ def build(dataset: str = "train_v1", max_side: int = 900, target: str = "artifac
 
     examples = []
     for e in load_examples(dataset):
+        if batch and e.get("batch", 1) != batch:
+            continue
         lab = load_label(dataset, e["example_id"])
         if lab is None:
             continue

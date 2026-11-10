@@ -7,6 +7,12 @@ import sys
 from collections import Counter
 
 
+def load_examples_nonempty(dataset: str) -> bool:
+    from .assemble import load_examples
+
+    return bool(load_examples(dataset))
+
+
 def run_train_data(a) -> int:
     from . import pool as P
 
@@ -36,8 +42,17 @@ def run_train_data(a) -> int:
         print(f"imported {n} tag records as {a.source!r} (provisional until reviewed)")
         return 0
     if a.action == "assemble":
-        from .assemble import assemble
+        from .assemble import assemble, assemble_reserve
 
+        if a.reserve:
+            ex = assemble_reserve(a.dataset, a.n_train, a.n_valid, batch=a.batch or 2)
+            print(f"{len(ex)} reserve examples (batch {a.batch or 2}) appended; "
+                  f"splits {dict(Counter(e['split'] for e in ex))}")
+            return 0
+        if load_examples_nonempty(a.dataset):
+            print("examples.json already exists and rebuilding it would orphan its labels; "
+                  "use --reserve to add a batch", file=sys.stderr)
+            return 2
         ex = assemble(a.dataset, a.n_examples)
         print(f"{len(ex)} example skeletons; splits {dict(Counter(e['split'] for e in ex))}")
         return 0
@@ -58,7 +73,7 @@ def run_train_data(a) -> int:
     if a.action == "review-site":
         from .review_site import build
 
-        print(json.dumps(build(a.dataset, target=a.target), indent=1))
+        print(json.dumps(build(a.dataset, target=a.target, batch=a.batch), indent=1))
         return 0
     if a.action == "import-review":
         from .labels import import_creative_review
