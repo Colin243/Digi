@@ -56,7 +56,7 @@ def main(argv: list[str] | None = None) -> int:
                     help="v2 adds body pose, head/chin, gaze and an optional expression cue (decomposed strategy)")
     _add_run_args(an)
 
-    sn = sub.add_parser("scene", help="Scene Director: one scene photo + a style brief -> 3 portrait looks")
+    sn = sub.add_parser("scene", help="Scene Director (experimental): one scene photo + a style brief -> 3 portrait looks")
     sn.add_argument("-t", "--target", required=True, help="the scene photo (with or without a person)")
     sn.add_argument("--style", choices=list(prompts.STYLE_BRIEFS), help="starter style brief")
     sn.add_argument("--brief", default="", help="extra style notes in your own words")
@@ -153,6 +153,8 @@ def main(argv: list[str] | None = None) -> int:
     td.add_argument("action", choices=["pool", "fetch", "status", "attribution", "assemble", "qa", "export",
                                        "import-tags", "import-labels", "draft", "import-review", "review-site"])
     td.add_argument("--reviewer", help="import-review: the human reviewer's name (default: the name in the file)")
+    td.add_argument("--site", type=Path, help="import-review: the review page folder (or HTML file) the reviewer was "
+                                               "sent; ties the review to the answer versions it showed")
     td.add_argument("--target", choices=["artifact", "vercel"], default="artifact", help="review-site: where it will be hosted")
     td.add_argument("--model", default="claude-opus-5-5", help="draft: reference model (Anthropic API)")
     td.add_argument("--dataset", default="train_v1")

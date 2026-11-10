@@ -133,3 +133,24 @@ def test_scene_demo_runs_fixtures_and_writes_report(tmp_path, monkeypatch, photo
     demo = scene_demo.run_demo(cfg, "fake", tmp_path, "demo-test", log=lambda *_: None)
     assert demo["rows"][0]["valid"] and (tmp_path / "demo-test.md").exists()
     assert "松弛感" in (tmp_path / "demo-test.md").read_text()
+
+
+def test_scene_mode_honors_and_records_the_token_limit(photos, tmp_path):
+    rec = analyze(FakeBackend(FAKE), [], photos(1)[0], RunConfig(mode="scene", style="cool_editorial", max_tokens=300,
+                                                                 max_side=256), tmp_path)
+    assert rec["config"]["max_tokens"] == 300
+    assert [s["max_tokens"] for s in rec["timing"]["stages"]] == [300, 300, 300, 300]
+    rec = analyze(FakeBackend(FAKE), [], photos(1)[0], RunConfig(mode="scene", max_side=256), tmp_path)
+    assert [s["max_tokens"] for s in rec["timing"]["stages"]] == [600, 900, 900, 900]  # under the 1600 default cap
+
+
+def test_flags_directions_aimed_at_people_already_in_the_photo():
+    stranger = dict(V2_SHOT, body_pose="ask the person by the door to lean on the wall")
+    res = {"compositions": [stranger, V2_SHOT, V2_SHOT], "target_scene": {"people_in_frame": "a man by the door"}}
+    assert metrics.direction_checks(res)["directs_people_in_frame"] == 1
+    empty = {"compositions": [stranger] * 3, "target_scene": {"people_in_frame": "none"}}
+    assert metrics.direction_checks(empty)["directs_people_in_frame"] == 0
+    rec = {"result": {"mode": "scene", "style": {"label": "x"}, **res}, "validation": {"ok": True, "errors": []},
+           "auto_metrics": {"direction": metrics.direction_checks(res)}}
+    md = result_markdown(rec)
+    assert "experimental" in md.lower() and "may direct someone already in the photo" in md

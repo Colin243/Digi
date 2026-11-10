@@ -154,6 +154,10 @@ _UNSAFE = re.compile(r"\b(in(?:to)? (?:the )?(?:traffic|road|middle of the stree
                      r"(?:stand|standing|sit|sitting|step|stepping|perch|perched|perching|balance|balancing) on (?:the |a )?"
                      r"(?:ledge|railing|parapet|handrail|wall top|bench back)|climb(?:ing|s)? (?:over|onto|up on)|"
                      r"lean(?:ing|s)? over (?:the |a )?(?:railing|ledge|edge|parapet)|into the water)\b")
+# Directions aimed at someone already in the photo ("ask the person by the door to ..."): the subject is the
+# photographer's friend, and strangers must never be directed.
+_PASSERBY = re.compile(r"\b(?:the|that|this) (?:person|man|woman|people|couple|stranger|passer-?by|cyclist|pedestrian)s?\b")
+_DIRECTION_TEXT = ("subject_position", "body_pose", "head_direction", "gaze", "expression_cue", "steps")
 _GAZE_TARGET = re.compile(r"\b(lens|camera|frame|left|right|down|up|ground|floor|sky|window|sign|wall|over (?:her|his|their) shoulder|"
                           r"toward|towards|at the|into the|closed)\b")
 
@@ -170,6 +174,10 @@ def direction_checks(result: dict | None) -> dict | None:
         "gaze_specific": sum(bool(_GAZE_TARGET.search(str(c.get("gaze", "")).lower())) for c in comps),
         "emotion_inferences": [m.group(0) for t in [*texts, people] for m in _EMOTION_INFERENCE.finditer(t)],
         "unsafe_directions": [m.group(0) for t in texts for m in _UNSAFE.finditer(t)],
+        # only meaningful when the scene has people in it
+        "directs_people_in_frame": 0 if people.strip() in ("", "none", "none.") else sum(
+            bool(_PASSERBY.search(composition_text({k: c.get(k) for k in _DIRECTION_TEXT if c.get(k)}).lower()))
+            for c in comps),
     }
 
 

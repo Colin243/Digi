@@ -17,7 +17,7 @@ from PIL import Image, ImageOps
 
 from ..cases import PROJECT_ROOT, REPO_ROOT
 from .assemble import load_examples
-from .labels import load_label
+from .labels import answer_sha, load_label
 from .pool import data_dir, load_pool
 
 TEMPLATE = PROJECT_ROOT / "review_site"
@@ -62,7 +62,8 @@ def build(dataset: str = "train_v1", max_side: int = 900, target: str = "artifac
                 notes.append({"who": "Codex (AI review)" if "codex" in h["by"] else h["by"], "note": h["note"]})
         examples.append({"id": e["example_id"], "short": e["example_id"].split("-")[1], "split": e["split"],
                          "technique": e["technique"]["description"], "inspiration": [img(p) for p in e["inspiration"]],
-                         "target": img(e["target"]), "answer": lab["answer"], "ai_notes": notes})
+                         "target": img(e["target"]), "answer": lab["answer"], "ai_notes": notes,
+                         "answer_sha": answer_sha(lab["answer"])})
     data = json.dumps(examples, ensure_ascii=False).replace("</", "<\\/")
     page = ((TEMPLATE / "page_head.html").read_text() + (TEMPLATE / "page_body.html").read_text()
             + f'<script type="application/json" id="data">{data}</script>\n<script>\n'
@@ -77,4 +78,19 @@ def build(dataset: str = "train_v1", max_side: int = 900, target: str = "artifac
     else:
         name = "shot-review.html"
     (out / name).write_text(page)
+    (out / "manifest.json").write_text(json.dumps({"dataset": dataset, "batch": batch, "page": name,
+                                                   "answer_sha": {e["id"]: e["answer_sha"] for e in examples}}, indent=1))
     return {"page": str(out / name), "examples": len(examples), "images": len(list((out / "img").glob("*.jpg")))}
+
+
+def seen_answers(site: Path) -> dict[str, str]:
+    """Answer fingerprints a review page showed: from its manifest, or (pages built before manifests existed)
+    by hashing the answers embedded in the page itself."""
+    site = Path(site)
+    if site.is_dir() and (site / "manifest.json").exists():
+        return json.loads((site / "manifest.json").read_text())["answer_sha"]
+    page = site if site.is_file() else next(p for p in (site / "index.html", site / "shot-review.html") if p.exists())
+    html = page.read_text()
+    start = html.index('<script type="application/json" id="data">') + len('<script type="application/json" id="data">')
+    data = json.loads(html[start:html.index("</script>", start)].replace("<\\/", "</"))
+    return {e["id"]: answer_sha(e["answer"]) for e in data}

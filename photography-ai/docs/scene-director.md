@@ -1,5 +1,7 @@
 # Scene Director: one photo, three XHS-style portrait looks (issue #19)
 
+> **Experimental.** The held-out evaluation (#21) found that the base model sometimes directs strangers already in the photo, or suggests unsafe spots such as a driving lane or a café table. The CLI, the UI tab and every rendered result say so. Results also carry an automated `directs_people_in_frame` check next to the unsafe and emotion checks, and the rendered result shows any flags. Treat looks as suggestions to check on site.
+
 The Scene Director takes **one scene photo**, with or without a person in it, and a **style brief**. It returns three portrait looks to shoot there. No reference photos are needed. It uses the base model chosen in Phase 3, **Qwen3-VL-2B-Instruct 4-bit**, with no fine-tuning. The Inspiration Director (3–5 reference photos plus a target) still works as before.
 
 ```bash
@@ -50,7 +52,7 @@ The full brief text is in `prompts.STYLE_BRIEFS`. Every brief goes through the s
 The scene photo is downscaled to a 1024 px long edge. Then the model makes four calls, each with only that one photo:
 
 1. **scene**: a JSON description of the scene: description, key elements, constraints, `people_in_frame`.
-2. **look 1, look 2, look 3**: one shot-v2 look per call, each with a different plan: **wide** (full body), **medium** (waist up, a new camera spot and pose), and **close** (head and shoulders, new use of light, new gaze). Each call lists the earlier looks and asks for a clearly different one.
+2. **look 1, look 2, look 3**: one shot-v2 look per call (the scene call is capped at 600 tokens and each look at 900, both also capped by `--max-tokens`; each stage records the limit it used), each with a different plan: **wide** (full body), **medium** (waist up, a new camera spot and pose), and **close** (head and shoulders, new use of light, new gaze). Each call lists the earlier looks and asks for a clearly different one.
 
 Step 2 started as a single call for all three looks. On Qwen3-VL-2B that produced one look written three times (see *demo v1* below), so it was split.
 

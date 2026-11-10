@@ -211,24 +211,74 @@ def test_api_drafter_validates_and_imports_as_draft(ds):
     assert lab["status"] == "draft" and lab["provenance"]["drafted_by"].startswith("ai-draft:claude-opus-5-5")
 
 
-def test_creative_review_import_applies_verdicts(ds):
+def _two_drafts(ds):
     first = A.assemble(ds, n_examples=3)[0]
     exs = [first, {**first, "example_id": first["example_id"] + "-b"}]
     (P.data_dir(ds) / "examples.json").write_text(json.dumps(exs))
-    ids = [e["example_id"] for e in exs][:2]
-    for e in exs[:2]:
+    for e in exs:
         L.import_drafts(ds, [{"example_id": e["example_id"], "answer": _answer(len(e["inspiration"]))}], "ai-draft:claude")
-    review = {"name": "Mia", "reviews": {
-        ids[0]: {"overall": "yes", "set": "yes", "shots": [{"v": "yes"}, {"v": "fix", "fix": "lower the camera"}, {"v": "yes"}], "comment": ""},
+    return [e["example_id"] for e in exs]
+
+
+def test_creative_review_import_applies_verdicts(ds):
+    ids = _two_drafts(ds)
+    sha = {i: L.answer_sha(L.load_label(ds, i)["answer"]) for i in ids}
+    review = {"name": "Mia", "answer_sha": sha, "reviews": {
+        ids[0]: {"overall": "yes", "set": "yes", "shots": [{"v": "yes"}, {"v": "yes"}, {}], "comment": "lovely"},
         ids[1]: {"overall": "no", "set": "no", "shots": [{}, {}, {}], "comment": "the photos don't share a look"},
     }}
     assert L.import_creative_review(ds, review) == {"approved": 1, "rejected": 1}
     a, b = L.load_label(ds, ids[0]), L.load_label(ds, ids[1])
     assert a["status"] == "approved" and a["provenance"]["approved_by"] == "Mia"
-    assert "lower the camera" in a["history"][-2]["note"] and a["creative_review"]["shots"][1]["v"] == "fix"
+    assert "lovely" in a["history"][-2]["note"] and a["creative_review"]["reviewed_answer_sha"] == sha[ids[0]]
     assert b["status"] == "rejected" and "don't share a look" in b["review_notes"]
     with pytest.raises(ValueError):
         L.import_creative_review(ds, {**review, "name": "claude-bot"})
+
+
+def test_needs_changes_unapproves_and_never_exports(ds):
+    ids = _two_drafts(ds)
+    for i in ids:
+        L.set_status(ds, i, "approved", "Mia")
+    sha = {i: L.answer_sha(L.load_label(ds, i)["answer"]) for i in ids}
+    review = {"name": "Mia", "answer_sha": sha, "reviews": {
+        ids[0]: {"overall": "fix", "shots": [{}, {}, {}], "comment": "lower the camera"},
+        # "yes, as is" with a shot marked needs-changes is contradictory: treated as fixes, not approval
+        ids[1]: {"overall": "yes", "shots": [{"v": "yes"}, {"v": "fix", "fix": "she'd never pose like that"}, {}]},
+    }}
+    out = L.import_creative_review(ds, review)
+    assert out == {"unapproved_for_fixes": 2, "needs_fixes": 2}
+    for i in ids:
+        lab = L.load_label(ds, i)
+        assert lab["status"] == "draft" and lab["provenance"]["approved_by"] is None
+    assert "lower the camera" in L.load_label(ds, ids[0])["review_notes"]
+    assert E.export_sft(ds)["examples"] == {}  # nothing left eligible for training
+
+
+def test_old_yes_cannot_approve_edited_text(ds):
+    ids = _two_drafts(ds)
+    seen = {i: L.answer_sha(L.load_label(ds, i)["answer"]) for i in ids}  # what the review page showed
+    edited = _answer(len(A.load_examples(ds)[0]["inspiration"]))
+    edited["target_scene"]["description"] = "A covered staircase with red railings, edited after the page was built."
+    L.edit_answer(ds, ids[0], edited, "Colin")
+    review = {"name": "Mia", "reviews": {i: {"overall": "yes", "shots": [{}, {}, {}]} for i in ids}}
+    assert L.import_creative_review(ds, review) == {"approve_blocked_unverified": 2}  # no fingerprints at all
+    out = L.import_creative_review(ds, review, seen=seen)
+    assert out == {"approve_blocked_stale": 1, "approved": 1}
+    assert L.load_label(ds, ids[0])["status"] == "draft" and "edited after" in L.load_label(ds, ids[0])["review_notes"]
+    assert L.load_label(ds, ids[1])["status"] == "approved"
+
+
+def test_review_page_fingerprints_match_import(ds):
+    from photo_ai.training import review_site as R
+
+    ids = _two_drafts(ds)
+    built = R.build(ds, target="vercel")
+    site = P.data_dir(ds) / "review_site_vercel"
+    from_manifest = R.seen_answers(site)
+    (site / "manifest.json").unlink()  # pages sent before manifests existed: hash the answers embedded in the page
+    assert R.seen_answers(site) == from_manifest == {i: L.answer_sha(L.load_label(ds, i)["answer"]) for i in ids}
+    assert built["examples"] == 2
 
 
 def test_reserve_batch_uses_only_unused_images_and_leaves_batch_one_alone(ds, tmp_path):

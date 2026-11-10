@@ -135,6 +135,7 @@ def _run_stage(
         data = None
     return data, {
         "name": name,
+        "max_tokens": max_tokens or cfg.max_tokens,  # the limit this stage actually used
         "prompt": prompt,
         "n_images": len(images),
         "ok": data is not None,
@@ -194,7 +195,9 @@ LOOK_TOKENS = 900  # one shot-v2 look runs ~450-650 tokens
 
 
 def _scene_director(backend, run_dir, insp, tgt, cfg):
-    scene, st = _run_stage(backend, run_dir, "scene", prompts.director_scene(), [tgt], schema.TargetScene, cfg, 600)
+    # cfg.max_tokens caps every scene-mode call (it is recorded with the run, so it must be honored)
+    scene, st = _run_stage(backend, run_dir, "scene", prompts.director_scene(), [tgt], schema.TargetScene, cfg,
+                           min(600, cfg.max_tokens))
     stages = [st]
     style = {"key": cfg.style, "label": prompts.style_label(cfg.style), "brief": cfg.brief}
     partial = {"mode": "scene", "style": style, "target_scene": scene, "compositions": []}
@@ -204,7 +207,7 @@ def _scene_director(backend, run_dir, insp, tgt, cfg):
         look, st = _run_stage(
             backend, run_dir, f"look{k}",
             prompts.scene_look(scene, cfg.style, cfg.brief, cfg.subject, k, partial["compositions"]),
-            [tgt], schema.ShotV2, cfg, LOOK_TOKENS,
+            [tgt], schema.ShotV2, cfg, min(LOOK_TOKENS, cfg.max_tokens),
         )
         stages.append(st)
         if look is None:
@@ -289,7 +292,7 @@ def analyze(
             "peak_memory_gb": max(peaks) if peaks else None,
             "model_calls": sum(len(s["attempts"]) for s in stages),
             "generation_tokens": gen_tokens,
-            "stages": [{k: s[k] for k in ("name", "wall_s")} for s in stages],
+            "stages": [{k: s[k] for k in ("name", "wall_s", "max_tokens")} for s in stages],
         },
         "result": result,
         "partial_result": None if result else partial,
