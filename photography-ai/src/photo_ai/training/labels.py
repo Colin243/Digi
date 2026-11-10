@@ -32,6 +32,7 @@ Rules enforced here (not just by convention):
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections import Counter
 from datetime import datetime
@@ -63,6 +64,11 @@ def load_labels(dataset: str = "train_v1") -> list[dict]:
 
 def save_label(dataset: str, label: dict) -> None:
     (labels_dir(dataset) / f"{label['example_id']}.json").write_text(json.dumps(label, indent=1, ensure_ascii=False))
+
+
+def answer_sha(answer: dict) -> str:
+    """Fingerprint of an answer's text, so a review can be tied to the exact version the reviewer saw."""
+    return hashlib.sha256(json.dumps(answer, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:16]
 
 
 def validate_answer(answer: dict, n_inspiration: int | None = None) -> list[str]:
@@ -175,15 +181,25 @@ SHOT_WORDS = {"yes": "would shoot", "fix": "needs changes", "no": "skip"}
 SET_WORDS = {"yes": "clearly", "fix": "loosely", "no": "not really"}
 
 
-def import_creative_review(dataset: str, review: dict, reviewer: str | None = None) -> dict:
-    """Apply a review from the Shot Review page (shared store doc or "Copy my review" text).
+def import_creative_review(dataset: str, review: dict, reviewer: str | None = None,
+                           seen: dict[str, str] | None = None) -> dict:
+    """Apply a review from the Shot Review page (shared store doc, download, or "Copy my review" text).
 
     review = {"name": str, "reviews": {example_id: {"overall": yes|fix|no|None, "set": ..., "shots": [{"v", "fix"}]*3,
-              "comment": str}}}. "Yes, as is" approves (the page tells the reviewer it counts as approval),
-    "No" rejects, "Yes, after fixes" stays draft with the requested fixes in review_notes. Every example the
-    reviewer touched gets a history entry; nothing is applied for an AI-reserved reviewer name.
+              "comment": str}}, "answer_sha": {example_id: sha}}. `seen` gives the same fingerprints when the review
+    file predates them (read from the review page that was sent, see review_site.seen_answers).
+
+    Approval is deliberately strict:
+      * "Yes, as is" approves only when every shot verdict is "would shoot" or blank AND the answer's current
+        fingerprint matches the one the reviewer saw. A review of text that was edited later, or that cannot be
+        tied to a version, is recorded but approves nothing (approve_blocked_stale / approve_blocked_unverified).
+      * "Yes, after fixes", or a "yes" with any shot marked needs-changes or skip, sends the label back to draft
+        (un-approving it if it was approved) with the requested fixes in review_notes.
+      * "No" rejects.
+    Every example the reviewer touched gets a history entry; nothing is applied for an AI-reserved reviewer name.
     """
     who = _require_human(reviewer or review.get("name", ""))
+    seen = {**(seen or {}), **(review.get("answer_sha") or {})}
     counts = Counter()
     for eid, r in review.get("reviews", {}).items():
         lab = load_label(dataset, eid)
@@ -198,12 +214,25 @@ def import_creative_review(dataset: str, review: dict, reviewer: str | None = No
         if (r.get("comment") or "").strip():
             parts.append("Comment: " + r["comment"].strip())
         summary = " ".join(parts)
+        current, reviewed = answer_sha(lab["answer"]), seen.get(eid)
         lab["creative_review"] = {"reviewer": who, "overall": r.get("overall"), "set": r.get("set"), "shots": shots,
-                                  "comment": r.get("comment", ""), "imported_at": _now()}
+                                  "comment": r.get("comment", ""), "imported_at": _now(),
+                                  "reviewed_answer_sha": reviewed, "answer_sha_at_import": current}
         lab["history"].append({"at": _now(), "by": who, "action": "creative-review", "note": summary})
         save_label(dataset, lab)
         overall = r.get("overall")
-        if overall == "yes":
+        shot_objections = any(s.get("v") in ("fix", "no") for s in shots)
+        if overall == "yes" and not shot_objections:
+            if reviewed is None or reviewed != current:
+                key = "approve_blocked_unverified" if reviewed is None else "approve_blocked_stale"
+                why = ("the review can't be tied to the text version it was given" if reviewed is None
+                       else "the answer was edited after this review page was built")
+                lab = load_label(dataset, eid)
+                lab["history"].append({"at": _now(), "by": who, "action": "approval-not-applied", "note": f"Creative director said yes, but {why}; re-review needed."})
+                lab["review_notes"] = f"Approval not applied: {why}. " + summary
+                save_label(dataset, lab)
+                counts[key] += 1
+                continue
             if lab.get("schema_errors"):
                 counts["approve_blocked_schema"] += 1
                 continue
@@ -212,9 +241,13 @@ def import_creative_review(dataset: str, review: dict, reviewer: str | None = No
         elif overall == "no":
             set_status(dataset, eid, "rejected", who, "Creative director: no. " + summary)
             counts["rejected"] += 1
-        elif overall == "fix":
+        elif overall in ("yes", "fix"):
+            note = "Creative director asked for fixes: " + summary
+            if lab["status"] != "draft":  # an approved (or rejected) label goes back to draft until fixed and re-approved
+                set_status(dataset, eid, "draft", who, note)
+                counts["unapproved_for_fixes" if lab["status"] == "approved" else "reopened_for_fixes"] += 1
             lab = load_label(dataset, eid)
-            lab["review_notes"] = "Creative director asked for fixes: " + summary
+            lab["review_notes"] = note
             save_label(dataset, lab)
             counts["needs_fixes"] += 1
         else:
