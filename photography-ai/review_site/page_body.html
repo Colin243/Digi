@@ -17,7 +17,8 @@
     <div class="intro" id="intro">
       <p><strong>What this is.</strong> An app in progress suggests how to photograph someone in a new place, in the style of a few inspiration photos. Before teaching it, we need a creative director's eye on the example answers below. They were drafted by AI and nobody has checked them yet.</p>
       <p><strong>What to do.</strong> For each example, look at the inspiration frames and the location, then mark each suggested shot: <em>Would shoot</em>, <em>Needs changes</em> (say what), or <em>Skip</em>. Finish with whether the example should teach the app. <em>Yes, as is</em> counts as your approval to use it for training.</p>
-      <div class="row"><button class="btn" type="button" id="copy">Copy my review</button><span class="save" id="copy-status"></span></div>
+      <p id="send-hint" hidden><strong>Sending it back.</strong> Your answers save in this browser as you go. When you're done (or whenever you stop), tap <em>Download my review</em> and send the file back, or tap <em>Copy my review</em> and paste it into a message.</p>
+      <div class="row"><button class="btn primary" type="button" id="download" hidden>Download my review</button><button class="btn" type="button" id="copy">Copy my review</button><span class="save" id="copy-status"></span></div>
       <textarea class="copybox" id="copybox" hidden readonly aria-label="Your review as text"></textarea>
     </div>
     <div id="sheet"></div>

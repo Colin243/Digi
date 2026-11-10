@@ -23,8 +23,14 @@ from .pool import data_dir, load_pool
 TEMPLATE = PROJECT_ROOT / "review_site"
 
 
-def build(dataset: str = "train_v1", max_side: int = 900) -> dict:
-    out = data_dir(dataset) / "review_site"
+VERCEL_JSON = {"headers": [{"source": "/(.*)", "headers": [{"key": "X-Robots-Tag", "value": "noindex, nofollow"}]}]}
+
+
+def build(dataset: str = "train_v1", max_side: int = 900, target: str = "artifact") -> dict:
+    """target "artifact": a claude.ai page (the publish adds the document skeleton; answers go to its db).
+    target "vercel": a standalone static site (full HTML document + vercel.json, not indexed); answers stay in
+    the reviewer's browser and come back as a downloaded or copied JSON file."""
+    out = data_dir(dataset) / ("review_site" if target == "artifact" else "review_site_vercel")
     (out / "img").mkdir(parents=True, exist_ok=True)
     pool = {i["id"]: i for i in load_pool(dataset)["images"]}
 
@@ -57,6 +63,14 @@ def build(dataset: str = "train_v1", max_side: int = 900) -> dict:
     page = ((TEMPLATE / "page_head.html").read_text() + (TEMPLATE / "page_body.html").read_text()
             + f'<script type="application/json" id="data">{data}</script>\n<script>\n'
             + (TEMPLATE / "page_script.js").read_text() + "</script>\n")
-    (out / "shot-review.html").write_text(page)
-    return {"page": str(out / "shot-review.html"), "examples": len(examples),
-            "images": len(list((out / "img").glob("*.jpg")))}
+    if target == "vercel":
+        page = ('<!doctype html><html lang="en"><head><meta charset="utf-8">'
+                '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">'
+                '<meta name="robots" content="noindex,nofollow">'
+                '<style>body{margin:0}img{max-width:100%}</style></head><body>' + page + "</body></html>\n")
+        (out / "vercel.json").write_text(json.dumps(VERCEL_JSON, indent=1))
+        name = "index.html"
+    else:
+        name = "shot-review.html"
+    (out / name).write_text(page)
+    return {"page": str(out / name), "examples": len(examples), "images": len(list((out / "img").glob("*.jpg")))}

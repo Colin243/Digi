@@ -34,6 +34,7 @@
   let saveTimer = null, inflight = Promise.resolve();
   function setSave(text, kind) { const s = $("save"); s.textContent = text; s.dataset.kind = kind || ""; }
   function changed() {
+    if (!window.claude) { state.updated_at = new Date().toISOString(); try { localStorage.setItem(KEY, JSON.stringify(state)); setSave("Saved in this browser", "ok"); } catch (e) { setSave("This browser won't save — use Download my review before closing", "warn"); } renderProgress(); return; }
     state.updated_at = new Date().toISOString();
     try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {}
     renderProgress();
@@ -181,8 +182,20 @@
       () => { box.hidden = false; box.select(); $("copy-status").textContent = "Select all and copy the text below."; })
       ?? (box.hidden = false, box.select());
   });
+  const standalone = !window.claude;  // a normal website (e.g. Vercel), not a claude.ai artifact
+  if (standalone) { $("download").hidden = false; $("send-hint").hidden = false; }
+  $("download").addEventListener("click", () => {
+    const text = JSON.stringify({ name: state.name, reviews: state.reviews, updated_at: state.updated_at }, null, 1);
+    const who = (state.name || "review").trim().replace(/[^A-Za-z0-9_-]+/g, "-").toLowerCase() || "review";
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([text], { type: "application/json" }));
+    a.download = `shot-review-${who}-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    $("copy-status").textContent = `Downloaded ${reviewedCount()} of ${EX.length} reviews. Send the file back.`;
+  });
   window.addEventListener("hashchange", render);
   render();
   setSave("Saved in this browser", "");
-  connect();
+  if (window.claude) connect();
 })();

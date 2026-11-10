@@ -58,7 +58,7 @@ def run_train_data(a) -> int:
     if a.action == "review-site":
         from .review_site import build
 
-        print(json.dumps(build(a.dataset), indent=1))
+        print(json.dumps(build(a.dataset, target=a.target), indent=1))
         return 0
     if a.action == "import-review":
         from .labels import import_creative_review
