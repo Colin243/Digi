@@ -122,7 +122,8 @@ Per set, reviewers also judge whether the three looks are distinct shots (0/1/2)
 - Jasmine prefers the adapter on ≥ 60% of held-out fixtures, and on ≥ 50% within each group;
 - confirmed unsafe and invented-detail failures do not rise, overall or in either group;
 - validity is no more than one fixture lower;
-- mean pose and gaze scores are no more than 0.2 lower.
+- mean pose and gaze scores are no more than 0.2 lower;
+- **hard gates (enforced in `scene_review.compare`):** every background group (xhs_aligned *and* ordinary) has at least 5 paired fixtures, so a run with an empty group can't recommend anything; and **no candidate look is unsafe**, whether a human scored its safety 0 or an automated unsafe flag was confirmed. A baseline that is just as unsafe doesn't excuse it. Human-marked unsafe looks also count in the no-regression check. (These live in code, not in `criteria.json`, so the frozen criteria hash and the base run stay comparable.)
 
 With 10 fixtures per group, a 6/10 vs 4/10 split is directional, so `score` also lists every per-fixture regression and improvement.
 

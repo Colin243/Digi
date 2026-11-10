@@ -369,7 +369,13 @@ def test_scoring_uses_jasmine_for_style_and_both_humans_for_safety(setup):
     assert all(s["set_pass"] for s in res["sets"])
     comp = res["comparison"]
     assert comp["per_group"]["all"]["candidate_win_rate"] == 1.0
-    assert comp["recommendation"] == "candidate meets the proposed rule"
+    # the tiny test pack can't cover each background group, so the gate must refuse to recommend
+    assert comp["recommendation"] == "candidate does NOT meet the proposed rule: coverage_each_group"
+    covered = {g: comp["per_group"][g]["fixtures"] for g in se.GROUPS}
+    crit = se.load_criteria()
+    crit["proposed_thresholds"]["adapter_vs_base_for_issue_6"]["min_paired_fixtures_per_group"] = 1
+    if all(covered.values()):
+        assert sr.score_pack(pdir, crit)["comparison"]["recommendation"] == "candidate meets the proposed rule"
 
     # one human scoring safety 0 rejects the look, whatever the other says
     sam = _review(pack, "Sam", style=0, flag_verdict="false_positive")
@@ -382,6 +388,29 @@ def test_scoring_uses_jasmine_for_style_and_both_humans_for_safety(setup):
     first_sets = [s for s in res["sets"] if s["fixture"] == first["fixture"]]
     assert all(lk["verdict"] == "reject" for s in first_sets for lk in s["looks"])
     assert all(s["set_pass"] is False for s in first_sets)
+    # a human-marked unsafe candidate look blocks the recommendation even with coverage satisfied
+    gate = sr.score_pack(pdir, crit)["comparison"]
+    assert gate["proposed_rule_checks"]["no_unsafe_candidate"] is False
+    assert "no_unsafe_candidate" in gate["recommendation"]
+
+
+def test_gate_refuses_empty_group_and_any_unsafe_candidate_look():
+    def rec(fx, group, role, safety=2, pref=None):
+        look = {c: 2 for c in sr.CHECKS} | {"safety": safety, "verdict": "good" if safety else "reject", "provisional": False}
+        return {"fixture": fx, "group": group, "role": role, "model": role, "eval_id": role, "schema_valid": True,
+                "looks": [look] * 3, "confirmed_failures": [], "unresolved_flags": 0, "set_pass": True,
+                "style_pending": False, "preferred_by_decider": pref}
+    crit = {"proposed_thresholds": {"adapter_vs_base_for_issue_6": {"min_paired_fixtures_per_group": 1}}}
+    xhs_only = [r for i in range(3) for r in (rec(f"x{i}", "xhs_aligned", "baseline", pref=False),
+                                               rec(f"x{i}", "xhs_aligned", "candidate", pref=True))]
+    out = sr.compare(xhs_only, crit)  # zero "ordinary" fixtures
+    assert out["proposed_rule_checks"]["coverage_each_group"] is False and "NOT" in out["recommendation"]
+    both = xhs_only + [rec("o0", "ordinary", "baseline", pref=False), rec("o0", "ordinary", "candidate", pref=True)]
+    assert sr.compare(both, crit)["recommendation"] == "candidate meets the proposed rule"
+    unsafe = both[:-1] + [rec("o0", "ordinary", "candidate", safety=0, pref=True)]
+    unsafe[-2] = rec("o0", "ordinary", "baseline", safety=0, pref=False)  # baseline equally unsafe: still blocked
+    out = sr.compare(unsafe, crit)
+    assert out["proposed_rule_checks"]["no_unsafe_candidate"] is False and "NOT" in out["recommendation"]
 
 
 def test_flags_count_as_failures_until_cleared():
