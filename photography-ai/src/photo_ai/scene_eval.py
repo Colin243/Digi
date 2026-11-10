@@ -471,11 +471,13 @@ def model_revision(repo_id: str) -> dict:
 def git_state() -> dict:
     def g(*args: str) -> str | None:
         try:
-            return subprocess.run(["git", *args], cwd=REPO_ROOT, capture_output=True, text=True, timeout=10).stdout.strip()
+            return subprocess.run(["git", *args], cwd=REPO_ROOT, capture_output=True, text=True, timeout=10).stdout
         except Exception:  # noqa: BLE001
             return None
-    return {"commit": g("rev-parse", "HEAD"), "branch": g("rev-parse", "--abbrev-ref", "HEAD"),
-            "dirty_files": [ln[3:] for ln in (g("status", "--porcelain", "--", "photography-ai") or "").splitlines()]}
+    status = g("status", "--porcelain", "--", "photography-ai") or ""  # not stripped: column 1 may be a space
+    return {"commit": (g("rev-parse", "HEAD") or "").strip() or None,
+            "branch": (g("rev-parse", "--abbrev-ref", "HEAD") or "").strip() or None,
+            "dirty_files": [ln[3:] for ln in status.splitlines() if ln.strip()]}
 
 
 def eval_dir(runs_dir: Path, eval_id: str) -> Path:
