@@ -50,7 +50,16 @@ def result_markdown(rec: dict) -> str:
         out.append("> **Partial result** — a later stage failed validation:\n> " + "; ".join(rec["validation"]["errors"]))
     if res.get("mode") == "scene":
         st = res.get("style") or {}
-        out.append(f"### Scene Director · {st.get('label') or 'custom brief'}")
+        out.append(f"### Scene Director (experimental) · {st.get('label') or 'custom brief'}")
+        out.append("> Experimental: check every look on site. The base model can direct people who are already in "
+                   "the photo, or suggest a spot that isn't safe; never ask strangers to pose, and skip any direction "
+                   "involving traffic, ledges, railings or water.")
+        d = (rec.get("auto_metrics") or {}).get("direction") or {}
+        warn = [f"{n} look(s) may direct someone already in the photo" for n in [d.get("directs_people_in_frame")] if n]
+        warn += [f"possible unsafe direction: {', '.join(d['unsafe_directions'])}"] if d.get("unsafe_directions") else []
+        warn += [f"wording that guesses feelings: {', '.join(d['emotion_inferences'])}"] if d.get("emotion_inferences") else []
+        if warn:
+            out.append("> **Automated checks flagged:** " + "; ".join(warn))
         if st.get("brief"):
             out.append(f"*Brief:* {st['brief']}")
     a = res.get("aesthetic")

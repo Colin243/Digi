@@ -56,7 +56,7 @@ def main(argv: list[str] | None = None) -> int:
                     help="v2 adds body pose, head/chin, gaze and an optional expression cue (decomposed strategy)")
     _add_run_args(an)
 
-    sn = sub.add_parser("scene", help="Scene Director: one scene photo + a style brief -> 3 portrait looks")
+    sn = sub.add_parser("scene", help="Scene Director (experimental): one scene photo + a style brief -> 3 portrait looks")
     sn.add_argument("-t", "--target", required=True, help="the scene photo (with or without a person)")
     sn.add_argument("--style", choices=list(prompts.STYLE_BRIEFS), help="starter style brief")
     sn.add_argument("--brief", default="", help="extra style notes in your own words")

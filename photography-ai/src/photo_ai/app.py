@@ -154,13 +154,14 @@ def build(runs_dir: Path) -> gr.Blocks:
     with gr.Blocks(title="Digi · Photography AI") as demo:
         gr.Markdown("## Photography AI · local experiments")
         with gr.Tabs():
-            with gr.Tab("Scene Director"):
+            with gr.Tab("Scene Director (experimental)"):
                 gr.Markdown(
                     "Upload **one scene photo**, with or without a person in it. No reference photos needed. "
                     "Pick a starter style and the model proposes three portrait looks: where to stand, camera height "
                     "and angle, framing, light, body pose, head and chin, gaze, and an optional expression cue. "
                     "Expression is a suggestion the subject may choose, never a guess about how anyone feels. "
-                    "Anything the photo can't show is listed under *Check on site*."
+                    "Anything the photo can't show is listed under *Check on site*. **Experimental:** the base model "
+                    "sometimes directs people already in the photo or suggests unsafe spots, so check every look on site."
                 )
                 with gr.Row():
                     with gr.Column(scale=1):
