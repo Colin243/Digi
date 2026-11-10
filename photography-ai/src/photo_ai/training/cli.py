@@ -55,6 +55,18 @@ def run_train_data(a) -> int:
             return 2
         print(json.dumps(draft_examples(a.dataset, a.ids, a.model), indent=1))
         return 0
+    if a.action == "review-site":
+        from .review_site import build
+
+        print(json.dumps(build(a.dataset), indent=1))
+        return 0
+    if a.action == "import-review":
+        from .labels import import_creative_review
+
+        raw = json.loads(a.file.read_text())
+        doc = raw.get("data", raw) if isinstance(raw, dict) else raw  # shared-store export or "Copy my review" text
+        print(json.dumps(import_creative_review(a.dataset, doc, a.reviewer), indent=1))
+        return 0
     if a.action == "qa":
         from .labels import load_labels
         from .qa import check_label

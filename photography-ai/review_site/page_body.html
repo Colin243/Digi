@@ -1,0 +1,26 @@
+<header class="top">
+  <div class="top-inner">
+    <div class="brand"><h1>Shot Review</h1><span class="label">Digi photo director · training drafts</span></div>
+    <div class="progress"><div class="bar" aria-hidden="true"><span id="bar"></span></div><span class="mono" id="count">0 / 0 reviewed</span></div>
+    <div class="who"><label class="label" for="reviewer">Your name</label><input id="reviewer" autocomplete="name" placeholder="e.g. Mia"></div>
+    <span class="save" id="save" role="status" aria-live="polite">Loading…</span>
+  </div>
+</header>
+<main class="wrap">
+  <nav class="list" id="list" aria-label="Examples">
+    <div class="filters" role="group" aria-label="Show">
+      <button class="chipbtn" id="f-all" aria-pressed="true" type="button">All</button>
+      <button class="chipbtn" id="f-todo" aria-pressed="false" type="button">Not reviewed</button>
+    </div>
+  </nav>
+  <section id="view" aria-live="polite">
+    <div class="intro" id="intro">
+      <p><strong>What this is.</strong> An app in progress suggests how to photograph someone in a new place, in the style of a few inspiration photos. Before teaching it, we need a creative director's eye on the example answers below. They were drafted by AI and nobody has checked them yet.</p>
+      <p><strong>What to do.</strong> For each example, look at the inspiration frames and the location, then mark each suggested shot: <em>Would shoot</em>, <em>Needs changes</em> (say what), or <em>Skip</em>. Finish with whether the example should teach the app. <em>Yes, as is</em> counts as your approval to use it for training.</p>
+      <div class="row"><button class="btn" type="button" id="copy">Copy my review</button><span class="save" id="copy-status"></span></div>
+      <textarea class="copybox" id="copybox" hidden readonly aria-label="Your review as text"></textarea>
+    </div>
+    <div id="sheet"></div>
+  </section>
+</main>
+<div class="lightbox" id="lightbox" hidden><img id="lightbox-img" alt=""><button type="button" id="lightbox-close">Close</button></div>

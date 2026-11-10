@@ -209,3 +209,23 @@ def test_api_drafter_validates_and_imports_as_draft(ds):
     assert sum(1 for c in req["messages"][0]["content"] if c["type"] == "image") == len(ex["inspiration"]) + 1
     lab = L.load_label(ds, ex["example_id"])
     assert lab["status"] == "draft" and lab["provenance"]["drafted_by"].startswith("ai-draft:claude-opus-5-5")
+
+
+def test_creative_review_import_applies_verdicts(ds):
+    first = A.assemble(ds, n_examples=3)[0]
+    exs = [first, {**first, "example_id": first["example_id"] + "-b"}]
+    (P.data_dir(ds) / "examples.json").write_text(json.dumps(exs))
+    ids = [e["example_id"] for e in exs][:2]
+    for e in exs[:2]:
+        L.import_drafts(ds, [{"example_id": e["example_id"], "answer": _answer(len(e["inspiration"]))}], "ai-draft:claude")
+    review = {"name": "Mia", "reviews": {
+        ids[0]: {"overall": "yes", "set": "yes", "shots": [{"v": "yes"}, {"v": "fix", "fix": "lower the camera"}, {"v": "yes"}], "comment": ""},
+        ids[1]: {"overall": "no", "set": "no", "shots": [{}, {}, {}], "comment": "the photos don't share a look"},
+    }}
+    assert L.import_creative_review(ds, review) == {"approved": 1, "rejected": 1}
+    a, b = L.load_label(ds, ids[0]), L.load_label(ds, ids[1])
+    assert a["status"] == "approved" and a["provenance"]["approved_by"] == "Mia"
+    assert "lower the camera" in a["history"][-2]["note"] and a["creative_review"]["shots"][1]["v"] == "fix"
+    assert b["status"] == "rejected" and "don't share a look" in b["review_notes"]
+    with pytest.raises(ValueError):
+        L.import_creative_review(ds, {**review, "name": "claude-bot"})

@@ -167,3 +167,56 @@ def status_summary(dataset: str = "train_v1") -> dict:
         "approved_human": sum(1 for lab in labels.values() if lab["status"] == "approved"),
         "drafted_by": dict(Counter(lab["provenance"]["drafted_by"] for lab in labels.values())),
     }
+
+
+# --------------------------------------------------------------------------- creative-director review import
+
+SHOT_WORDS = {"yes": "would shoot", "fix": "needs changes", "no": "skip"}
+SET_WORDS = {"yes": "clearly", "fix": "loosely", "no": "not really"}
+
+
+def import_creative_review(dataset: str, review: dict, reviewer: str | None = None) -> dict:
+    """Apply a review from the Shot Review page (shared store doc or "Copy my review" text).
+
+    review = {"name": str, "reviews": {example_id: {"overall": yes|fix|no|None, "set": ..., "shots": [{"v", "fix"}]*3,
+              "comment": str}}}. "Yes, as is" approves (the page tells the reviewer it counts as approval),
+    "No" rejects, "Yes, after fixes" stays draft with the requested fixes in review_notes. Every example the
+    reviewer touched gets a history entry; nothing is applied for an AI-reserved reviewer name.
+    """
+    who = _require_human(reviewer or review.get("name", ""))
+    counts = Counter()
+    for eid, r in review.get("reviews", {}).items():
+        lab = load_label(dataset, eid)
+        if lab is None:
+            counts["unknown_example"] += 1
+            continue
+        shots = r.get("shots") or []
+        parts = [f"Inspiration set shares one look: {SET_WORDS.get(r.get('set'), 'not answered')}."]
+        for k, s in enumerate(shots, 1):
+            if s.get("v") or s.get("fix"):
+                parts.append(f"Shot {k}: {SHOT_WORDS.get(s.get('v'), 'no verdict')}" + (f" - {s['fix'].strip()}" if s.get("fix", "").strip() else ""))
+        if (r.get("comment") or "").strip():
+            parts.append("Comment: " + r["comment"].strip())
+        summary = " ".join(parts)
+        lab["creative_review"] = {"reviewer": who, "overall": r.get("overall"), "set": r.get("set"), "shots": shots,
+                                  "comment": r.get("comment", ""), "imported_at": _now()}
+        lab["history"].append({"at": _now(), "by": who, "action": "creative-review", "note": summary})
+        save_label(dataset, lab)
+        overall = r.get("overall")
+        if overall == "yes":
+            if lab.get("schema_errors"):
+                counts["approve_blocked_schema"] += 1
+                continue
+            set_status(dataset, eid, "approved", who, "Creative director: yes, as is. " + summary)
+            counts["approved"] += 1
+        elif overall == "no":
+            set_status(dataset, eid, "rejected", who, "Creative director: no. " + summary)
+            counts["rejected"] += 1
+        elif overall == "fix":
+            lab = load_label(dataset, eid)
+            lab["review_notes"] = "Creative director asked for fixes: " + summary
+            save_label(dataset, lab)
+            counts["needs_fixes"] += 1
+        else:
+            counts["partial"] += 1
+    return dict(counts)

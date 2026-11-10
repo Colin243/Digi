@@ -112,7 +112,8 @@ def main(argv: list[str] | None = None) -> int:
 
     td = sub.add_parser("train-data", help="Phase 4 training data: pool, fetch, tags, examples, labels, export")
     td.add_argument("action", choices=["pool", "fetch", "status", "attribution", "assemble", "qa", "export",
-                                       "import-tags", "import-labels", "draft"])
+                                       "import-tags", "import-labels", "draft", "import-review", "review-site"])
+    td.add_argument("--reviewer", help="import-review: the human reviewer's name (default: the name in the file)")
     td.add_argument("--model", default="claude-opus-5-5", help="draft: reference model (Anthropic API)")
     td.add_argument("--dataset", default="train_v1")
     td.add_argument("--ids", nargs="*", help="limit fetch to these pool ids")
