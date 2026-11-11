@@ -37,3 +37,48 @@ def test_zero_trials_is_no_data_never_pass():
     assert S.overall(S.camera_checks({"config": {"camera_pause_resume": True}, "trials": []})) == "NO DATA"
     assert S.overall([]) == "NO DATA"
     assert S.camera_checks({"config": {"camera_pause_resume": False}, "trials": [_trial(0, TIMEOUT)]}) == []
+
+
+GB = 2**30
+
+
+def _report(cameras, rid="bench-x"):
+    call = {"stage": "compositions", "e2e_seconds": 9.0, "generation_tokens_per_second": 40.0, "generated_tokens": 400}
+    trials = [{"index": i, "workload": "decomposed", "size": 1024, "first_after_load": i == 0, "error": None,
+               "camera": cam, "calls": [call, {**call, "stage": "target_scene"}], "inference_seconds": 18.0,
+               "thermal_start": "nominal", "thermal_end": "fair", "peak_footprint": 3 * GB} for i, cam in enumerate(cameras)]
+    return {
+        "id": rid, "status": "finished",
+        "device": {"model_name": "iPhone 17 Pro", "machine": "iPhone18,1", "system_name": "iOS", "system_version": "26.1",
+                   "os_build": "x", "physical_memory": 12 * GB, "gpu_architecture": "apple9", "build_configuration": "Release",
+                   "available_memory_at_start": 6 * GB, "thermal_state_at_start": "nominal", "low_power_mode": False,
+                   "battery_level": 0.8, "battery_state": "unplugged", "system_uptime_at_start": 600,
+                   "network_at_start": {"status": "unreachable"}},
+        "runtime": {"packages": {"mlx-swift-lm": "3.32.3"}, "mlx_cache_limit": 2**30, "prompt_version": "2026-11-09.4"},
+        "model": {"repo_id": "mlx-community/Qwen3-VL-2B-Instruct-4bit", "revision": "9c4f5209e57b", "location": "bundle",
+                  "weights_bytes": 2 * GB},
+        "config": {"preset": "quick", "repeats": len(cameras), "sizes": [1024], "camera_pause_resume": True, "cooldown_seconds": 0},
+        "load": {"ok": True, "seconds": 5.0, "footprint_before": GB, "footprint_after": 3 * GB, "peak_footprint": 3 * GB,
+                 "available_after": 4 * GB},
+        "summary": [{"workload": "decomposed", "size": 1024, "n": len(cameras), "first_e2e": 20.0, "warm_e2e_median": 18.0,
+                     "warm_e2e_max": 19.0, "ttft_median": 1.0, "gen_tok_per_sec_median": 40.0, "prompt_tok_per_sec_median": 300,
+                     "peak_footprint_max": 3 * GB, "min_available_min": 3 * GB, "camera_recovery_median": 0.2,
+                     "camera_recovery_max": 0.2, "json_valid": len(cameras)}],
+        "trials": trials, "events": [],
+    }
+
+
+def test_summary_command_runs_end_to_end(tmp_path):
+    """The command itself, not just the helper: two files in one call, a timeout in the second."""
+    import json
+    import subprocess
+    import sys
+
+    good, bad = tmp_path / "good.json", tmp_path / "bad.json"
+    good.write_text(json.dumps(_report([OK, OK, OK], "bench-good")))
+    bad.write_text(json.dumps(_report([OK, TIMEOUT, OK], "bench-bad")))
+    out = subprocess.run([sys.executable, str(Path(S.__file__)), str(good), str(bad)], capture_output=True, text=True)
+    assert out.returncode == 0, out.stderr
+    first, second = out.stdout.split("## bench-bad")
+    assert "## bench-good" in first and "**Overall: PASS**" in first
+    assert "**Overall: FAIL**" in second and "1 timed out" in second

@@ -88,7 +88,6 @@ def main(paths: list[str]) -> None:
     for p in paths:
         BUDGET_ROWS.clear()
         r = json.loads(Path(p).read_text())
-        BUDGET_ROWS = []
         d, rt, m, c = r["device"], r["runtime"], r.get("model") or {}, r["config"]
         print(f"## {r['id']} ({r['status']}{': ' + r['abort_reason'] if r.get('abort_reason') else ''})\n")
         print(f"- Device: {d.get('model_name') or d['machine']} ({d['machine']}), {d['system_name']} {d['system_version']} "
