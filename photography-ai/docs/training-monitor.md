@@ -46,6 +46,36 @@ and rejects non-local `Host` headers.
 | **Recommendation comparison** | Placeholder: three separate panels for measurements, human evaluation and interpretation. Not implemented. |
 | **Run log** | Run identity, data hashes, prompt/schema versions, LoRA/optimizer/memory settings, sampling cadence, checkpoints, end-of-run summary, and all metric definitions. |
 
+### Digi training studio layout
+
+The dashboard keeps the monitor’s warm neutral palette and colored architecture graph, with a
+clearer hierarchy for a separate monitor: four primary readings (progress, training loss,
+validation loss and process footprint), expandable secondary metrics, and larger loss charts.
+The network and grid share a persistent layer inspector on desktop; smaller windows stack it
+below the visualization. The header offers run selection, an expandable **Open folder** control
+with inline errors, and **System / Light / Dark** appearance saved locally when storage is available.
+All monitoring, replay, checkpoint measurements and unreviewed-data warnings remain read-only.
+
+**UI verification, 2026-11-11:** inspected the rendered desktop UI in light and dark themes;
+checked a 390 px embedded browser viewport for overflow; exercised replay scrubbing and return
+to latest, layer selection, secondary metrics, theme persistence, and invalid-folder error/recovery.
+Checkpoint comparison returned 196 matching modules (197 table rows including the header).
+The Python suite passed 83 tests, JavaScript passed `node --check`, and `uv build --wheel`
+succeeded. No dedicated frontend lint command is configured. These checks verify dashboard
+behavior, not model quality or training overhead.
+
+### Next development and training gates
+
+1. Repeat the documented off/on/off/on overhead smoke test with low background memory pressure.
+   The existing swap-heavy results below do not establish the ≤5% end-to-end overhead gate.
+2. Finish human review and freeze the training/evaluation split before a substantial LoRA run.
+   Current smoke-run labels are unreviewed; falling loss is not evidence of better photography advice.
+3. Connect the recommendation-comparison tab to offline base/checkpoint results on identical
+   held-out images, with separate rubric scores and reviewer decisions. Show XHS aesthetics,
+   camera direction, posing, expression, lighting and diversity separately, preserving the
+   distinction between measured scores and interpretation. Do not load two models concurrently.
+4. Run a small reviewed-data pilot, inspect held-out recommendations, then decide whether to scale.
+
 **Replay.** The step slider scrubs every tab to "state as of step N". **▶ Replay** animates from
 step 0, so you can watch the adapter changes light up across the network. **Follow latest**
 returns to live.
