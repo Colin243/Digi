@@ -265,6 +265,17 @@ def pull(cfg: dict, base_url: str, read_key: str, site: Path | None = None) -> d
     return {"submissions": len(data.get("submissions", [])), "imported": results}
 
 
+def delete_submission(base_url: str, read_key: str, slot: str) -> dict:
+    """Remove one stored submission (e.g. a test) from the live page's storage."""
+    import urllib.parse
+    import urllib.request
+
+    url = base_url.rstrip("/") + "/api/picks?slot=" + urllib.parse.quote(slot)
+    req = urllib.request.Request(url, method="DELETE", headers={"x-read-key": read_key})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return json.loads(r.read())
+
+
 def status(cfg: dict) -> dict:
     from collections import Counter
 

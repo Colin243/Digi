@@ -8,6 +8,8 @@ global.fetch = async (_u, opt) => {
   else if (cmd === "SADD") { (sets.get(a[0]) || sets.set(a[0], new Set()).get(a[0])).add(a[1]); result = 1; }
   else if (cmd === "SMEMBERS") result = [...(sets.get(a[0]) || [])];
   else if (cmd === "MGET") result = a.map((k) => db.get(k) ?? null);
+  else if (cmd === "DEL") result = db.delete(a[0]) ? 1 : 0;
+  else if (cmd === "SREM") result = sets.get(a[0])?.delete(a[1]) ? 1 : 0;
   return { ok: true, json: async () => ({ result }) };
 };
 const dir = process.argv[2] || "review_site/picks_api";
@@ -25,5 +27,9 @@ const call = async (h, req) => { let code = 0, body; const res = { status(c) { c
   const r = await call(read, { headers: { "x-read-key": "rk" } });
   assert.equal(r.code, 200); assert.equal(r.body.submissions.length, 1);
   assert.deepEqual(r.body.submissions[0].picks["s|t"].choices, [1, 3]);
+  const slot = r.body.submissions[0].slot;
+  assert.equal((await call(read, { method: "DELETE", query: { slot }, headers: {} })).code, 401);
+  assert.equal((await call(read, { method: "DELETE", query: { slot }, headers: { "x-read-key": "rk" } })).code, 200);
+  assert.equal((await call(read, { headers: { "x-read-key": "rk" } })).body.submissions.length, 0);
   console.log("picks api ok");
 })().catch((e) => { console.error(e); process.exit(1); });
