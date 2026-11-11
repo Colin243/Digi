@@ -245,7 +245,7 @@ th,td { padding:9px 7px; } td.num,.tile .v { font-variant-numeric:tabular-nums; 
         <div class="netleg"><span><i style="background:#3fb7e8"></i>vision encoder (frozen)</span><span><i style="background:#f4c542"></i>connector (frozen)</span>
         <span><i style="background:linear-gradient(90deg,#ff8a3d,#ff4f7b,#8f6bff)"></i>language model layers 0→27</span><span><i style="background:#555;border:1px solid #888"></i>frozen, no gradient</span>
         <span><i style="border:1.5px solid #ccc;background:transparent"></i>LoRA module not sampled yet (unavailable)</span>
-        <span>schematic architectural units · positions are illustrative · blue mist is decorative · node glow &amp; size = selected statistic · lines = data flow</span></div></div>
+        <span>schematic layout · adapter glow &amp; size = selected metric · frozen halos fixed · lines = data flow</span></div></div>
       <div class="flow" id="flow" style="display:none"></div>
     </div>
     <div class="detail" id="detail"><div class="empty">Click a block or a LoRA cell.</div></div>
@@ -729,25 +729,6 @@ function drawNet(lo, hi) {
     const sample=n.kind==="lora"?lastSampleFor(n.key):null;n.v=sample?sample.v[S.metric]:null;
     n.screenR=Math.max(2,(n.kind==="lora"&&Number.isFinite(n.v)?2+3*Math.sqrt(amount(n)):n.r)*p.scale);
   }
-  // Decorative astral mist follows the projected groups; it never encodes a training statistic.
-  const mist=(cx,cy,rx,ry,color,opacity)=>{
-    ctx.save();ctx.translate(cx,cy);ctx.scale(rx,ry);
-    const haze=ctx.createRadialGradient(0,0,0,0,0,1);
-    haze.addColorStop(0,`rgba(${color},${opacity})`);
-    haze.addColorStop(.35,`rgba(${color},${opacity*.78})`);
-    haze.addColorStop(.7,`rgba(${color},${opacity*.24})`);
-    haze.addColorStop(1,`rgba(${color},0)`);
-    ctx.fillStyle=haze;ctx.beginPath();ctx.arc(0,0,1,0,Math.PI*2);ctx.fill();ctx.restore();
-  };
-  for(const [group,color] of [["vision_encoder","39,146,227"],["connector","76,152,255"],["language_model","68,116,242"]]){
-    const nodes=S.net.nodes.filter(n=>n.key.includes(group));if(!nodes.length)continue;
-    const xs=nodes.map(n=>n.px),ys=nodes.map(n=>n.py);
-    const left=Math.min(...xs),right=Math.max(...xs),top=Math.min(...ys),bottom=Math.max(...ys);
-    const cx=(left+right)/2,cy=(top+bottom)/2,rx=Math.max(65,(right-left)*.65+40),ry=Math.max(65,(bottom-top)*.65+40);
-    mist(cx,cy,rx,ry,color,.24);
-    mist(cx-rx*.22,cy+ry*.16,rx*.8,ry*.65,"42,181,231",.1);
-    mist(cx+rx*.25,cy-ry*.18,rx*.7,ry*.8,"91,122,255",.12);
-  }
   // Painter's order applies to edges and nodes together, so nearer geometry covers farther geometry.
   const items=S.net.edges.map(edge=>({edge,depth:(edge[0].depth+edge[1].depth)/2}));
   items.push(...S.net.nodes.map(node=>({node,depth:node.depth})));
@@ -760,15 +741,19 @@ function drawNet(lo, hi) {
     const n=item.node, measured=n.kind==="lora"&&n.v!=null&&Number.isFinite(n.v);
     const fade=Math.max(.4,Math.min(1,1-n.depth/1000));
     if(measured){
-      const t=amount(n),R=n.screenR+12*n.scale*Math.sqrt(t);
+      const t=amount(n),R=n.screenR*(3+2*Math.sqrt(t));
       const glow=ctx.createRadialGradient(n.px,n.py,0,n.px,n.py,R);
-      glow.addColorStop(0,lmColor(n.layer,28,.16+.32*t));glow.addColorStop(1,lmColor(n.layer,28,0));
+      glow.addColorStop(0,lmColor(n.layer,28,.65+.25*t));
+      glow.addColorStop(.3,lmColor(n.layer,28,.35+.25*t));
+      glow.addColorStop(.65,lmColor(n.layer,28,.08+.12*t));
+      glow.addColorStop(1,lmColor(n.layer,28,0));
       ctx.fillStyle=glow;ctx.beginPath();ctx.arc(n.px,n.py,R,0,Math.PI*2);ctx.fill();
     }
     ctx.globalAlpha=fade;ctx.beginPath();ctx.arc(n.px,n.py,n.screenR,0,Math.PI*2);
     if(n.kind==="lora"&&!measured){ctx.strokeStyle="#c9c7c0";ctx.lineWidth=1;ctx.stroke();}
     else {
-      ctx.fillStyle=measured?lmColor(n.layer,28):n.col;ctx.fill();
+      ctx.shadowColor=measured?lmColor(n.layer,28):n.col;ctx.shadowBlur=measured?8:5;
+      ctx.fillStyle=measured?lmColor(n.layer,28):n.col;ctx.fill();ctx.shadowBlur=0;
       if(measured){ctx.fillStyle=`rgba(255,255,255,${.25+.65*amount(n)})`;ctx.beginPath();ctx.arc(n.px,n.py,n.screenR*.6,0,Math.PI*2);ctx.fill();}
     }
     ctx.globalAlpha=1;

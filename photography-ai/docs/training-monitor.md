@@ -86,8 +86,8 @@ plus/minus, or zero/Home. **Grid** remains available, including keyboard-selecta
 The camera angle persists across replay and metric updates, and resets when opening another run.
 
 The placement is a schematic layout, not physical neuron locations or a representation of
-learned concepts. A soft blue/cyan mist follows the projected groups as a decorative backdrop;
-it is separate from the measurement-driven node glow. Geometry changes only the view: node identity, data-flow connections and
+learned concepts. The backdrop stays clear. Measured adapters have stronger local halos driven by the selected
+statistic; frozen units use a fixed subtle halo, and unsampled adapters remain hollow. Geometry changes only the view: node identity, data-flow connections and
 measurement provenance stay the same. Unsampled adapters remain hollow/unavailable.
 The renderer is local and dependency-free, with no continuous idle animation loop. The earlier
 training overhead result measures instrumentation; it does not measure interaction with this
