@@ -245,7 +245,7 @@ th,td { padding:9px 7px; } td.num,.tile .v { font-variant-numeric:tabular-nums; 
         <div class="netleg"><span><i style="background:#3fb7e8"></i>vision encoder (frozen)</span><span><i style="background:#f4c542"></i>connector (frozen)</span>
         <span><i style="background:linear-gradient(90deg,#ff8a3d,#ff4f7b,#8f6bff)"></i>language model layers 0→27</span><span><i style="background:#555;border:1px solid #888"></i>frozen, no gradient</span>
         <span><i style="border:1.5px solid #ccc;background:transparent"></i>LoRA module not sampled yet (unavailable)</span>
-        <span>schematic architectural units · positions are illustrative · glow &amp; size = selected statistic · lines = data flow</span></div></div>
+        <span>schematic architectural units · positions are illustrative · blue mist is decorative · node glow &amp; size = selected statistic · lines = data flow</span></div></div>
       <div class="flow" id="flow" style="display:none"></div>
     </div>
     <div class="detail" id="detail"><div class="empty">Click a block or a LoRA cell.</div></div>
@@ -728,6 +728,25 @@ function drawNet(lo, hi) {
     const p=Network3D.project(n,camera,W,H);n.px=p.x;n.py=p.y;n.depth=p.depth;n.scale=p.scale;
     const sample=n.kind==="lora"?lastSampleFor(n.key):null;n.v=sample?sample.v[S.metric]:null;
     n.screenR=Math.max(2,(n.kind==="lora"&&Number.isFinite(n.v)?2+3*Math.sqrt(amount(n)):n.r)*p.scale);
+  }
+  // Decorative astral mist follows the projected groups; it never encodes a training statistic.
+  const mist=(cx,cy,rx,ry,color,opacity)=>{
+    ctx.save();ctx.translate(cx,cy);ctx.scale(rx,ry);
+    const haze=ctx.createRadialGradient(0,0,0,0,0,1);
+    haze.addColorStop(0,`rgba(${color},${opacity})`);
+    haze.addColorStop(.35,`rgba(${color},${opacity*.78})`);
+    haze.addColorStop(.7,`rgba(${color},${opacity*.24})`);
+    haze.addColorStop(1,`rgba(${color},0)`);
+    ctx.fillStyle=haze;ctx.beginPath();ctx.arc(0,0,1,0,Math.PI*2);ctx.fill();ctx.restore();
+  };
+  for(const [group,color] of [["vision_encoder","39,146,227"],["connector","76,152,255"],["language_model","68,116,242"]]){
+    const nodes=S.net.nodes.filter(n=>n.key.includes(group));if(!nodes.length)continue;
+    const xs=nodes.map(n=>n.px),ys=nodes.map(n=>n.py);
+    const left=Math.min(...xs),right=Math.max(...xs),top=Math.min(...ys),bottom=Math.max(...ys);
+    const cx=(left+right)/2,cy=(top+bottom)/2,rx=Math.max(65,(right-left)*.65+40),ry=Math.max(65,(bottom-top)*.65+40);
+    mist(cx,cy,rx,ry,color,.24);
+    mist(cx-rx*.22,cy+ry*.16,rx*.8,ry*.65,"42,181,231",.1);
+    mist(cx+rx*.25,cy-ry*.18,rx*.7,ry*.8,"91,122,255",.12);
   }
   // Painter's order applies to edges and nodes together, so nearer geometry covers farther geometry.
   const items=S.net.edges.map(edge=>({edge,depth:(edge[0].depth+edge[1].depth)/2}));
