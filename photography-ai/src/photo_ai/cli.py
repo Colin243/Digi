@@ -54,6 +54,8 @@ def main(argv: list[str] | None = None) -> int:
     ui.add_argument("--host", default="127.0.0.1")
     ui.add_argument("--port", type=int, default=7860)
     ui.add_argument("--runs-dir", type=Path, default=DEFAULT_RUNS_DIR)
+    ui.add_argument("--monitor-port", type=int, default=7870,
+                    help="also serve the read-only training monitor on this port (0 = don't)")
 
     dg = sub.add_parser("diagnose", help="check image plumbing and perception on benchmark cases")
     dg.add_argument("--model", default=DEFAULT_MODEL)
@@ -136,6 +138,21 @@ def main(argv: list[str] | None = None) -> int:
     lr.add_argument("--config", type=Path, required=True)
     lr.add_argument("--rows", type=int, default=4, help="smoke: rows to use")
     lr.add_argument("--steps", type=int, default=12, help="smoke: overfit steps")
+    lr.add_argument("--no-monitor", action="store_true", help="train: disable the training monitor")
+    lr.add_argument("--run-name", help="train: override run_name (output folder)")
+
+    mo = sub.add_parser("monitor", help="LoRA training monitor: dashboard, checkpoint compare, overhead")
+    mo.add_argument("action", choices=["serve", "compare", "overhead"])
+    mo.add_argument("--host", default="127.0.0.1")
+    mo.add_argument("--port", type=int, default=7870)
+    mo.add_argument("--run", type=Path, action="append", default=[], help="serve: extra run folder(s) to list")
+    mo.add_argument("--a", help="compare: checkpoint .safetensors or 'base'")
+    mo.add_argument("--b", help="compare: checkpoint .safetensors or 'base'")
+    mo.add_argument("--json", action="store_true")
+    mo.add_argument("--off", type=Path, nargs="+", help="overhead: run dirs trained with --no-monitor")
+    mo.add_argument("--on", type=Path, nargs="+", help="overhead: matching run dirs trained with the monitor")
+    mo.add_argument("--warmup", type=int, default=3)
+    mo.add_argument("--out", type=Path)
 
     rn = sub.add_parser("runs", help="summarize saved runs")
     rn.add_argument("--runs-dir", type=Path, default=DEFAULT_RUNS_DIR)
@@ -169,7 +186,7 @@ def main(argv: list[str] | None = None) -> int:
     if a.cmd == "ui":
         from .app import launch
 
-        launch(a.host, a.port, a.runs_dir)
+        launch(a.host, a.port, a.runs_dir, monitor_port=a.monitor_port)
         return 0
 
     if a.cmd == "diagnose":
@@ -295,8 +312,15 @@ def main(argv: list[str] | None = None) -> int:
             rep = run_smoke(cfg, a.rows, a.steps)
             print(f"smoke test {'PASSED' if rep['all_pass'] else 'FAILED'} -> {cfg.out_dir / 'smoke_report.json'}")
             return 0 if rep["all_pass"] else 1
-        print(json.dumps(train(cfg), indent=1))
+        if a.run_name:
+            cfg.run_name = a.run_name
+        print(json.dumps(train(cfg, monitor=False if a.no_monitor else None), indent=1))
         return 0
+
+    if a.cmd == "monitor":
+        from .training.monitor.cli import run_monitor
+
+        return run_monitor(a)
 
     if a.cmd == "runs":
         rows = read_index(a.runs_dir)[-a.last :]

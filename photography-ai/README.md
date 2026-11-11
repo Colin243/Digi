@@ -41,6 +41,7 @@ The first real run downloads weights from Hugging Face into `~/.cache/huggingfac
 | `photo-ai train-data draft --ids …` | Drafts answers with Claude via the API (`uv sync --extra drafting`; paid; drafts stay provisional). |
 | `photo-ai lora smoke --config configs/lora_smoke.json` | LoRA feasibility smoke test (architecture, template parity, masking, gradients, learning, checkpoint reload, adapter inference, memory). |
 | `photo-ai lora train --config configs/lora_pilot.json` | LoRA pilot on approved labels only; adapters in `data/adapters/<run>/`. |
+| `photo-ai monitor serve` | Read-only LoRA training monitor at http://127.0.0.1:7870 (architecture network, layer stats, live metrics, replay, checkpoint compare). `photo-ai ui` also starts it and links it from the **Training monitor** tab. See [`docs/training-monitor.md`](docs/training-monitor.md). |
 | `photo-ai runs` | Lists saved runs. |
 
 A fine-tuned adapter runs anywhere a model name is accepted: `--model "qwen3-vl-2b-4bit+adapter=data/adapters/pilot-v1"`.

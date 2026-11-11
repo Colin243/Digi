@@ -72,7 +72,7 @@ def _load(runs_dir: Path, run_id: str) -> dict:
     return json.loads((runs_dir / run_id / "run.json").read_text())
 
 
-def build(runs_dir: Path) -> gr.Blocks:
+def build(runs_dir: Path, monitor_port: int = 7870) -> gr.Blocks:
     runs_dir = Path(runs_dir)
     runs_dir.mkdir(parents=True, exist_ok=True)
     d = RunConfig()
@@ -204,7 +204,38 @@ def build(runs_dir: Path) -> gr.Blocks:
                 _compare_tab(runs_dir, demo)
             with gr.Tab("Label"):
                 _label_tab(demo)
+            with gr.Tab("Training monitor"):
+                _monitor_tab(monitor_port)
     return demo
+
+
+def _monitor_tab(port: int) -> None:
+    """Link to the standalone read-only monitor page, plus the monitored runs found on disk."""
+    from .training.monitor.runlog import find_runs
+    from .training.monitor.server import default_roots
+
+    url = f"http://127.0.0.1:{port}/"
+
+    def listing():
+        runs = find_runs(default_roots())
+        if not runs:
+            return "_No monitored runs yet (`photo-ai lora train --config ...` writes `<adapter dir>/monitor/`)._"
+        rows = ["| run | state | data | open |", "|---|---|---|---|"]
+        for r in runs:
+            from urllib.parse import quote
+
+            rows.append(f"| `{r['run_name']}` | {r['state']} | {'UNREVIEWED drafts' if r['unreviewed'] else 'approved'} "
+                        f"| [dashboard]({url}?run={quote(r['path'])}) |")
+        return "\n".join(rows)
+
+    gr.Markdown(
+        f"### LoRA training monitor\nOpen **[{url}]({url})** in its own window (e.g. on a second monitor). "
+        "It is a separate, read-only page: opening, reloading or reconnecting it never starts, stops or restarts "
+        "training. Run selection is by folder: every `data/adapters/<run>/monitor/` is listed, and any other run "
+        "folder can be pasted into the page.\n\n"
+        + ("" if port else "_The monitor server is off (`--monitor-port 0`); start it with `photo-ai monitor serve`._"))
+    runs_md = gr.Markdown(listing())
+    gr.Button("Refresh run list").click(listing, None, runs_md)
 
 
 def _answer_markdown(answer: dict) -> str:
@@ -440,11 +471,20 @@ def _compare_tab(runs_dir: Path, demo: gr.Blocks) -> None:
     demo.load(cases_for, [c_bench, c_strategy, c_rater], c_case)
 
 
-def launch(host: str, port: int, runs_dir: Path, inbrowser: bool = True) -> None:
+def launch(host: str, port: int, runs_dir: Path, inbrowser: bool = True, monitor_port: int = 7870) -> None:
     from .cases import PROJECT_ROOT
+
+    if monitor_port:
+        from .training.monitor.server import serve
+
+        try:  # read-only, in a daemon thread; if the port is taken a monitor is probably already running
+            serve("127.0.0.1", monitor_port, background=True)
+            print(f"Training monitor: http://127.0.0.1:{monitor_port}/")
+        except OSError as exc:
+            print(f"Training monitor not started on port {monitor_port} ({exc}); using whatever is there")
 
     # runs/ for benchmark outputs, data/ for Label-tab training photos, samples/ for evaluation images
     allowed = [str(Path(runs_dir).resolve()), str(PROJECT_ROOT / "data"), str(PROJECT_ROOT / "samples")]
-    build(runs_dir).queue().launch(
+    build(runs_dir, monitor_port or 7870).queue().launch(
         server_name=host, server_port=port, share=False, inbrowser=inbrowser, allowed_paths=allowed
     )
