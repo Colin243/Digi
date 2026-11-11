@@ -47,20 +47,21 @@ input{font:inherit;padding:10px;border-radius:10px;border:1.5px solid var(--line
 <main>
   <section id="home">
     <h1>Pick your shot</h1>
-    <p class="sub">Choose a theme. For each place, tap the look you like best. That's it.</p>
+    <p class="sub">Choose a theme. For each place, tap every look you'd shoot (one or more). That's it.</p>
     <label class="note" for="who">Your name</label>
     <input id="who" value="Jasmine" autocomplete="off">
     <div class="themes" id="themes" style="margin-top:14px"></div>
     <div id="send" style="margin-top:20px">
-      <div class="row"><button class="btn primary" id="download">Send my picks (download)</button><button class="btn" id="copy">Copy</button></div>
-      <p class="note" id="send-status">Your picks save on this device as you go.</p>
+      <div class="row"><button class="btn primary" id="submit">Send my picks to Colin</button></div>
+      <p class="note" id="send-status">Your picks save as you go and are sent to Colin automatically.</p>
+      <div class="row" style="margin-top:6px"><button class="btn" id="download">Download a copy</button><button class="btn" id="copy">Copy</button></div>
       <textarea id="copybox" hidden readonly></textarea>
     </div>
   </section>
   <section id="pick" hidden>
     <div class="bar"><button id="back">‹ Themes</button><span class="count" id="count"></span></div>
     <img class="scene" id="scene" alt="the place">
-    <div class="q">Which would you shoot here?</div>
+    <div class="q">Which would you shoot here? <span class="note">Tap all you like</span></div>
     <div id="looks"></div>
     <div class="why" id="why"></div>
     <div class="row" style="margin-top:12px"><button class="btn" id="none">None of these</button><button class="btn" id="prev">‹ Back</button><button class="btn primary" id="next">Next ›</button></div>
@@ -75,12 +76,29 @@ input{font:inherit;padding:10px;border-radius:10px;border:1.5px solid var(--line
   const $ = (id) => document.getElementById(id);
   let st = { name: "Jasmine", picks: {} };
   try { const s = JSON.parse(localStorage.getItem(KEY) || "null"); if (s && s.picks) st = s; } catch (e) {}
-  const save = () => { st.updated_at = new Date().toISOString(); try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (e) {} };
+  const save = (changed = true) => { if (changed) st.updated_at = new Date().toISOString(); try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (e) {} if (changed && typeof queueSend === "function") queueSend(); };
   const WHY = ["Pose", "Angle", "Light", "Vibe"];
   let theme = null, i = 0;
   const items = () => D.items.filter((x) => x.theme === theme);
   const key = (x) => x.scene + "|" + x.theme;
   const doneIn = (t) => D.items.filter((x) => x.theme === t && st.picks[key(x)]).length;
+  const chosen = (p) => (p && Array.isArray(p.choices)) ? p.choices : (p && Number.isInteger(p.choice) ? [p.choice] : []);
+  // client id: lets resubmissions from this device replace the earlier copy on the server
+  if (!st.client_id) { st.client_id = Math.random().toString(36).slice(2, 10); }
+  let sendTimer = null, sending = false;
+  const setSend = (t) => { const e = $("send-status"); if (e) e.textContent = t; };
+  async function submit(manual) {
+    if (sending || !Object.keys(st.picks).length) { if (manual) setSend("Pick at least one look first."); return; }
+    sending = true; setSend("Sending…");
+    try {
+      const r = await fetch("api/submit", { method: "POST", headers: { "content-type": "application/json" }, body: exportDoc() });
+      if (!r.ok) throw new Error(r.status);
+      st.sent_at = new Date().toISOString(); save(false);
+      setSend(`Sent to Colin ✓ (${count()} places) · it keeps updating as you pick`);
+    } catch (e) { setSend("Couldn't send right now. Your picks are saved here; try again, or use Download a copy."); }
+    sending = false;
+  }
+  const queueSend = () => { clearTimeout(sendTimer); sendTimer = setTimeout(() => submit(false), 2500); };
 
   function home() {
     $("pick").hidden = true; $("home").hidden = false; $("who").value = st.name || "Jasmine";
@@ -102,18 +120,18 @@ input{font:inherit;padding:10px;border-radius:10px;border:1.5px solid var(--line
     $("scene").src = x.scene_img;
     const box = $("looks"); box.textContent = "";
     x.looks.forEach((lk, k) => {
-      const b = document.createElement("button"); b.className = "look" + (p.choice === k ? " sel" : "");
+      const b = document.createElement("button"); b.className = "look" + (chosen(p).includes(k) ? " sel" : "");
       const img = document.createElement("img"); img.alt = "example"; if (lk.example) img.src = lk.example; b.append(img);
       const chips = document.createElement("div"); chips.className = "chips";
       const nm = document.createElement("div"); nm.className = "name"; nm.textContent = "Look " + (k + 1); chips.append(nm);
       for (const n of lk.notes) { const c = document.createElement("span"); c.className = "chip"; c.textContent = n; chips.append(c); }
       b.append(chips);
-      b.onclick = () => { pick(x, k); };
+      b.onclick = () => { toggle(x, k); };
       box.append(b);
     });
-    $("none").className = "btn" + (p.choice === "none" ? " on" : "");
+    $("none").className = "btn" + (p.none ? " on" : "");
     const why = $("why"); why.textContent = "";
-    if (p.choice !== undefined && p.choice !== "none") {
+    if (chosen(p).length) {
       for (const w of WHY) {
         const b = document.createElement("button"); b.textContent = w; b.className = (p.why || []).includes(w) ? "on" : "";
         b.onclick = () => { const s = new Set(p.why || []); s.has(w) ? s.delete(w) : s.add(w); p.why = [...s]; save(); show(); };
@@ -121,17 +139,25 @@ input{font:inherit;padding:10px;border-radius:10px;border:1.5px solid var(--line
       }
     }
   }
-  function pick(x, choice) {
-    st.picks[key(x)] = { ...(st.picks[key(x)] || {}), choice, run_id: x.run_id, look_sha: x.looks.map((l) => l.sha), at: new Date().toISOString() };
+  function record(x, fields) {
+    const prev = st.picks[key(x)] || {}; delete prev.choice;
+    st.picks[key(x)] = { ...prev, ...fields, run_id: x.run_id, look_sha: x.looks.map((l) => l.sha), at: new Date().toISOString() };
     save(); show();
   }
-  $("none").onclick = () => { const list = items(); pick(list[i], "none"); };
+  function toggle(x, k) {
+    const s = new Set(chosen(st.picks[key(x)])); s.has(k) ? s.delete(k) : s.add(k);
+    record(x, s.size ? { choices: [...s].sort(), none: false } : { choices: [], none: false });
+  }
+  $("none").onclick = () => { const list = items(); record(list[i], { choices: [], none: true, why: [] }); };
   $("next").onclick = () => { const list = items(); if (i < list.length - 1) { i++; show(true); } else { home(); scrollTo(0, 0); } };
   $("prev").onclick = () => { if (i > 0) { i--; show(true); } else home(); };
   $("back").onclick = home;
   $("who").oninput = (e) => { st.name = e.target.value; save(); };
-  const exportDoc = () => JSON.stringify({ pick_id: D.pick_id, name: st.name, picks: st.picks, updated_at: st.updated_at }, null, 1);
-  const count = () => Object.keys(st.picks).length;
+  if (st.sent_at) setSend(`Last sent to Colin ${new Date(st.sent_at).toLocaleString()}`);
+  const exportDoc = () => JSON.stringify({ pick_id: D.pick_id, name: st.name, client_id: st.client_id, picks: st.picks, updated_at: st.updated_at }, null, 1);
+  const count = () => Object.values(st.picks).filter((p) => p.none || chosen(p).length).length;
+  $("submit").onclick = () => submit(true);
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden" && st.updated_at && st.updated_at !== st.sent_at_for) { try { navigator.sendBeacon("api/submit", new Blob([exportDoc()], { type: "application/json" })); } catch (e) {} } });
   $("download").onclick = () => {
     const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([exportDoc()], { type: "application/json" }));
     a.download = `picks-${(st.name || "me").toLowerCase().replace(/\W+/g, "-")}-${new Date().toISOString().slice(0, 10)}.json`;

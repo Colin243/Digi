@@ -48,7 +48,8 @@ def generate(cfg: dict, model: str, runs_dir: Path, log=print) -> dict:
         for theme in cfg["themes"]:
             if (scene, theme) in have:
                 continue
-            rc = RunConfig(mode="scene", style=theme, max_side=cfg.get("max_side", 1024), json_format="keys")
+            rc = RunConfig(mode="scene", style=theme, max_side=cfg.get("max_side", 1024), json_format="keys",
+                           n_looks=cfg.get("n_looks", 3))
             rec = analyze(backend, [], str(REPO_ROOT / pool[scene]["file"]), rc, runs_dir, label=cfg["pick_id"])
             done["runs"].append({"scene": scene, "theme": theme, "run_id": rec["run_id"], "valid": rec["validation"]["ok"],
                                  "run_dir": rec["run_dir"]})
@@ -182,6 +183,10 @@ def build_site(cfg: dict, max_side: int = 900, example_side: int = 480) -> dict:
     themes = [{"key": t, "zh": prompts.STYLE_BRIEFS[t]["zh"], "en": prompts.STYLE_BRIEFS[t]["en"]} for t in cfg["themes"]]
     data = json.dumps({"pick_id": cfg["pick_id"], "themes": themes, "items": items}, ensure_ascii=False).replace("</", "<\\/")
     (out / "index.html").write_text(TEMPLATE.read_text().replace("/*PICKS_DATA*/null", data))
+    api = out / "api"
+    api.mkdir(exist_ok=True)
+    for f in (PROJECT_ROOT / "review_site" / "picks_api").glob("*.js"):
+        (api / f.name).write_text(f.read_text())
     (out / "vercel.json").write_text(json.dumps({"headers": [{"source": "/(.*)", "headers": [
         {"key": "X-Robots-Tag", "value": "noindex, nofollow"}]}]}, indent=1))
     (out / "manifest.json").write_text(json.dumps({"pick_id": cfg["pick_id"], "built_at": datetime.now().isoformat(timespec="seconds"),
@@ -220,12 +225,44 @@ def import_picks(cfg: dict, doc: dict, site: Path | None = None, reviewer: str |
             counts["stale"] += 1
             continue
         scene, theme = k.split("|")
+        choices = _choices(p, len(current))
+        none = p.get("none") is True or p.get("choice") == "none"
+        if not choices and not none:
+            counts["no_answer"] += 1
+            continue
         prefs[f"{k}|{who}"] = {"scene": scene, "theme": theme, "run_id": page["run_id"], "reviewer": who,
-                               "choice": p.get("choice"), "why": p.get("why") or [], "look_sha": current,
-                               "picked_at": p.get("at"), "imported_at": datetime.now().isoformat(timespec="seconds")}
-        counts["none_of_these" if p.get("choice") == "none" else "picked"] += 1
+                               "choices": [] if none else choices, "none": none, "why": p.get("why") or [],
+                               "look_sha": current, "picked_at": p.get("at"),
+                               "imported_at": datetime.now().isoformat(timespec="seconds")}
+        counts["none_of_these" if none else "picked"] += 1
     prefs_path(cfg).write_text(json.dumps(prefs, indent=1, ensure_ascii=False))
     return dict(counts)
+
+
+def _choices(p: dict, n: int) -> list[int]:
+    """Chosen look indices: the page's multi-select `choices`, or v1's single `choice`."""
+    raw = p.get("choices")
+    if raw is None:
+        raw = [p["choice"]] if isinstance(p.get("choice"), int) else []
+    return sorted({int(c) for c in raw if isinstance(c, int) and 0 <= c < n})
+
+
+def pull(cfg: dict, base_url: str, read_key: str, site: Path | None = None) -> dict:
+    """Fetch every submission stored by the live page (/api/picks) and import each one."""
+    import urllib.request
+
+    req = urllib.request.Request(base_url.rstrip("/") + "/api/picks", headers={"x-read-key": read_key})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        data = json.loads(r.read())
+    (pick_dir(cfg) / "pulled.json").write_text(json.dumps(data, indent=1, ensure_ascii=False))
+    results = {}
+    for sub in data.get("submissions", []):
+        label = f"{sub.get('name')} ({sub.get('client_id')}, {len(sub.get('picks') or {})} places)"
+        try:
+            results[label] = import_picks(cfg, sub, site)
+        except ValueError as exc:
+            results[label] = {"refused": str(exc)}
+    return {"submissions": len(data.get("submissions", [])), "imported": results}
 
 
 def status(cfg: dict) -> dict:
@@ -233,7 +270,8 @@ def status(cfg: dict) -> dict:
 
     prefs = json.loads(prefs_path(cfg).read_text()) if prefs_path(cfg).exists() else {}
     return {"picks": len(prefs), "by_theme": dict(Counter(p["theme"] for p in prefs.values())),
-            "chosen_look_position": dict(Counter(str(p["choice"]) for p in prefs.values())),
+            "chosen_look_position": dict(Counter(str(c) for p in prefs.values() for c in _choices(p, 99))),
+            "none_of_these": sum(bool(p.get("none") or p.get("choice") == "none") for p in prefs.values()),
             "why": dict(Counter(w for p in prefs.values() for w in p["why"]))}
 
 
@@ -251,15 +289,16 @@ def export(cfg: dict) -> dict:
         for p in prefs.values():
             rec = json.loads((Path(runs[p["run_id"]]["run_dir"]) / "run.json").read_text())
             looks, scene = rec["result"]["compositions"], rec["result"]["target_scene"]
-            if p["choice"] == "none" or [look_sha(lk) for lk in looks] != p["look_sha"]:
+            chosen = _choices(p, len(looks))
+            if not chosen or [look_sha(lk) for lk in looks] != p["look_sha"]:
                 continue
-            c = int(p["choice"])
-            prompt = prompts.scene_look(scene, p["theme"], "", prompts.DEFAULT_SUBJECT, c + 1, looks[:c])
-            meta = {"pick_id": cfg["pick_id"], "scene": p["scene"], "theme": p["theme"], "reviewer": p["reviewer"],
-                    "stage": f"look{c + 1}", "why": p["why"]}
-            sft.append(_row(prompt, [str(REPO_ROOT / pool[p["scene"]]["file"])], _j(looks[c]), meta))
-            pairs += [{"scene": p["scene"], "theme": p["theme"], "reviewer": p["reviewer"], "chosen": looks[c],
-                       "rejected": lk, "why": p["why"]} for k, lk in enumerate(looks) if k != c]
+            for c in chosen:
+                prompt = prompts.scene_look(scene, p["theme"], "", prompts.DEFAULT_SUBJECT, c + 1, looks[:c], len(looks))
+                meta = {"pick_id": cfg["pick_id"], "scene": p["scene"], "theme": p["theme"], "reviewer": p["reviewer"],
+                        "stage": f"look{c + 1}", "why": p["why"]}
+                sft.append(_row(prompt, [str(REPO_ROOT / pool[p["scene"]]["file"])], _j(looks[c]), meta))
+                pairs += [{"scene": p["scene"], "theme": p["theme"], "reviewer": p["reviewer"], "chosen": looks[c],
+                           "rejected": lk, "why": p["why"]} for k, lk in enumerate(looks) if k not in chosen]
     (out / "sft_chosen.jsonl").write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in sft))
     (out / "preference_pairs.jsonl").write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in pairs))
     return {"out_dir": str(out), "sft_rows": len(sft), "preference_pairs": len(pairs), "prompt_version": prompts.version_for("scene", "v2")}

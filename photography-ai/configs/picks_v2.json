@@ -1,0 +1,29 @@
+{
+ "about": "Jasmine's tap-to-pick review v2: 8 themes, 5 looks per scene (pick as many as she likes). Training-split CC0 scenes only.",
+ "pick_id": "picks-v2",
+ "dataset": "train_v1",
+ "max_side": 1024,
+ "themes": [
+  "relaxed_candid",
+  "dreamy_atmospheric",
+  "cool_editorial",
+  "vintage_ccd",
+  "japanese_fresh",
+  "hk_retro",
+  "french_chic",
+  "korean_clean"
+ ],
+ "scenes": [
+  "02a793da47cc",
+  "2b09b5b90017",
+  "5749b16490a3",
+  "9250e990ae5a",
+  "86e244f17345",
+  "7b7485eaf8f1",
+  "5dfe9d073b28",
+  "ab74950a1739",
+  "ee8ae9f0c364",
+  "a962f0e663e3"
+ ],
+ "n_looks": 5
+}

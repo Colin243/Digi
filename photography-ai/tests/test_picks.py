@@ -62,4 +62,46 @@ def test_generate_build_import_export(cfg, tmp_path):
     row = json.loads((PK.pick_dir(cfg) / "export" / "sft_chosen.jsonl").read_text())
     assert row["meta"]["stage"] == "look2" and row["meta"]["why"] == ["Pose"]
     assert "look 2 of 3" in json.dumps(row["messages"][0])  # same prompt the director used for that look
-    assert PK.status(cfg)["chosen_look_position"] == {"1": 1, "none": 1}
+    st = PK.status(cfg)
+    assert st["chosen_look_position"] == {"1": 1} and st["none_of_these"] == 1
+
+
+def test_multi_select_and_pull_from_the_server(cfg, monkeypatch):
+    import io
+    import urllib.request
+
+    PK.build_site(cfg)
+    site = PK.pick_dir(cfg) / "site"
+    assert sorted(p.name for p in (site / "api").glob("*.js")) == ["_store.js", "picks.js", "submit.js"]
+    shown = json.loads((site / "manifest.json").read_text())["shown"]
+    k0, k1 = "p8|relaxed_candid", "p8|vintage_ccd"
+    sub = {"pick_id": "pk-test", "name": "Jasmine", "client_id": "abc123", "picks": {
+        k0: {"choices": [0, 2], "why": ["Light"], **shown[k0]},
+        k1: {"choices": [], "none": True, **shown[k1]}}}
+    seen = {}
+
+    def fake_urlopen(req, timeout=0):
+        seen["key"] = req.headers.get("X-read-key")
+        return io.BytesIO(json.dumps({"pick_id": "pk-test", "submissions": [sub, {**sub, "name": "claude-bot"}]}).encode())
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    out = PK.pull(cfg, "https://example.test/", "secret")
+    assert seen["key"] == "secret" and out["submissions"] == 2
+    assert out["imported"]["Jasmine (abc123, 2 places)"] == {"picked": 1, "none_of_these": 1}
+    assert "refused" in out["imported"]["claude-bot (abc123, 2 places)"]
+    exp = PK.export(cfg)
+    assert exp["sft_rows"] == 2 and exp["preference_pairs"] == 2  # 2 chosen x 1 passed over
+    assert PK.status(cfg)["chosen_look_position"] == {"0": 1, "2": 1}
+
+
+def test_api_functions_with_in_memory_redis():
+    import shutil
+    import subprocess
+    from pathlib import Path
+
+    if not shutil.which("node"):
+        pytest.skip("node not installed")
+    root = Path(__file__).parents[1]
+    out = subprocess.run(["node", str(root / "tests" / "picks_api_check.cjs"), str(root / "review_site" / "picks_api")],
+                         capture_output=True, text=True)
+    assert out.returncode == 0, out.stderr + out.stdout

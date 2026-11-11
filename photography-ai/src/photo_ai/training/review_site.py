@@ -11,6 +11,7 @@ private claude.ai artifact with the photos as files beside the page. Reviews com
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 
 from PIL import Image, ImageOps
@@ -26,14 +27,18 @@ TEMPLATE = PROJECT_ROOT / "review_site"
 VERCEL_JSON = {"headers": [{"source": "/(.*)", "headers": [{"key": "X-Robots-Tag", "value": "noindex, nofollow"}]}]}
 
 
-def build(dataset: str = "train_v1", max_side: int = 900, target: str = "artifact", batch: int | None = None) -> dict:
+def build(dataset: str = "train_v1", max_side: int = 900, target: str = "artifact", batch: int | None = None,
+          output_dir: Path | None = None) -> dict:
     """target "artifact": a claude.ai page (the publish adds the document skeleton; answers go to its db).
     target "vercel": a standalone static site (full HTML document + vercel.json, not indexed); answers stay in
     the reviewer's browser and come back as a downloaded or copied JSON file.
     batch: only examples of that batch (examples without a "batch" field are batch 1), built into a separate folder."""
-    out = data_dir(dataset) / (("review_site" if target == "artifact" else "review_site_vercel")
-                               + (f"_batch{batch}" if batch else ""))
+    out = Path(output_dir) if output_dir else data_dir(dataset) / (
+        ("review_site" if target == "artifact" else "review_site_vercel") + (f"_batch{batch}" if batch else ""))
     (out / "img").mkdir(parents=True, exist_ok=True)
+    preview_root = data_dir(dataset) / "shot_previews"
+    preview_manifest = preview_root / "manifest.json"
+    previews = json.loads(preview_manifest.read_text()) if preview_manifest.exists() else {}
     pool = {i["id"]: i for i in load_pool(dataset)["images"]}
 
     def img(pid: str) -> dict:
@@ -60,10 +65,21 @@ def build(dataset: str = "train_v1", max_side: int = 900, target: str = "artifac
                 notes.append({"who": "Claude (drafted this)", "note": h["note"].split("\n\n> ")[0]})
             else:
                 notes.append({"who": "Codex (AI review)" if "codex" in h["by"] else h["by"], "note": h["note"]})
+        sha = answer_sha(lab["answer"])
+        preview = previews.get(e["example_id"], {})
+        illustrations = []
+        if preview.get("answer_sha") == sha:
+            for shot in preview.get("shots", []):
+                source = (preview_root / shot["file"]).resolve()
+                if not source.is_relative_to(preview_root.resolve()) or not source.is_file():
+                    raise ValueError("Shot preview must be an existing file inside shot_previews")
+                destination = out / "img" / f"preview-{e['example_id']}-{len(illustrations) + 1}{source.suffix}"
+                shutil.copyfile(source, destination)
+                illustrations.append({"src": f"img/{destination.name}", "alt": shot["alt"]})
         examples.append({"id": e["example_id"], "short": e["example_id"].split("-")[1], "split": e["split"],
                          "technique": e["technique"]["description"], "inspiration": [img(p) for p in e["inspiration"]],
                          "target": img(e["target"]), "answer": lab["answer"], "ai_notes": notes,
-                         "answer_sha": answer_sha(lab["answer"])})
+                         "answer_sha": sha, "shot_previews": illustrations})
     data = json.dumps(examples, ensure_ascii=False).replace("</", "<\\/")
     page = ((TEMPLATE / "page_head.html").read_text() + (TEMPLATE / "page_body.html").read_text()
             + f'<script type="application/json" id="data">{data}</script>\n<script>\n'

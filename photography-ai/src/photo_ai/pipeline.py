@@ -60,6 +60,7 @@ class RunConfig:
     shot_format: str = "v1"  # see schema.SHOT_FORMATS; scene mode forces "v2"
     style: str | None = None  # scene mode: a prompts.STYLE_BRIEFS key
     brief: str = ""  # scene mode: free-text style notes from the photographer
+    n_looks: int = 3  # scene mode: 3 (default) up to len(prompts.ALL_LOOK_PLANS) looks per scene
 
     def params(self, max_tokens: int | None = None) -> GenerationParams:
         return GenerationParams(max_tokens or self.max_tokens, self.temperature, self.repetition_penalty, self.seed)
@@ -203,10 +204,10 @@ def _scene_director(backend, run_dir, insp, tgt, cfg):
     partial = {"mode": "scene", "style": style, "target_scene": scene, "compositions": []}
     if scene is None:
         return None, None, stages
-    for k in range(1, len(prompts.LOOK_PLANS) + 1):
+    for k in range(1, cfg.n_looks + 1):
         look, st = _run_stage(
             backend, run_dir, f"look{k}",
-            prompts.scene_look(scene, cfg.style, cfg.brief, cfg.subject, k, partial["compositions"]),
+            prompts.scene_look(scene, cfg.style, cfg.brief, cfg.subject, k, partial["compositions"], cfg.n_looks),
             [tgt], schema.ShotV2, cfg, min(LOOK_TOKENS, cfg.max_tokens),
         )
         stages.append(st)
@@ -228,6 +229,8 @@ def _normalize_config(cfg: RunConfig) -> RunConfig:
     if cfg.mode == "scene":
         if cfg.style and cfg.style not in prompts.STYLE_BRIEFS:
             raise InputError(f"style must be one of {tuple(prompts.STYLE_BRIEFS)}")
+        if not 3 <= cfg.n_looks <= len(prompts.ALL_LOOK_PLANS):
+            raise InputError(f"n_looks must be 3-{len(prompts.ALL_LOOK_PLANS)}")
         cfg.strategy, cfg.shot_format = SCENE_STRATEGY, "v2"
         return cfg
     if cfg.strategy not in STRATEGIES:

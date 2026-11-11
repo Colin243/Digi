@@ -160,7 +160,8 @@ def main(argv: list[str] | None = None) -> int:
     lr.add_argument("--steps", type=int, default=12, help="smoke: overfit steps")
 
     pk = sub.add_parser("picks", help="tap-to-pick review: generate looks, build the page, import picks, export training data")
-    pk.add_argument("action", choices=["generate", "site", "import", "export", "status"])
+    pk.add_argument("action", choices=["generate", "site", "import", "pull", "export", "status"])
+    pk.add_argument("--url", default="https://jasmine-picks.vercel.app", help="pull: the live page")
     pk.add_argument("--config", type=Path, default=None, help="default: configs/picks_v1.json")
     pk.add_argument("--model", default=SELECTED_MODEL)
     pk.add_argument("--file", type=Path, help="import: the picks file she sent back")
@@ -359,6 +360,15 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(PK.build_site(cfg), indent=1))
         elif a.action == "import":
             print(json.dumps(PK.import_picks(cfg, json.loads(a.file.read_text()), a.site, a.reviewer), indent=1))
+        elif a.action == "pull":
+            import os
+
+            key_file = PK.pick_dir(cfg).parent / ".read_key"
+            key = os.environ.get("PICKS_READ_KEY") or (key_file.read_text().strip() if key_file.exists() else "")
+            if not key:
+                print(f"set PICKS_READ_KEY or write it to {key_file}", file=sys.stderr)
+                return 2
+            print(json.dumps(PK.pull(cfg, a.url, key, a.site), indent=1, ensure_ascii=False))
         elif a.action == "export":
             print(json.dumps(PK.export(cfg), indent=1))
         else:

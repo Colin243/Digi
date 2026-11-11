@@ -1,5 +1,12 @@
 # Pick Your Shot: tap-to-pick review for the creative director
 
+**v2 (`configs/picks_v2.json`, live at https://jasmine-picks.vercel.app):**
+- 8 themes: the four starters plus 日系 Japanese fresh, 港风 Hong Kong retro, 法式 French chic and 韩系 Korean clean.
+- 5 looks per place. Two extra plans, seated/leaning and in-motion, are generated only for this page; the Scene Director default stays 3.
+- Multi-select: she taps every look she'd shoot.
+- Picks send themselves to a small Vercel function (`review_site/picks_api/`) about 2 s after each change. It stores one slot per name and device in the project's Upstash Redis (`KV_REST_API_*` env vars, free plan).
+- `photo-ai picks pull --config configs/picks_v2.json` reads every submission back with the secret `PICKS_READ_KEY`, kept in Vercel and in git-ignored `data/train_v1/picks/.read_key`, and imports them with the usual fingerprint checks. The page can write but can never read anyone's picks.
+
 Jasmine found the Shot Review too much reading, so this page replaces paragraphs with taps:
 
 1. **Choose a theme:** 松弛感, 氛围感, 清冷感 or 复古 CCD.
