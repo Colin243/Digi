@@ -159,6 +159,15 @@ def main(argv: list[str] | None = None) -> int:
     lr.add_argument("--rows", type=int, default=4, help="smoke: rows to use")
     lr.add_argument("--steps", type=int, default=12, help="smoke: overfit steps")
 
+    pk = sub.add_parser("picks", help="tap-to-pick review: generate looks, build the page, import picks, export training data")
+    pk.add_argument("action", choices=["generate", "site", "import", "export", "status"])
+    pk.add_argument("--config", type=Path, default=None, help="default: configs/picks_v1.json")
+    pk.add_argument("--model", default=SELECTED_MODEL)
+    pk.add_argument("--file", type=Path, help="import: the picks file she sent back")
+    pk.add_argument("--site", type=Path, help="import: the page folder she was sent (ties picks to the looks shown)")
+    pk.add_argument("--reviewer", help="import: her name (default: the name in the file)")
+    pk.add_argument("--runs-dir", type=Path, default=DEFAULT_RUNS_DIR)
+
     rn = sub.add_parser("runs", help="summarize saved runs")
     rn.add_argument("--runs-dir", type=Path, default=DEFAULT_RUNS_DIR)
     rn.add_argument("--last", type=int, default=20)
@@ -337,6 +346,23 @@ def main(argv: list[str] | None = None) -> int:
             print(f"smoke test {'PASSED' if rep['all_pass'] else 'FAILED'} -> {cfg.out_dir / 'smoke_report.json'}")
             return 0 if rep["all_pass"] else 1
         print(json.dumps(train(cfg), indent=1))
+        return 0
+
+    if a.cmd == "picks":
+        from . import picks as PK
+
+        cfg = PK.load_config(a.config)
+        if a.action == "generate":
+            done = PK.generate(cfg, a.model, a.runs_dir)
+            print(f"{sum(r['valid'] for r in done['runs'])}/{len(done['runs'])} valid runs")
+        elif a.action == "site":
+            print(json.dumps(PK.build_site(cfg), indent=1))
+        elif a.action == "import":
+            print(json.dumps(PK.import_picks(cfg, json.loads(a.file.read_text()), a.site, a.reviewer), indent=1))
+        elif a.action == "export":
+            print(json.dumps(PK.export(cfg), indent=1))
+        else:
+            print(json.dumps(PK.status(cfg), indent=1))
         return 0
 
     if a.cmd == "runs":

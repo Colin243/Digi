@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<title>Pick Your Shot</title>
+<style>
+:root{--bg:#f6f3ee;--card:#fff;--ink:#1d1d1f;--soft:#6b6b70;--line:#e3ddd3;--accent:#c2410c;--accent-soft:#fde7dc;--ok:#15803d}
+@media (prefers-color-scheme:dark){:root{--bg:#141414;--card:#1f1f21;--ink:#f2f2f2;--soft:#a1a1a6;--line:#333;--accent:#fb923c;--accent-soft:#3b2416;--ok:#4ade80}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.4 -apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif}
+[hidden]{display:none!important}
+main{max-width:560px;margin:0 auto;padding:16px 16px 96px}
+h1{font-size:26px;margin:8px 0 4px}
+.sub{color:var(--soft);margin:0 0 16px}
+.themes{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.theme{background:var(--card);border:1.5px solid var(--line);border-radius:14px;padding:14px;text-align:left;font:inherit;color:inherit;cursor:pointer}
+.theme b{display:block;font-size:22px}
+.theme span{color:var(--soft);font-size:13px}
+.theme small{display:block;margin-top:6px;color:var(--ok);font-size:12px}
+.bar{display:flex;align-items:center;gap:8px;position:sticky;top:0;background:var(--bg);padding:8px 0;z-index:2}
+.bar button{background:none;border:0;color:var(--accent);font:inherit;padding:6px 0;cursor:pointer}
+.bar .count{margin-left:auto;color:var(--soft);font-size:14px}
+.scene{width:100%;border-radius:14px;display:block;max-height:46vh;object-fit:cover}
+.q{font-weight:600;margin:14px 0 8px}
+.look{display:flex;gap:10px;background:var(--card);border:2px solid var(--line);border-radius:14px;padding:8px;margin-bottom:10px;width:100%;text-align:left;font:inherit;color:inherit;cursor:pointer}
+.look img{width:96px;height:120px;object-fit:cover;border-radius:10px;flex:none;background:var(--line)}
+.look .chips{display:flex;flex-wrap:wrap;gap:6px;align-content:flex-start}
+.look .chip{background:var(--bg);border-radius:999px;padding:3px 9px;font-size:13px}
+.look .name{width:100%;font-weight:600;font-size:14px;margin-bottom:2px}
+.look.sel{border-color:var(--accent);background:var(--accent-soft)}
+.look.sel .name::after{content:"  ♥";color:var(--accent)}
+.row{display:flex;gap:8px;margin-top:4px}
+.btn{flex:1;border:1.5px solid var(--line);background:var(--card);color:var(--ink);border-radius:12px;padding:12px;font:inherit;cursor:pointer}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.on{border-color:var(--accent);color:var(--accent)}
+.why{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 0}
+.why button{border:1.5px solid var(--line);background:var(--card);color:var(--ink);border-radius:999px;padding:5px 11px;font:inherit;font-size:13px;cursor:pointer}
+.why button.on{border-color:var(--accent);color:var(--accent)}
+.note{color:var(--soft);font-size:13px;margin-top:6px}
+textarea{width:100%;min-height:90px;font:12px monospace;margin-top:8px}
+input{font:inherit;padding:10px;border-radius:10px;border:1.5px solid var(--line);background:var(--card);color:var(--ink);width:100%}
+</style>
+</head>
+<body>
+<main>
+  <section id="home">
+    <h1>Pick your shot</h1>
+    <p class="sub">Choose a theme. For each place, tap the look you like best. That's it.</p>
+    <label class="note" for="who">Your name</label>
+    <input id="who" value="Jasmine" autocomplete="off">
+    <div class="themes" id="themes" style="margin-top:14px"></div>
+    <div id="send" style="margin-top:20px">
+      <div class="row"><button class="btn primary" id="download">Send my picks (download)</button><button class="btn" id="copy">Copy</button></div>
+      <p class="note" id="send-status">Your picks save on this device as you go.</p>
+      <textarea id="copybox" hidden readonly></textarea>
+    </div>
+  </section>
+  <section id="pick" hidden>
+    <div class="bar"><button id="back">‹ Themes</button><span class="count" id="count"></span></div>
+    <img class="scene" id="scene" alt="the place">
+    <div class="q">Which would you shoot here?</div>
+    <div id="looks"></div>
+    <div class="why" id="why"></div>
+    <div class="row" style="margin-top:12px"><button class="btn" id="none">None of these</button><button class="btn" id="prev">‹ Back</button><button class="btn primary" id="next">Next ›</button></div>
+    <p class="note">Example photos are other people's CC0 photos, shown only to illustrate the pose and angle.</p>
+  </section>
+</main>
+<script type="application/json" id="data">/*PICKS_DATA*/null</script>
+<script>
+(() => {
+  const D = JSON.parse(document.getElementById("data").textContent);
+  const KEY = "pick-your-shot-" + D.pick_id;
+  const $ = (id) => document.getElementById(id);
+  let st = { name: "Jasmine", picks: {} };
+  try { const s = JSON.parse(localStorage.getItem(KEY) || "null"); if (s && s.picks) st = s; } catch (e) {}
+  const save = () => { st.updated_at = new Date().toISOString(); try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (e) {} };
+  const WHY = ["Pose", "Angle", "Light", "Vibe"];
+  let theme = null, i = 0;
+  const items = () => D.items.filter((x) => x.theme === theme);
+  const key = (x) => x.scene + "|" + x.theme;
+  const doneIn = (t) => D.items.filter((x) => x.theme === t && st.picks[key(x)]).length;
+
+  function home() {
+    $("pick").hidden = true; $("home").hidden = false; $("who").value = st.name || "Jasmine";
+    const box = $("themes"); box.textContent = "";
+    for (const t of D.themes) {
+      const b = document.createElement("button"); b.className = "theme";
+      const n = D.items.filter((x) => x.theme === t.key).length, d = doneIn(t.key);
+      b.innerHTML = `<b></b><span></span>${d ? `<small>${d} / ${n} picked</small>` : ""}`;
+      b.querySelector("b").textContent = t.zh; b.querySelector("span").textContent = t.en;
+      b.onclick = () => { theme = t.key; const list = items(); i = Math.max(0, list.findIndex((x) => !st.picks[key(x)])); if (i < 0) i = 0; show(true); };
+      box.append(b);
+    }
+  }
+  function show(top) {
+    const list = items(); if (!list.length) return home();
+    const x = list[i], p = st.picks[key(x)] || {};
+    $("home").hidden = true; $("pick").hidden = false; if (top) scrollTo(0, 0);
+    $("count").textContent = `${D.themes.find((t) => t.key === theme).zh} · place ${i + 1} of ${list.length}`;
+    $("scene").src = x.scene_img;
+    const box = $("looks"); box.textContent = "";
+    x.looks.forEach((lk, k) => {
+      const b = document.createElement("button"); b.className = "look" + (p.choice === k ? " sel" : "");
+      const img = document.createElement("img"); img.alt = "example"; if (lk.example) img.src = lk.example; b.append(img);
+      const chips = document.createElement("div"); chips.className = "chips";
+      const nm = document.createElement("div"); nm.className = "name"; nm.textContent = "Look " + (k + 1); chips.append(nm);
+      for (const n of lk.notes) { const c = document.createElement("span"); c.className = "chip"; c.textContent = n; chips.append(c); }
+      b.append(chips);
+      b.onclick = () => { pick(x, k); };
+      box.append(b);
+    });
+    $("none").className = "btn" + (p.choice === "none" ? " on" : "");
+    const why = $("why"); why.textContent = "";
+    if (p.choice !== undefined && p.choice !== "none") {
+      for (const w of WHY) {
+        const b = document.createElement("button"); b.textContent = w; b.className = (p.why || []).includes(w) ? "on" : "";
+        b.onclick = () => { const s = new Set(p.why || []); s.has(w) ? s.delete(w) : s.add(w); p.why = [...s]; save(); show(); };
+        why.append(b);
+      }
+    }
+  }
+  function pick(x, choice) {
+    st.picks[key(x)] = { ...(st.picks[key(x)] || {}), choice, run_id: x.run_id, look_sha: x.looks.map((l) => l.sha), at: new Date().toISOString() };
+    save(); show();
+  }
+  $("none").onclick = () => { const list = items(); pick(list[i], "none"); };
+  $("next").onclick = () => { const list = items(); if (i < list.length - 1) { i++; show(true); } else { home(); scrollTo(0, 0); } };
+  $("prev").onclick = () => { if (i > 0) { i--; show(true); } else home(); };
+  $("back").onclick = home;
+  $("who").oninput = (e) => { st.name = e.target.value; save(); };
+  const exportDoc = () => JSON.stringify({ pick_id: D.pick_id, name: st.name, picks: st.picks, updated_at: st.updated_at }, null, 1);
+  const count = () => Object.keys(st.picks).length;
+  $("download").onclick = () => {
+    const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([exportDoc()], { type: "application/json" }));
+    a.download = `picks-${(st.name || "me").toLowerCase().replace(/\W+/g, "-")}-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.append(a); a.click(); a.remove();
+    $("send-status").textContent = `Downloaded ${count()} picks. Send the file to Colin.`;
+  };
+  $("copy").onclick = () => {
+    const t = exportDoc(), box = $("copybox"); box.value = t;
+    (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(
+      () => { $("send-status").textContent = `Copied ${count()} picks. Paste them into a message to Colin.`; },
+      () => { box.hidden = false; box.select(); $("send-status").textContent = "Select all and copy the text below."; });
+  };
+  home();
+})();
+</script>
+</body>
+</html>
