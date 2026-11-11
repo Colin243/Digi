@@ -1,0 +1,251 @@
+{
+ "id": "cafe-window-candid",
+ "suite": "portrait_v1",
+ "category": "cafe",
+ "description": "Candid café portraits by windows -> an empty café window counter with stools.",
+ "subject": "a person (the photographer's friend) posing in the scene",
+ "license_note": "CC0 (Unsplash via Wikimedia Commons); see datasets/portrait_v1/SOURCES.md",
+ "inspiration": [
+  {
+   "file": "photography-ai/samples/portrait_v1/cafe-window-candid/inspiration_1.jpg",
+   "primary": [
+    "woman",
+    "man",
+    "girl",
+    "boy",
+    "person",
+    "people",
+    "couple",
+    "lady",
+    "guy"
+   ],
+   "objects": [
+    [
+     "woman",
+     "man",
+     "girl",
+     "boy",
+     "person",
+     "people",
+     "couple",
+     "lady",
+     "guy"
+    ],
+    [
+     "counter",
+     "diner",
+     "restaurant",
+     "cafe",
+     "café"
+    ],
+    [
+     "window"
+    ],
+    [
+     "food",
+     "basket",
+     "fries",
+     "eating"
+    ]
+   ]
+  },
+  {
+   "file": "photography-ai/samples/portrait_v1/cafe-window-candid/inspiration_2.jpg",
+   "primary": [
+    "woman",
+    "man",
+    "girl",
+    "boy",
+    "person",
+    "people",
+    "couple",
+    "lady",
+    "guy"
+   ],
+   "objects": [
+    [
+     "woman",
+     "man",
+     "girl",
+     "boy",
+     "person",
+     "people",
+     "couple",
+     "lady",
+     "guy"
+    ],
+    [
+     "cup",
+     "mug",
+     "coffee",
+     "drinking"
+    ],
+    [
+     "wall",
+     "brick"
+    ],
+    [
+     "eyes closed",
+     "closed eyes"
+    ]
+   ]
+  },
+  {
+   "file": "photography-ai/samples/portrait_v1/cafe-window-candid/inspiration_3.jpg",
+   "primary": [
+    "woman",
+    "man",
+    "girl",
+    "boy",
+    "person",
+    "people",
+    "couple",
+    "lady",
+    "guy"
+   ],
+   "objects": [
+    [
+     "woman",
+     "man",
+     "girl",
+     "boy",
+     "person",
+     "people",
+     "couple",
+     "lady",
+     "guy"
+    ],
+    [
+     "booth",
+     "bench",
+     "seat"
+    ],
+    [
+     "window"
+    ],
+    [
+     "table"
+    ]
+   ]
+  },
+  {
+   "file": "photography-ai/samples/portrait_v1/cafe-window-candid/inspiration_4.jpg",
+   "primary": [
+    "woman",
+    "man",
+    "girl",
+    "boy",
+    "person",
+    "people",
+    "couple",
+    "lady",
+    "guy"
+   ],
+   "objects": [
+    [
+     "woman",
+     "man",
+     "girl",
+     "boy",
+     "person",
+     "people",
+     "couple",
+     "lady",
+     "guy"
+    ],
+    [
+     "window"
+    ],
+    [
+     "plant"
+    ],
+    [
+     "smil",
+     "smile",
+     "smiling",
+     "laugh"
+    ],
+    [
+     "table",
+     "counter",
+     "phone"
+    ]
+   ]
+  }
+ ],
+ "target": {
+  "file": "photography-ai/samples/portrait_v1/cafe-window-candid/target.jpg",
+  "primary": [
+   "cafe",
+   "café",
+   "coffee shop",
+   "counter",
+   "window",
+   "stool"
+  ],
+  "objects": [
+   [
+    "window"
+   ],
+   [
+    "stool",
+    "chair",
+    "seat"
+   ],
+   [
+    "counter",
+    "table",
+    "bar"
+   ],
+   [
+    "blind",
+    "blinds"
+   ],
+   [
+    "plant"
+   ],
+   [
+    "door"
+   ]
+  ]
+ },
+ "leak_terms": [
+  "fries",
+  "booth",
+  "diner",
+  "mug",
+  "brick"
+ ],
+ "style_keywords": [
+  [
+   "window"
+  ],
+  [
+   "side light",
+   "natural light",
+   "window light",
+   "soft light"
+  ],
+  [
+   "candid",
+   "relaxed",
+   "natural"
+  ],
+  [
+   "seated",
+   "sitting"
+  ]
+ ],
+ "target_absent": [
+  "person",
+  "people",
+  "woman",
+  "man",
+  "girl",
+  "boy",
+  "couple",
+  "lady",
+  "guy",
+  "model"
+ ]
+}

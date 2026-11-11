@@ -1,0 +1,262 @@
+{
+ "id": "colorful-wall-headshot",
+ "suite": "portrait_v1",
+ "category": "portrait",
+ "description": "Head-and-shoulders portraits against plain saturated walls -> red-brick and dark-green shopfront doors.",
+ "subject": "a person (the photographer's friend) posing in the scene",
+ "license_note": "CC0 (Unsplash via Wikimedia Commons); see datasets/portrait_v1/SOURCES.md",
+ "inspiration": [
+  {
+   "file": "photography-ai/samples/portrait_v1/colorful-wall-headshot/inspiration_1.jpg",
+   "primary": [
+    "woman",
+    "man",
+    "girl",
+    "boy",
+    "person",
+    "people",
+    "couple",
+    "lady",
+    "guy",
+    "flower"
+   ],
+   "objects": [
+    [
+     "woman",
+     "man",
+     "girl",
+     "boy",
+     "person",
+     "people",
+     "couple",
+     "lady",
+     "guy"
+    ],
+    [
+     "flower",
+     "flowers",
+     "crown"
+    ],
+    [
+     "yellow",
+     "orange"
+    ],
+    [
+     "smil",
+     "smile",
+     "smiling"
+    ]
+   ]
+  },
+  {
+   "file": "photography-ai/samples/portrait_v1/colorful-wall-headshot/inspiration_2.jpg",
+   "primary": [
+    "woman",
+    "man",
+    "girl",
+    "boy",
+    "person",
+    "people",
+    "couple",
+    "lady",
+    "guy"
+   ],
+   "objects": [
+    [
+     "woman",
+     "man",
+     "girl",
+     "boy",
+     "person",
+     "people",
+     "couple",
+     "lady",
+     "guy"
+    ],
+    [
+     "sweater",
+     "white"
+    ],
+    [
+     "green",
+     "yellow",
+     "lime"
+    ],
+    [
+     "smil",
+     "smile",
+     "laugh"
+    ]
+   ]
+  },
+  {
+   "file": "photography-ai/samples/portrait_v1/colorful-wall-headshot/inspiration_3.jpg",
+   "primary": [
+    "woman",
+    "man",
+    "girl",
+    "boy",
+    "person",
+    "people",
+    "couple",
+    "lady",
+    "guy"
+   ],
+   "objects": [
+    [
+     "woman",
+     "man",
+     "girl",
+     "boy",
+     "person",
+     "people",
+     "couple",
+     "lady",
+     "guy"
+    ],
+    [
+     "dreadlock",
+     "dreadlocks",
+     "beard"
+    ],
+    [
+     "teal",
+     "blue",
+     "green"
+    ],
+    [
+     "shirt",
+     "denim"
+    ],
+    [
+     "eyes closed",
+     "closed eyes"
+    ]
+   ]
+  },
+  {
+   "file": "photography-ai/samples/portrait_v1/colorful-wall-headshot/inspiration_4.jpg",
+   "primary": [
+    "woman",
+    "man",
+    "girl",
+    "boy",
+    "person",
+    "people",
+    "couple",
+    "lady",
+    "guy"
+   ],
+   "objects": [
+    [
+     "woman",
+     "man",
+     "girl",
+     "boy",
+     "person",
+     "people",
+     "couple",
+     "lady",
+     "guy"
+    ],
+    [
+     "wall",
+     "tile",
+     "stone"
+    ],
+    [
+     "t-shirt",
+     "shirt"
+    ],
+    [
+     "lean",
+     "leaning"
+    ]
+   ]
+  }
+ ],
+ "target": {
+  "file": "photography-ai/samples/portrait_v1/colorful-wall-headshot/target.jpg",
+  "primary": [
+   "door",
+   "storefront",
+   "shopfront",
+   "facade",
+   "building",
+   "entrance",
+   "brick"
+  ],
+  "objects": [
+   [
+    "brick",
+    "red"
+   ],
+   [
+    "door",
+    "doors",
+    "entrance"
+   ],
+   [
+    "green",
+    "dark green"
+   ],
+   [
+    "window"
+   ],
+   [
+    "lamp",
+    "light",
+    "sconce"
+   ],
+   [
+    "sign",
+    "number",
+    "stumptown"
+   ]
+  ]
+ },
+ "leak_terms": [
+  "flower crown",
+  "dreadlock",
+  "teal",
+  "yellow wall"
+ ],
+ "style_keywords": [
+  [
+   "wall",
+   "background",
+   "backdrop"
+  ],
+  [
+   "color",
+   "colour",
+   "colorful",
+   "saturated",
+   "bright"
+  ],
+  [
+   "headshot",
+   "head and shoulders",
+   "close-up",
+   "portrait"
+  ],
+  [
+   "center",
+   "centered",
+   "eye level",
+   "eye-level"
+  ]
+ ],
+ "target_absent": [
+  "person",
+  "people",
+  "woman",
+  "man",
+  "girl",
+  "boy",
+  "couple",
+  "lady",
+  "guy",
+  "model"
+ ]
+}

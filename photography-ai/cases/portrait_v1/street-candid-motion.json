@@ -1,0 +1,269 @@
+{
+ "id": "street-candid-motion",
+ "suite": "portrait_v1",
+ "category": "street",
+ "description": "Candid motion on city streets -> an empty railway platform with brick station and bench.",
+ "subject": "a person (the photographer's friend) posing in the scene",
+ "license_note": "CC0 (Unsplash via Wikimedia Commons); see datasets/portrait_v1/SOURCES.md",
+ "inspiration": [
+  {
+   "file": "photography-ai/samples/portrait_v1/street-candid-motion/inspiration_1.jpg",
+   "primary": [
+    "woman",
+    "man",
+    "girl",
+    "boy",
+    "person",
+    "people",
+    "couple",
+    "lady",
+    "guy"
+   ],
+   "objects": [
+    [
+     "woman",
+     "man",
+     "girl",
+     "boy",
+     "person",
+     "people",
+     "couple",
+     "lady",
+     "guy"
+    ],
+    [
+     "street",
+     "road"
+    ],
+    [
+     "back",
+     "behind",
+     "walking"
+    ],
+    [
+     "jacket"
+    ],
+    [
+     "scooter",
+     "motorcycle",
+     "cars"
+    ]
+   ]
+  },
+  {
+   "file": "photography-ai/samples/portrait_v1/street-candid-motion/inspiration_2.jpg",
+   "primary": [
+    "woman",
+    "man",
+    "girl",
+    "boy",
+    "person",
+    "people",
+    "couple",
+    "lady",
+    "guy"
+   ],
+   "objects": [
+    [
+     "woman",
+     "man",
+     "girl",
+     "boy",
+     "person",
+     "people",
+     "couple",
+     "lady",
+     "guy"
+    ],
+    [
+     "jump",
+     "jumping",
+     "dancing",
+     "mid-air"
+    ],
+    [
+     "street",
+     "road"
+    ],
+    [
+     "jacket",
+     "silver"
+    ]
+   ]
+  },
+  {
+   "file": "photography-ai/samples/portrait_v1/street-candid-motion/inspiration_3.jpg",
+   "primary": [
+    "woman",
+    "man",
+    "girl",
+    "boy",
+    "person",
+    "people",
+    "couple",
+    "lady",
+    "guy"
+   ],
+   "objects": [
+    [
+     "woman",
+     "man",
+     "girl",
+     "boy",
+     "person",
+     "people",
+     "couple",
+     "lady",
+     "guy"
+    ],
+    [
+     "sign",
+     "signal"
+    ],
+    [
+     "traffic",
+     "cars",
+     "crosswalk",
+     "street"
+    ],
+    [
+     "coat",
+     "hat",
+     "bag"
+    ],
+    [
+     "bokeh",
+     "blur",
+     "rain"
+    ]
+   ]
+  },
+  {
+   "file": "photography-ai/samples/portrait_v1/street-candid-motion/inspiration_4.jpg",
+   "primary": [
+    "woman",
+    "man",
+    "girl",
+    "boy",
+    "person",
+    "people",
+    "couple",
+    "lady",
+    "guy"
+   ],
+   "objects": [
+    [
+     "woman",
+     "man",
+     "girl",
+     "boy",
+     "person",
+     "people",
+     "couple",
+     "lady",
+     "guy"
+    ],
+    [
+     "umbrella"
+    ],
+    [
+     "dress"
+    ],
+    [
+     "walking"
+    ],
+    [
+     "platform",
+     "station",
+     "path"
+    ]
+   ]
+  }
+ ],
+ "target": {
+  "file": "photography-ai/samples/portrait_v1/street-candid-motion/target.jpg",
+  "primary": [
+   "station",
+   "platform",
+   "railway",
+   "train"
+  ],
+  "objects": [
+   [
+    "station",
+    "platform",
+    "railway",
+    "train"
+   ],
+   [
+    "bench"
+   ],
+   [
+    "brick",
+    "wall"
+   ],
+   [
+    "sign",
+    "roundel",
+    "newbury park"
+   ],
+   [
+    "poster",
+    "posters"
+   ],
+   [
+    "canopy",
+    "roof",
+    "awning"
+   ],
+   [
+    "track",
+    "tracks",
+    "rail"
+   ]
+  ]
+ },
+ "leak_terms": [
+  "umbrella",
+  "scooter",
+  "traffic",
+  "crosswalk",
+  "jumping"
+ ],
+ "style_keywords": [
+  [
+   "candid",
+   "natural",
+   "unposed"
+  ],
+  [
+   "motion",
+   "movement",
+   "walking",
+   "mid-stride",
+   "action"
+  ],
+  [
+   "street",
+   "urban",
+   "city"
+  ],
+  [
+   "from behind",
+   "behind",
+   "back"
+  ]
+ ],
+ "target_absent": [
+  "person",
+  "people",
+  "woman",
+  "man",
+  "girl",
+  "boy",
+  "couple",
+  "lady",
+  "guy",
+  "model"
+ ]
+}

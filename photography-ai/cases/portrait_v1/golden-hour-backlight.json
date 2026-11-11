@@ -1,0 +1,259 @@
+{
+ "id": "golden-hour-backlight",
+ "suite": "portrait_v1",
+ "category": "lifestyle",
+ "description": "Backlit golden-hour portraits with sun flare -> a shady park path under oaks.",
+ "subject": "a person (the photographer's friend) posing in the scene",
+ "license_note": "CC0 (Unsplash via Wikimedia Commons); see datasets/portrait_v1/SOURCES.md",
+ "inspiration": [
+  {
+   "file": "photography-ai/samples/portrait_v1/golden-hour-backlight/inspiration_1.jpg",
+   "primary": [
+    "woman",
+    "man",
+    "girl",
+    "boy",
+    "person",
+    "people",
+    "couple",
+    "lady",
+    "guy"
+   ],
+   "objects": [
+    [
+     "woman",
+     "man",
+     "girl",
+     "boy",
+     "person",
+     "people",
+     "couple",
+     "lady",
+     "guy"
+    ],
+    [
+     "sun",
+     "flare",
+     "sunlight",
+     "backlit"
+    ],
+    [
+     "grass",
+     "field",
+     "meadow"
+    ],
+    [
+     "trees"
+    ]
+   ]
+  },
+  {
+   "file": "photography-ai/samples/portrait_v1/golden-hour-backlight/inspiration_2.jpg",
+   "primary": [
+    "woman",
+    "man",
+    "girl",
+    "boy",
+    "person",
+    "people",
+    "couple",
+    "lady",
+    "guy"
+   ],
+   "objects": [
+    [
+     "woman",
+     "man",
+     "girl",
+     "boy",
+     "person",
+     "people",
+     "couple",
+     "lady",
+     "guy"
+    ],
+    [
+     "scarf"
+    ],
+    [
+     "coat",
+     "jacket",
+     "red"
+    ],
+    [
+     "tree"
+    ],
+    [
+     "sun",
+     "flare",
+     "backlit"
+    ]
+   ]
+  },
+  {
+   "file": "photography-ai/samples/portrait_v1/golden-hour-backlight/inspiration_3.jpg",
+   "primary": [
+    "woman",
+    "man",
+    "girl",
+    "boy",
+    "person",
+    "people",
+    "couple",
+    "lady",
+    "guy"
+   ],
+   "objects": [
+    [
+     "woman",
+     "man",
+     "girl",
+     "boy",
+     "person",
+     "people",
+     "couple",
+     "lady",
+     "guy"
+    ],
+    [
+     "hat"
+    ],
+    [
+     "glasses"
+    ],
+    [
+     "blanket",
+     "poncho",
+     "shawl"
+    ],
+    [
+     "hills",
+     "sunset"
+    ]
+   ]
+  },
+  {
+   "file": "photography-ai/samples/portrait_v1/golden-hour-backlight/inspiration_4.jpg",
+   "primary": [
+    "woman",
+    "man",
+    "girl",
+    "boy",
+    "person",
+    "people",
+    "couple",
+    "lady",
+    "guy"
+   ],
+   "objects": [
+    [
+     "woman",
+     "man",
+     "girl",
+     "boy",
+     "person",
+     "people",
+     "couple",
+     "lady",
+     "guy"
+    ],
+    [
+     "field",
+     "grass",
+     "meadow"
+    ],
+    [
+     "dancing",
+     "jumping",
+     "arms",
+     "motion"
+    ],
+    [
+     "t-shirt",
+     "shirt"
+    ]
+   ]
+  }
+ ],
+ "target": {
+  "file": "photography-ai/samples/portrait_v1/golden-hour-backlight/target.jpg",
+  "primary": [
+   "park",
+   "path",
+   "trees",
+   "oak",
+   "walkway"
+  ],
+  "objects": [
+   [
+    "path",
+    "walkway",
+    "pathway",
+    "sidewalk"
+   ],
+   [
+    "tree",
+    "trees",
+    "oak"
+   ],
+   [
+    "grass",
+    "lawn"
+   ],
+   [
+    "shade",
+    "shadow",
+    "shadows"
+   ],
+   [
+    "bench",
+    "lamp",
+    "post"
+   ]
+  ]
+ },
+ "leak_terms": [
+  "poncho",
+  "scarf",
+  "meadow",
+  "field"
+ ],
+ "style_keywords": [
+  [
+   "backlit",
+   "backlight",
+   "behind the subject",
+   "sun behind"
+  ],
+  [
+   "golden hour",
+   "golden",
+   "warm",
+   "sunset"
+  ],
+  [
+   "flare",
+   "glow",
+   "haze",
+   "soft"
+  ],
+  [
+   "outdoor",
+   "nature",
+   "grass",
+   "field"
+  ]
+ ],
+ "target_absent": [
+  "person",
+  "people",
+  "woman",
+  "man",
+  "girl",
+  "boy",
+  "couple",
+  "lady",
+  "guy",
+  "model"
+ ]
+}

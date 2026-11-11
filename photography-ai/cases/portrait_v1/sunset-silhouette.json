@@ -1,0 +1,220 @@
+{
+ "id": "sunset-silhouette",
+ "suite": "portrait_v1",
+ "category": "lifestyle",
+ "description": "Silhouettes against sunset sky -> under a pier at sunset with ocean and colorful sky.",
+ "subject": "a person (the photographer's friend) posing in the scene",
+ "license_note": "CC0 (Unsplash via Wikimedia Commons); see datasets/portrait_v1/SOURCES.md",
+ "inspiration": [
+  {
+   "file": "photography-ai/samples/portrait_v1/sunset-silhouette/inspiration_1.jpg",
+   "primary": [
+    "woman",
+    "man",
+    "girl",
+    "boy",
+    "person",
+    "people",
+    "couple",
+    "lady",
+    "guy",
+    "silhouette"
+   ],
+   "objects": [
+    [
+     "silhouette"
+    ],
+    [
+     "desert",
+     "dune",
+     "sand"
+    ],
+    [
+     "sun",
+     "sunset",
+     "sunrise"
+    ]
+   ]
+  },
+  {
+   "file": "photography-ai/samples/portrait_v1/sunset-silhouette/inspiration_2.jpg",
+   "primary": [
+    "woman",
+    "man",
+    "girl",
+    "boy",
+    "person",
+    "people",
+    "couple",
+    "lady",
+    "guy",
+    "silhouette"
+   ],
+   "objects": [
+    [
+     "woman",
+     "man",
+     "girl",
+     "boy",
+     "person",
+     "people",
+     "couple",
+     "lady",
+     "guy"
+    ],
+    [
+     "beach",
+     "sand",
+     "shore"
+    ],
+    [
+     "reflection"
+    ],
+    [
+     "sunset",
+     "dusk",
+     "pink",
+     "purple"
+    ]
+   ]
+  },
+  {
+   "file": "photography-ai/samples/portrait_v1/sunset-silhouette/inspiration_3.jpg",
+   "primary": [
+    "woman",
+    "man",
+    "girl",
+    "boy",
+    "person",
+    "people",
+    "couple",
+    "lady",
+    "guy",
+    "silhouette"
+   ],
+   "objects": [
+    [
+     "silhouette"
+    ],
+    [
+     "light",
+     "lights",
+     "lantern",
+     "string lights"
+    ],
+    [
+     "sky",
+     "clouds"
+    ]
+   ]
+  },
+  {
+   "file": "photography-ai/samples/portrait_v1/sunset-silhouette/inspiration_4.jpg",
+   "primary": [
+    "woman",
+    "man",
+    "girl",
+    "boy",
+    "person",
+    "people",
+    "couple",
+    "lady",
+    "guy",
+    "silhouette"
+   ],
+   "objects": [
+    [
+     "silhouette"
+    ],
+    [
+     "city",
+     "cityscape"
+    ],
+    [
+     "moon"
+    ],
+    [
+     "sunset",
+     "dusk"
+    ]
+   ]
+  }
+ ],
+ "target": {
+  "file": "photography-ai/samples/portrait_v1/sunset-silhouette/target.jpg",
+  "primary": [
+   "pier",
+   "jetty",
+   "dock",
+   "boardwalk"
+  ],
+  "objects": [
+   [
+    "pier",
+    "pilings",
+    "piling",
+    "posts",
+    "pillars",
+    "beams"
+   ],
+   [
+    "sunset",
+    "sun",
+    "sunrise"
+   ],
+   [
+    "ocean",
+    "sea",
+    "water",
+    "waves"
+   ],
+   [
+    "sky",
+    "clouds"
+   ],
+   [
+    "reflection"
+   ]
+  ]
+ },
+ "leak_terms": [
+  "desert",
+  "dune",
+  "moon",
+  "lantern",
+  "cityscape"
+ ],
+ "style_keywords": [
+  [
+   "silhouette"
+  ],
+  [
+   "backlit",
+   "backlight",
+   "against the sky",
+   "against the sun"
+  ],
+  [
+   "sunset",
+   "golden",
+   "dusk",
+   "twilight"
+  ],
+  [
+   "horizon",
+   "sky"
+  ]
+ ],
+ "target_absent": [
+  "person",
+  "people",
+  "woman",
+  "man",
+  "girl",
+  "boy",
+  "couple",
+  "lady",
+  "guy",
+  "model"
+ ]
+}

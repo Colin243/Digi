@@ -1,0 +1,263 @@
+{
+ "id": "small-figure-big-scene",
+ "suite": "portrait_v1",
+ "category": "lifestyle",
+ "description": "Tiny figure in a huge landscape -> a castle and wide lawn under grey sky.",
+ "subject": "a person (the photographer's friend) posing in the scene",
+ "license_note": "CC0 (Unsplash via Wikimedia Commons); see datasets/portrait_v1/SOURCES.md",
+ "inspiration": [
+  {
+   "file": "photography-ai/samples/portrait_v1/small-figure-big-scene/inspiration_1.jpg",
+   "primary": [
+    "woman",
+    "man",
+    "girl",
+    "boy",
+    "person",
+    "people",
+    "couple",
+    "lady",
+    "guy"
+   ],
+   "objects": [
+    [
+     "woman",
+     "man",
+     "girl",
+     "boy",
+     "person",
+     "people",
+     "couple",
+     "lady",
+     "guy"
+    ],
+    [
+     "coast",
+     "beach",
+     "ocean",
+     "sea"
+    ],
+    [
+     "grass",
+     "hill",
+     "slope"
+    ],
+    [
+     "sitting",
+     "seated"
+    ]
+   ]
+  },
+  {
+   "file": "photography-ai/samples/portrait_v1/small-figure-big-scene/inspiration_2.jpg",
+   "primary": [
+    "woman",
+    "man",
+    "girl",
+    "boy",
+    "person",
+    "people",
+    "couple",
+    "lady",
+    "guy"
+   ],
+   "objects": [
+    [
+     "woman",
+     "man",
+     "girl",
+     "boy",
+     "person",
+     "people",
+     "couple",
+     "lady",
+     "guy"
+    ],
+    [
+     "rock",
+     "boulder"
+    ],
+    [
+     "arms",
+     "outstretched",
+     "raised"
+    ],
+    [
+     "clouds",
+     "sky",
+     "storm"
+    ]
+   ]
+  },
+  {
+   "file": "photography-ai/samples/portrait_v1/small-figure-big-scene/inspiration_3.jpg",
+   "primary": [
+    "woman",
+    "man",
+    "girl",
+    "boy",
+    "person",
+    "people",
+    "couple",
+    "lady",
+    "guy"
+   ],
+   "objects": [
+    [
+     "woman",
+     "man",
+     "girl",
+     "boy",
+     "person",
+     "people",
+     "couple",
+     "lady",
+     "guy"
+    ],
+    [
+     "fog",
+     "mist",
+     "foggy"
+    ],
+    [
+     "arms",
+     "outstretched"
+    ],
+    [
+     "trees",
+     "park"
+    ],
+    [
+     "back",
+     "behind"
+    ]
+   ]
+  },
+  {
+   "file": "photography-ai/samples/portrait_v1/small-figure-big-scene/inspiration_4.jpg",
+   "primary": [
+    "woman",
+    "man",
+    "girl",
+    "boy",
+    "person",
+    "people",
+    "couple",
+    "lady",
+    "guy"
+   ],
+   "objects": [
+    [
+     "woman",
+     "man",
+     "girl",
+     "boy",
+     "person",
+     "people",
+     "couple",
+     "lady",
+     "guy"
+    ],
+    [
+     "road",
+     "street",
+     "highway"
+    ],
+    [
+     "smoke",
+     "cloud",
+     "clouds"
+    ],
+    [
+     "black and white",
+     "monochrome",
+     "b&w"
+    ]
+   ]
+  }
+ ],
+ "target": {
+  "file": "photography-ai/samples/portrait_v1/small-figure-big-scene/target.jpg",
+  "primary": [
+   "castle",
+   "building",
+   "mansion",
+   "palace",
+   "manor",
+   "architecture"
+  ],
+  "objects": [
+   [
+    "castle",
+    "palace",
+    "manor",
+    "mansion"
+   ],
+   [
+    "tower",
+    "towers",
+    "turret"
+   ],
+   [
+    "lawn",
+    "grass"
+   ],
+   [
+    "path",
+    "road",
+    "gravel",
+    "driveway"
+   ],
+   [
+    "sky",
+    "clouds",
+    "overcast"
+   ]
+  ]
+ },
+ "leak_terms": [
+  "ocean",
+  "boulder",
+  "fog",
+  "highway",
+  "rock"
+ ],
+ "style_keywords": [
+  [
+   "small",
+   "tiny",
+   "distant",
+   "scale"
+  ],
+  [
+   "vast",
+   "large",
+   "big",
+   "wide",
+   "expansive",
+   "landscape"
+  ],
+  [
+   "negative space",
+   "empty space",
+   "space"
+  ],
+  [
+   "from behind",
+   "back",
+   "behind"
+  ]
+ ],
+ "target_absent": [
+  "person",
+  "people",
+  "woman",
+  "man",
+  "girl",
+  "boy",
+  "couple",
+  "lady",
+  "guy",
+  "model"
+ ]
+}

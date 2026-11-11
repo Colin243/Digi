@@ -1,0 +1,33 @@
+[project]
+name = "digi-photography-ai"
+version = "0.1.0"
+description = "Local VLM experiments: inspiration photos + target scene -> composition recommendations (MLX on Apple silicon)."
+readme = "README.md"
+requires-python = ">=3.10,<3.14"
+dependencies = [
+    "mlx-vlm>=0.7.12,<0.8",
+    "gradio>=6.0,<7",
+    "pillow>=10",
+    "pydantic>=2.6",
+    "pillow-heif>=0.18",
+]
+
+[project.optional-dependencies]
+# Phase 4: draft candidate training labels with Claude (photo_ai/training/draft_api.py). Costs money per call.
+drafting = ["anthropic>=0.75"]
+
+[project.scripts]
+photo-ai = "photo_ai.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/photo_ai"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

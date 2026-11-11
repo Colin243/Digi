@@ -1,0 +1,37 @@
+{
+ "run_name": "pilot-v1",
+ "base_model": "mlx-community/Qwen3-VL-2B-Instruct-4bit",
+ "data_dir": "data/train_v1/sft",
+ "targets": [
+  "q_proj",
+  "k_proj",
+  "v_proj",
+  "o_proj",
+  "gate_proj",
+  "up_proj",
+  "down_proj"
+ ],
+ "rank": 8,
+ "alpha": 16.0,
+ "dropout": 0.05,
+ "learning_rate": 0.0001,
+ "weight_decay": 0.0,
+ "warmup_steps": 10,
+ "iters": 150,
+ "grad_accum": 4,
+ "max_side": 768,
+ "max_seq_length": 4096,
+ "eval_every": 15,
+ "save_every": 30,
+ "early_stop_patience": 3,
+ "grad_clip": 1.0,
+ "seed": 0,
+ "stages": [
+  "notes",
+  "target_scene",
+  "aesthetic",
+  "compositions"
+ ],
+ "grad_checkpoint": true,
+ "cache_limit_gb": 2.0
+}

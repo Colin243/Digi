@@ -1,0 +1,19 @@
+{
+  "id": "low-angle-architecture",
+  "description": "Low-angle, looking-up shots of statues/towers/street poles against sky -> outdoor staircase leading up to a pavilion.",
+  "subject": "a person (the photographer's friend) posing in the scene",
+  "license_note": "Local reference images (dkamera.de, 9to5mac); copyrighted, inspection only, not in git.",
+  "inspiration": [
+    {"file": "research/g12/collection/files/dkamera-11.jpg", "primary": ["statue", "bust", "sculpture"],
+     "objects": [["statue", "bust", "sculpture"], ["beard", "bearded"], ["leaves", "hedge", "bush", "foliage", "plant", "tree"], ["stone"]]},
+    {"file": "research/g12/collection/files/dkamera-20.jpg", "primary": ["church", "spire", "steeple", "tower"],
+     "objects": [["church", "spire", "steeple", "tower"], ["clock"], ["cloud", "sky"]]},
+    {"file": "research/g12/collection/files/dkamera-21.jpg", "primary": ["church", "spire", "steeple", "tower"],
+     "objects": [["church", "spire", "steeple", "tower"], ["clock"], ["brick", "stone"], ["sky", "cloud"]]},
+    {"file": "output/iphone17-portrait-references/IMG_6968.jpeg", "primary": ["lamp", "street light", "streetlight", "lamppost", "pole", "banner"],
+     "objects": [["lamp", "street light", "streetlight", "lamppost", "pole"], ["banner", "flag", "sign"], ["building"], ["sky"]]}
+  ],
+  "target": {"file": "output/iphone17-portrait-references/IMG_6922.jpeg", "primary": ["stair", "steps", "staircase", "stairway"],
+    "objects": [["stair", "steps", "staircase", "stairway"], ["pavilion", "gazebo", "building", "structure"], ["railing", "handrail", "rail"], ["lamp", "light pole", "lamppost", "street light"], ["mural", "painted", "painting", "paint", "wave"], ["flag"], ["people", "person", "visitors"]]},
+  "leak_terms": ["statue", "bust", "church", "spire", "steeple", "clock", "beard", "cathedral"]
+}

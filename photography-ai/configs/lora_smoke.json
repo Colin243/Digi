@@ -1,0 +1,12 @@
+{
+ "run_name": "smoke-UNREVIEWED",
+ "base_model": "mlx-community/Qwen3-VL-2B-Instruct-4bit",
+ "data_dir": "data/train_v1/sft-UNREVIEWED-smoke",
+ "rank": 8,
+ "alpha": 16.0,
+ "dropout": 0.0,
+ "max_side": 768,
+ "max_seq_length": 4096,
+ "grad_checkpoint": true,
+ "cache_limit_gb": 2.0
+}

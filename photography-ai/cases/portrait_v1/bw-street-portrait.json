@@ -1,0 +1,208 @@
+{
+ "id": "bw-street-portrait",
+ "suite": "portrait_v1",
+ "category": "street",
+ "description": "Black-and-white street portraits -> a tree-lined street with a bicycle and two people.",
+ "subject": "a person (the photographer's friend) posing in the scene",
+ "license_note": "CC0 (Unsplash via Wikimedia Commons); see datasets/portrait_v1/SOURCES.md",
+ "inspiration": [
+  {
+   "file": "photography-ai/samples/portrait_v1/bw-street-portrait/inspiration_1.jpg",
+   "primary": [
+    "woman",
+    "man",
+    "girl",
+    "boy",
+    "person",
+    "people",
+    "couple",
+    "lady",
+    "guy"
+   ],
+   "objects": [
+    [
+     "woman",
+     "man",
+     "girl",
+     "boy",
+     "person",
+     "people",
+     "couple",
+     "lady",
+     "guy"
+    ],
+    [
+     "black and white",
+     "monochrome",
+     "b&w"
+    ],
+    [
+     "jacket",
+     "coat"
+    ],
+    [
+     "shadow",
+     "shadows",
+     "light"
+    ],
+    [
+     "tree",
+     "branches"
+    ]
+   ]
+  },
+  {
+   "file": "photography-ai/samples/portrait_v1/bw-street-portrait/inspiration_2.jpg",
+   "primary": [
+    "woman",
+    "man",
+    "girl",
+    "boy",
+    "person",
+    "people",
+    "couple",
+    "lady",
+    "guy"
+   ],
+   "objects": [
+    [
+     "woman",
+     "man",
+     "girl",
+     "boy",
+     "person",
+     "people",
+     "couple",
+     "lady",
+     "guy"
+    ],
+    [
+     "black and white",
+     "monochrome",
+     "b&w"
+    ],
+    [
+     "freckles",
+     "curly",
+     "curls"
+    ],
+    [
+     "close-up",
+     "close up",
+     "face"
+    ]
+   ]
+  },
+  {
+   "file": "photography-ai/samples/portrait_v1/bw-street-portrait/inspiration_3.jpg",
+   "primary": [
+    "woman",
+    "man",
+    "girl",
+    "boy",
+    "person",
+    "people",
+    "couple",
+    "lady",
+    "guy"
+   ],
+   "objects": [
+    [
+     "woman",
+     "man",
+     "girl",
+     "boy",
+     "person",
+     "people",
+     "couple",
+     "lady",
+     "guy"
+    ],
+    [
+     "black and white",
+     "monochrome",
+     "b&w"
+    ],
+    [
+     "street",
+     "road"
+    ],
+    [
+     "cars",
+     "car"
+    ],
+    [
+     "trees"
+    ]
+   ]
+  }
+ ],
+ "target": {
+  "file": "photography-ai/samples/portrait_v1/bw-street-portrait/target.jpg",
+  "primary": [
+   "street",
+   "road",
+   "trees",
+   "sidewalk"
+  ],
+  "objects": [
+   [
+    "trees",
+    "tree"
+   ],
+   [
+    "bicycle",
+    "bike"
+   ],
+   [
+    "street",
+    "road",
+    "sidewalk"
+   ],
+   [
+    "sign",
+    "signs",
+    "banner"
+   ],
+   [
+    "building",
+    "buildings"
+   ],
+   [
+    "people",
+    "person",
+    "man",
+    "woman"
+   ]
+  ]
+ },
+ "leak_terms": [
+  "freckles",
+  "curly"
+ ],
+ "style_keywords": [
+  [
+   "black and white",
+   "monochrome",
+   "b&w",
+   "grayscale",
+   "greyscale"
+  ],
+  [
+   "contrast",
+   "high contrast"
+  ],
+  [
+   "close",
+   "close-up",
+   "tight",
+   "medium"
+  ],
+  [
+   "street",
+   "urban",
+   "city"
+  ]
+ ],
+ "target_absent": []
+}

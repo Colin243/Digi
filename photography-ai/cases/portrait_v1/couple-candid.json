@@ -1,0 +1,210 @@
+{
+ "id": "couple-candid",
+ "suite": "portrait_v1",
+ "category": "lifestyle",
+ "description": "Candid couple portraits -> a blossoming cherry tree branch.",
+ "subject": "a couple (two people) posing in the scene",
+ "license_note": "CC0 (Unsplash via Wikimedia Commons); see datasets/portrait_v1/SOURCES.md",
+ "inspiration": [
+  {
+   "file": "photography-ai/samples/portrait_v1/couple-candid/inspiration_1.jpg",
+   "primary": [
+    "couple",
+    "man",
+    "woman",
+    "two people"
+   ],
+   "objects": [
+    [
+     "couple",
+     "man",
+     "woman"
+    ],
+    [
+     "embrace",
+     "hug",
+     "holding"
+    ],
+    [
+     "glasses"
+    ],
+    [
+     "corn",
+     "plants",
+     "field",
+     "leaves"
+    ]
+   ]
+  },
+  {
+   "file": "photography-ai/samples/portrait_v1/couple-candid/inspiration_2.jpg",
+   "primary": [
+    "couple",
+    "man",
+    "woman",
+    "two people"
+   ],
+   "objects": [
+    [
+     "couple",
+     "man",
+     "woman"
+    ],
+    [
+     "hat"
+    ],
+    [
+     "flowers",
+     "plants",
+     "bouquet",
+     "leaves"
+    ],
+    [
+     "laugh",
+     "smile",
+     "smiling"
+    ]
+   ]
+  },
+  {
+   "file": "photography-ai/samples/portrait_v1/couple-candid/inspiration_3.jpg",
+   "primary": [
+    "couple",
+    "man",
+    "woman",
+    "two people"
+   ],
+   "objects": [
+    [
+     "couple",
+     "man",
+     "woman"
+    ],
+    [
+     "hug",
+     "embrace",
+     "cuddl"
+    ],
+    [
+     "flower",
+     "flowers",
+     "crown"
+    ],
+    [
+     "smil",
+     "smile"
+    ]
+   ]
+  },
+  {
+   "file": "photography-ai/samples/portrait_v1/couple-candid/inspiration_4.jpg",
+   "primary": [
+    "couple",
+    "man",
+    "woman",
+    "two people"
+   ],
+   "objects": [
+    [
+     "couple",
+     "man",
+     "woman"
+    ],
+    [
+     "holding hands",
+     "hand in hand",
+     "hands"
+    ],
+    [
+     "grass",
+     "lawn",
+     "field"
+    ],
+    [
+     "trees"
+    ],
+    [
+     "walking",
+     "behind",
+     "back"
+    ]
+   ]
+  }
+ ],
+ "target": {
+  "file": "photography-ai/samples/portrait_v1/couple-candid/target.jpg",
+  "primary": [
+   "cherry",
+   "blossom",
+   "blossoms",
+   "tree",
+   "flowers"
+  ],
+  "objects": [
+   [
+    "cherry",
+    "blossom",
+    "blossoms",
+    "sakura"
+   ],
+   [
+    "pink"
+   ],
+   [
+    "branch",
+    "branches",
+    "tree"
+   ],
+   [
+    "leaves",
+    "green",
+    "foliage"
+   ],
+   [
+    "park",
+    "garden"
+   ]
+  ]
+ },
+ "leak_terms": [
+  "corn",
+  "bouquet",
+  "lawn",
+  "flower crown"
+ ],
+ "style_keywords": [
+  [
+   "candid",
+   "natural",
+   "intimate",
+   "affection"
+  ],
+  [
+   "couple",
+   "together",
+   "two"
+  ],
+  [
+   "warm",
+   "soft",
+   "natural light"
+  ],
+  [
+   "nature",
+   "outdoor",
+   "outdoors"
+  ]
+ ],
+ "target_absent": [
+  "person",
+  "people",
+  "woman",
+  "man",
+  "girl",
+  "boy",
+  "couple",
+  "lady",
+  "guy",
+  "model"
+ ]
+}
