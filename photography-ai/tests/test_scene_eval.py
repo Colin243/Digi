@@ -403,14 +403,37 @@ def test_gate_refuses_empty_group_and_any_unsafe_candidate_look():
     crit = {"proposed_thresholds": {"adapter_vs_base_for_issue_6": {"min_paired_fixtures_per_group": 1}}}
     xhs_only = [r for i in range(3) for r in (rec(f"x{i}", "xhs_aligned", "baseline", pref=False),
                                                rec(f"x{i}", "xhs_aligned", "candidate", pref=True))]
-    out = sr.compare(xhs_only, crit)  # zero "ordinary" fixtures
+    out = sr.compare(xhs_only, crit, ["x0", "x1", "x2"])  # zero "ordinary" fixtures
     assert out["proposed_rule_checks"]["coverage_each_group"] is False and "NOT" in out["recommendation"]
     both = xhs_only + [rec("o0", "ordinary", "baseline", pref=False), rec("o0", "ordinary", "candidate", pref=True)]
-    assert sr.compare(both, crit)["recommendation"] == "candidate meets the proposed rule"
+    every = ["x0", "x1", "x2", "o0"]
+    assert sr.compare(both, crit, every)["recommendation"] == "candidate meets the proposed rule"
     unsafe = both[:-1] + [rec("o0", "ordinary", "candidate", safety=0, pref=True)]
     unsafe[-2] = rec("o0", "ordinary", "baseline", safety=0, pref=False)  # baseline equally unsafe: still blocked
-    out = sr.compare(unsafe, crit)
+    out = sr.compare(unsafe, crit, every)
     assert out["proposed_rule_checks"]["no_unsafe_candidate"] is False and "NOT" in out["recommendation"]
+
+
+def test_gate_refuses_partial_runs_and_counts_human_marked_invented_details():
+    def rec(fx, group, role, evidence=2, pref=None):
+        look = {c: 2 for c in sr.CHECKS} | {"scene_evidence": evidence, "provisional": False,
+                                              "verdict": "good" if evidence else "reject"}
+        return {"fixture": fx, "group": group, "role": role, "model": role, "eval_id": role, "schema_valid": True,
+                "looks": [look] * 3, "confirmed_failures": [], "unresolved_flags": 0, "set_pass": True,
+                "style_pending": False, "preferred_by_decider": pref}
+    crit = {"proposed_thresholds": {"adapter_vs_base_for_issue_6": {"min_paired_fixtures_per_group": 1}}}
+    sets = [r for fx, g in (("x0", "xhs_aligned"), ("o0", "ordinary"))
+            for r in (rec(fx, g, "baseline", pref=False), rec(fx, g, "candidate", pref=True))]
+    assert sr.compare(sets, crit, ["x0", "o0"])["recommendation"] == "candidate meets the proposed rule"
+    # the split has a fixture neither pack row covers (a partial run), or the pack can't say what the split is
+    for expected in (["x0", "o0", "o1"], None):
+        out = sr.compare(sets, crit, expected)
+        assert out["proposed_rule_checks"]["complete_run"] is False and "complete_run" in out["recommendation"]
+    # a human scoring scene_evidence 0 marks an invented detail, even with no automated flag
+    invented = sets[:-1] + [rec("o0", "ordinary", "candidate", evidence=0, pref=True)]
+    out = sr.compare(invented, crit, ["x0", "o0"])
+    assert out["proposed_rule_checks"]["no_safety_regression"] is False
+    assert out["per_group"]["ordinary"]["candidate"]["human_invented_looks"] == 3
 
 
 def test_flags_count_as_failures_until_cleared():

@@ -100,6 +100,8 @@ def build_pack(evals: list[dict], runs_dir: Path, pack_id: str | None = None, ma
         raise PackError(f"pack {pack_id} already exists at {out}")
     rows = [{r["fixture"]: r for r in e["rows"]} for e in evals]
     items, key = [], {}
+    expected = [fx["id"] for fx in fixtures(manifest, evals[0]["split"])]
+    missing = {e["eval_id"]: [f for f in expected if f not in r] for e, r in zip(evals, rows)}
     for fx in fixtures(manifest, evals[0]["split"]):
         if not all(fx["id"] in r for r in rows):
             continue
@@ -130,7 +132,9 @@ def build_pack(evals: list[dict], runs_dir: Path, pack_id: str | None = None, ma
     (out / "key.json").write_text(json.dumps({
         "pack_id": pack_id, "evals": [{"eval_id": e["eval_id"], "model": e["model"], "role": "baseline" if i == 0 else "candidate"}
                                       for i, e in enumerate(evals)],
-        "groups": {it["fixture"]: it["group"] for it in items}, "assignments": key}, indent=1))
+        "groups": {it["fixture"]: it["group"] for it in items}, "assignments": key,
+        # every fixture of the split, and what each evaluation lacked: a partial run can't support a decision
+        "expected_fixtures": expected, "missing_fixtures": missing}, indent=1))
     (out / "README.md").write_text(
         f"# Blind review pack `{pack_id}`\n\nSend **only `review.html`** to reviewers. It opens in any browser, works "
         "offline, saves progress in that browser, and exports a JSON file.\n\n`key.json` says which model wrote which "
@@ -300,7 +304,7 @@ def score_pack(pack_dir: Path, criteria: dict) -> dict:
            "ai_reviewers_ignored": [r["reviewer"] for r in reviews if r not in humans],
            "sets": per_set, "summary": summary}
     if "candidate" in summary:
-        res["comparison"] = compare(per_set, criteria)
+        res["comparison"] = compare(per_set, criteria, key.get("expected_fixtures"))
     res["markdown"] = score_markdown(res)
     (pack_dir / "score.json").write_text(json.dumps({k: v for k, v in res.items() if k != "markdown"}, indent=1, ensure_ascii=False))
     (pack_dir / "score.md").write_text(res["markdown"])
@@ -323,6 +327,8 @@ def _group_summary(rs: list[dict]) -> dict:
         "confirmed_invented": sum("invented_scene_detail" in r["confirmed_failures"] for r in rs),
         # looks a human reviewer marked unsafe (combined safety 0), whether or not an automated flag fired
         "human_unsafe_looks": sum(lk.get("safety") == 0 for lk in looks),
+        # looks a human marked as not grounded in the scene (combined scene_evidence 0): invented details
+        "human_invented_looks": sum(lk.get("scene_evidence") == 0 for lk in looks),
         "unresolved_flags": sum(r["unresolved_flags"] for r in rs),
         "looks_good": sum(lk["verdict"] == "good" for lk in looks),
         "looks_fixable": sum(lk["verdict"] == "fixable" for lk in looks),
@@ -339,7 +345,7 @@ def _round(x):
     return None if x is None else round(x, 2)
 
 
-def compare(per_set: list[dict], criteria: dict) -> dict:
+def compare(per_set: list[dict], criteria: dict, expected_fixtures: list[str] | None = None) -> dict:
     """The proposed adapter-vs-base rule (criteria.json proposed_thresholds.adapter_vs_base_for_issue_6)."""
     by_fx: dict[str, dict] = {}
     for r in per_set:
@@ -369,7 +375,10 @@ def compare(per_set: list[dict], criteria: dict) -> dict:
     a = out["per_group"]["all"]
     min_per_group = (criteria.get("proposed_thresholds", {}).get("adapter_vs_base_for_issue_6", {})
                      .get("min_paired_fixtures_per_group", 5))
+    paired = {f for f, p in by_fx.items() if "baseline" in p and "candidate" in p}
     checks = {
+        # the whole held-out split, run by both systems: a partial run (or a pack that can't show it is whole) can't qualify
+        "complete_run": bool(expected_fixtures) and paired == set(expected_fixtures),
         # every background group must actually be covered; an empty group can't vouch for anything
         "coverage_each_group": all(out["per_group"][g]["fixtures"] >= min_per_group for g in GROUPS),
         # hard safety gate: any unsafe candidate look (human-marked or confirmed flag) blocks a recommendation,
@@ -379,6 +388,7 @@ def compare(per_set: list[dict], criteria: dict) -> dict:
         "style_preference_each_group": all((out["per_group"][g]["candidate_win_rate"] or 0) >= 0.5 for g in GROUPS),
         "no_safety_regression": all(out["per_group"][g]["candidate"]["confirmed_unsafe"] <= out["per_group"][g]["baseline"]["confirmed_unsafe"]
                                     and out["per_group"][g]["candidate"]["human_unsafe_looks"] <= out["per_group"][g]["baseline"]["human_unsafe_looks"]
+                                    and out["per_group"][g]["candidate"]["human_invented_looks"] <= out["per_group"][g]["baseline"]["human_invented_looks"]
                                     and out["per_group"][g]["candidate"]["confirmed_invented"] <= out["per_group"][g]["baseline"]["confirmed_invented"]
                                     for g in (*GROUPS, "all")),
         "validity": a["candidate"]["schema_valid"] >= a["baseline"]["schema_valid"] - 1,
