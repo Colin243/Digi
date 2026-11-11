@@ -98,6 +98,12 @@ def run_train_data(a) -> int:
             issues = check_label(lab)
             print(f"{lab['example_id']:14} {lab['status']:9} {len(issues)} issue(s): " + "; ".join(issues[:4]))
         return 0
+    if a.action == "audit":
+        from .audit import coverage, render
+
+        report = coverage(a.dataset, a.min_examples, a.min_shots)
+        print(json.dumps(report, indent=1, ensure_ascii=False) if a.json else render(report))
+        return 0
     if a.action == "export":
         from .export import export_sft
 

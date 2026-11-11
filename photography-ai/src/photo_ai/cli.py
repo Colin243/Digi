@@ -112,7 +112,7 @@ def main(argv: list[str] | None = None) -> int:
 
     td = sub.add_parser("train-data", help="Phase 4 training data: pool, fetch, tags, examples, labels, export")
     td.add_argument("action", choices=["pool", "fetch", "status", "attribution", "assemble", "qa", "export",
-                                       "import-tags", "import-labels", "draft", "import-review", "review-site"])
+                                       "import-tags", "import-labels", "draft", "import-review", "review-site", "audit"])
     td.add_argument("--reviewer", help="import-review: the human reviewer's name (default: the name in the file)")
     td.add_argument("--site", type=Path, help="import-review: the review page folder (or HTML file) the reviewer was "
                                                "sent; ties the review to the answer versions it showed")
@@ -128,6 +128,9 @@ def main(argv: list[str] | None = None) -> int:
     td.add_argument("--n-train", type=int, default=10, help="assemble --reserve: training examples to add")
     td.add_argument("--n-valid", type=int, default=3, help="assemble --reserve: validation examples to add")
     td.add_argument("--batch", type=int, help="assemble --reserve: new batch number (default 2); review-site: only this batch")
+    td.add_argument("--min-examples", type=int, default=3, help="audit: minimum approved examples per mode and style")
+    td.add_argument("--min-shots", type=int, default=3, help="audit: minimum approved shots per pose and expression")
+    td.add_argument("--json", action="store_true", help="audit: print the report as JSON")
     td.add_argument("--include-unapproved", action="store_true",
                     help="export drafts too (ONLY for pipeline smoke tests; never for real training)")
 
