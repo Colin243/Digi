@@ -80,7 +80,15 @@ def run_train_data(a) -> int:
 
         raw = json.loads(a.file.read_text())
         doc = raw.get("data", raw) if isinstance(raw, dict) else raw  # shared-store export or "Copy my review" text
-        print(json.dumps(import_creative_review(a.dataset, doc, a.reviewer), indent=1))
+        seen = None
+        if a.site:
+            from .review_site import seen_answers
+
+            seen = seen_answers(a.site)
+        elif not doc.get("answer_sha"):
+            print("note: this review has no answer fingerprints; pass --site <the review page folder that was sent> "
+                  "or approvals will be held back as unverified", file=sys.stderr)
+        print(json.dumps(import_creative_review(a.dataset, doc, a.reviewer, seen), indent=1))
         return 0
     if a.action == "qa":
         from .labels import load_labels
