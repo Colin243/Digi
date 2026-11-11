@@ -76,6 +76,27 @@ behavior, not model quality or training overhead.
    distinction between measured scores and interpretation. Do not load two models concurrently.
 4. Run a small reviewed-data pilot, inspect held-out recommendations, then decide whether to scale.
 
+### Observatory display mode
+
+**Display mode** isolates the graph in the full window. The vision units occupy a layered
+volume and decoder/adaptor clusters fill a three-dimensional ellipsoid; identities and edges
+are unchanged. The layout is illustrative, not physical neuron positions. Training updates
+weights/statistics, not the count of architectural units.
+
+After 20 seconds without input, slow camera orbit starts at a maximum 20 fps. Input pauses it
+immediately. Reduced-motion preferences disable it by default; the explicit idle-orbit button
+can override that choice. Hidden documents and occluded/minimized native windows pause motion.
+There is no automatic motion in the normal dashboard. Dashboard, reset, inspector and full-screen
+controls stay available; Escape returns to the dashboard. An offline HUD distinguishes a lost
+connection from the last recorded measurements. The selected run keeps polling automatically. Live data is fetched every two seconds without
+page navigation. Display-mode refreshes update the canvas/HUD rather than rebuilding hidden
+panels; manual Refresh Data and native service recovery preserve the page, camera and run.
+Requests serialize, and metadata readiness/generation checks reject stale run responses.
+
+A lightweight local Mac window is available: [Digi Observatory setup](macos-observatory.md).
+It uses AppKit/WebKit and the configured existing Python environment, not a bundled ML runtime.
+Active animation is separate from the earlier training-instrumentation overhead measurement.
+
 ### Interactive 3D architecture
 
 **3D network** uses world-space XYZ coordinates, perspective, depth-sorted drawing and
