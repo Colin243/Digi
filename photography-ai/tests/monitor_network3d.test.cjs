@@ -103,3 +103,14 @@ test('data refresh waits for the selected run metadata to be ready',{timeout:100
  const loading=h.c.refresh();assert.equal(h.requests.length,0,'no events may be polled against old metadata');await loading;
  h.state.readyGeneration=2;const ready=h.c.refresh();assert.equal(h.requests.length,1);h.requests[0].resolve(eventResponse([]));await ready;
 });
+test('node cycling requires idle orbit, the open inspector, and five elapsed seconds',()=>{
+ const state={enabled:true,orbiting:true,inspectorOpen:true,lastChange:1000};
+ assert.equal(m.shouldCycle(state,5999),false);assert.equal(m.shouldCycle(state,6000),true);
+ for(const key of ['enabled','orbiting','inspectorOpen'])assert.equal(m.shouldCycle({...state,[key]:false},6000),false);
+ assert.equal(m.shouldCycle({...state,lastChange:null},6000),false);
+});
+test('inspection cycles through actual node identities and wraps without inventing nodes',()=>{
+ const nodes=[{key:'vision'},{key:'adapter-a'},{key:'adapter-b'}];
+ assert.equal(m.nextNode(nodes,'vision'),'adapter-a');assert.equal(m.nextNode(nodes,'adapter-b'),'vision');
+ assert.equal(m.nextNode(nodes,null),'vision');assert.equal(m.nextNode(nodes,'removed'),'vision');assert.equal(m.nextNode([],null),null);
+});

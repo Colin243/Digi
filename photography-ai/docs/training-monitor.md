@@ -86,7 +86,11 @@ weights/statistics, not the count of architectural units.
 After 20 seconds without input, slow camera orbit starts at a maximum 20 fps. Input pauses it
 immediately. Reduced-motion preferences disable it by default; the explicit idle-orbit button
 can override that choice. Hidden documents and occluded/minimized native windows pause motion.
-There is no automatic motion in the normal dashboard. Dashboard, reset, inspector and full-screen
+There is no automatic motion in the normal dashboard. **Cycle nodes · 5s** is off by default.
+When enabled with the inspector open, active idle orbit advances through actual graph nodes
+every five seconds; disabling it keeps the current node selected. Input, hidden visibility,
+closing the inspector or pausing orbit stops cycling. Selection updates in place without
+scrolling, camera changes or page navigation. Dashboard, reset, inspector and full-screen
 controls stay available; Escape returns to the dashboard. An offline HUD distinguishes a lost
 connection from the last recorded measurements. The selected run keeps polling automatically. Live data is fetched every two seconds without
 page navigation. Display-mode refreshes update the canvas/HUD rather than rebuilding hidden

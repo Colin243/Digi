@@ -14,3 +14,5 @@
 - [x] Document limitations and prepare the verified implementation for a dedicated PR stacked on the 3D monitor work.
 
 **Accepted refinements:** volumetric decoder clusters rather than a tight spiral; Rectangle-compatible minimums and external-monitor frame persistence; all incoming data and recovery refresh in place without app/page reload or focus activation.
+
+**Idle inspection refinement:** opt-in Cycle nodes advances the open inspector through real graph nodes every five seconds while idle orbit is active. Default off keeps the current selection; input/hidden views pause it.
