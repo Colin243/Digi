@@ -1,5 +1,6 @@
 import SwiftUI
 import AVFoundation
+import AVKit
 import Photos
 import CoreImage
 import ImageIO
@@ -491,6 +492,20 @@ final class PreviewSurface: UIView {
     var focusRequested: ((CGPoint, Bool) -> Void)?
     var focusPositionChanged: ((CGPoint?) -> Void)?
     var selectedFocus: CGPoint?
+    var captureRequested: (() -> Void)?
+    var hardwareCaptureEnabled = false {
+        didSet {
+            guard oldValue != hardwareCaptureEnabled else { return }
+            captureInteraction.isEnabled = hardwareCaptureEnabled && window != nil
+            recordHardwareEvent("enabled_changed")
+        }
+    }
+    private lazy var captureInteraction = AVCaptureEventInteraction { [weak self] event in
+        guard let self else { return }
+        self.recordHardwareEvent("phase_\(event.phase.rawValue)")
+        if event.phase == .ended, self.hardwareCaptureEnabled { self.captureRequested?() }
+    }
+    private var hardwareHistory: [[String: Any]] = []
     private var lastFocusPosition: CGPoint?
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -499,9 +514,27 @@ final class PreviewSurface: UIView {
         tap.require(toFail: hold)
         addGestureRecognizer(tap)
         addGestureRecognizer(hold)
+        captureInteraction.isEnabled = false
+        addInteraction(captureInteraction)
         accessibilityIdentifier = "camera-viewfinder"
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        captureInteraction.isEnabled = hardwareCaptureEnabled && window != nil
+        recordHardwareEvent("window_changed")
+    }
+    private func recordHardwareEvent(_ kind: String) {
+        // Local diagnostic evidence for physical-device testing; never preview work.
+        hardwareHistory.append(["event": kind, "time": Date().timeIntervalSince1970,
+            "enabled": captureInteraction.isEnabled, "in_window": window != nil,
+            "session_running": preview.session?.isRunning == true])
+        hardwareHistory = Array(hardwareHistory.suffix(40))
+        if let root = try? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true),
+           let data = try? JSONSerialization.data(withJSONObject: hardwareHistory, options: [.prettyPrinted, .sortedKeys]) {
+            try? data.write(to: root.appendingPathComponent("hardware-shutter.json"), options: .atomic)
+        }
+    }
     @objc private func tapFocus(_ gesture: UITapGestureRecognizer) {
         guard preview.connection != nil else { return }
         let point = gesture.location(in: self)
@@ -545,6 +578,8 @@ struct CameraPreview: UIViewRepresentable {
     var orientationChanged: (UIInterfaceOrientation) -> Void
     var focusRequested: (CGPoint, Bool) -> Void
     var focusPositionChanged: (CGPoint?) -> Void
+    var hardwareCaptureEnabled: Bool
+    var captureRequested: () -> Void
     func makeUIView(context: Context) -> PreviewSurface {
         let view = PreviewSurface()
         view.backgroundColor = .black
@@ -552,11 +587,15 @@ struct CameraPreview: UIViewRepresentable {
         view.orientationChanged = orientationChanged
         view.focusRequested = focusRequested
         view.focusPositionChanged = focusPositionChanged
+        view.captureRequested = captureRequested
+        view.hardwareCaptureEnabled = hardwareCaptureEnabled
         // Show the complete camera frame; captured pixels are not cropped in this foundation build.
         view.preview.videoGravity = .resizeAspect
         return view
     }
     func updateUIView(_ uiView: PreviewSurface, context: Context) {
+        uiView.captureRequested = captureRequested
+        uiView.hardwareCaptureEnabled = hardwareCaptureEnabled
         uiView.selectedFocus = focusPoint
         uiView.setNeedsLayout()
     }
@@ -581,6 +620,11 @@ struct CameraView: View {
     @State private var showStatus = true
     @State private var previewOrientation: UIInterfaceOrientation = .portrait
     @State private var focusDisplayPoint: CGPoint?
+    @AppStorage("digi.timerSeconds") private var timerSeconds = 0
+    @State private var countdown = ShutterCountdown()
+    @State private var countdownTask: Task<Void, Never>?
+
+    private var canShoot: Bool { camera.ready && !camera.busy && !camera.pending }
 
     var body: some View {
         GeometryReader { geometry in
@@ -611,6 +655,10 @@ struct CameraView: View {
                                 .foregroundStyle(CameraStyle.accent)
                         }
                         Text(camera.exposureLocked ? "LOCK" : "AUTO").font(.system(size: 11, weight: .semibold, design: .monospaced)).foregroundStyle(CameraStyle.accent)
+                        if timerSeconds > 0 {
+                            Label("\(timerSeconds)s", systemImage: "timer").font(.system(size: 11))
+                                .foregroundStyle(CameraStyle.accent)
+                        }
                         Label(camera.flash.rawValue, systemImage: camera.flash.symbol)
                             .font(.system(size: 10, weight: .medium))
                             .foregroundStyle(camera.flash == .off ? CameraStyle.silver : CameraStyle.accent)
@@ -623,7 +671,9 @@ struct CameraView: View {
                         CameraPreview(session: camera.session, focusPoint: camera.focusPoint,
                                       orientationChanged: { previewOrientation = $0 },
                                       focusRequested: { camera.focus(at: $0, lock: $1) },
-                                      focusPositionChanged: { focusDisplayPoint = $0 })
+                                      focusPositionChanged: { focusDisplayPoint = $0 },
+                                      hardwareCaptureEnabled: canShoot && countdown.remaining == nil && !options && !review && !cameraPicker && phase == .active,
+                                      captureRequested: takePhoto)
                         if camera.lookEnabled, let frame = camera.renderedPreview {
                             Image(uiImage: UIImage(cgImage: frame, scale: 1, orientation: previewOrientation == .portrait ? .right : previewOrientation == .landscapeLeft ? .down : .up))
                                 .resizable().scaledToFit().allowsHitTesting(false)
@@ -663,6 +713,16 @@ struct CameraView: View {
                                 }.padding(12).background(.black.opacity(0.8), in: RoundedRectangle(cornerRadius: 12)).padding(12)
                             }
                         }
+                        if let remaining = countdown.remaining {
+                            VStack(spacing: 16) {
+                                Text("\(remaining)").font(.system(size: 80, weight: .medium, design: .rounded))
+                                    .shadow(color: .black, radius: 5)
+                                    .accessibilityLabel("Photo in \(remaining) seconds")
+                                Button("Cancel timer") { cancelCountdown() }
+                                    .padding(.horizontal, 18).padding(.vertical, 10)
+                                    .background(.black.opacity(0.75), in: Capsule())
+                            }
+                        }
                     }
                     .aspectRatio(portrait ? 3.0 / 4 : 4.0 / 3, contentMode: .fit)
                     .clipShape(RoundedRectangle(cornerRadius: 10))
@@ -685,7 +745,7 @@ struct CameraView: View {
                                 Circle().stroke(.white.opacity(0.7), lineWidth: 1).frame(width: 59, height: 59)
                             }.frame(width: 84, height: 84)
                         }.buttonStyle(ShutterPressStyle())
-                            .disabled(!camera.ready || camera.busy || camera.pending)
+                            .disabled(!canShoot || countdown.remaining != nil)
                             .opacity(camera.ready && !camera.busy && !camera.pending ? 1 : 0.4)
                             .accessibilityLabel("Take photo")
                         Spacer(minLength: 0)
@@ -717,6 +777,16 @@ struct CameraView: View {
                                 VStack(alignment: .leading, spacing: 18) {
                                     Toggle(isOn: $grid) { Label("Framing grid", systemImage: "grid") }
                                     Toggle(isOn: $haptics) { Label("Shutter feedback", systemImage: "hand.tap") }
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        Label("Self-timer", systemImage: "timer")
+                                        Picker("Self-timer", selection: $timerSeconds) {
+                                            Text("Off").tag(0)
+                                            Text("3s").tag(3)
+                                            Text("10s").tag(10)
+                                        }.pickerStyle(.segmented).accessibilityIdentifier("self-timer")
+                                        Text("Set the phone down, press the shutter, and get into position.")
+                                            .font(.footnote).foregroundStyle(.white.opacity(0.7))
+                                    }
                                     Divider().overlay(.white.opacity(0.15))
                                     HStack { Text("Exposure"); Spacer(); Text(camera.exposureLocked ? "Locked" : "Auto").foregroundStyle(CameraStyle.accent) }
                                     HStack {
@@ -802,7 +872,15 @@ struct CameraView: View {
         .preferredColorScheme(.dark)
         .statusBarHidden()
         .onAppear { camera.start() }
-        .onChange(of: phase) { _, newPhase in if newPhase == .active { camera.start() } else { camera.stop() } }
+        .onChange(of: phase) { _, newPhase in
+            if newPhase == .active { camera.start() }
+            else { cancelCountdown(); camera.stop() }
+        }
+        .onChange(of: camera.ready) { _, ready in if !ready { cancelCountdown() } }
+        .onChange(of: options) { _, visible in if visible { cancelCountdown() } }
+        .onChange(of: review) { _, visible in if visible { cancelCountdown() } }
+        .onChange(of: cameraPicker) { _, visible in if visible { cancelCountdown() } }
+        .onDisappear { cancelCountdown() }
         .task(id: camera.status) {
             showStatus = true
             if camera.status.hasPrefix("Saved to Photos") {
@@ -813,7 +891,30 @@ struct CameraView: View {
     }
 
     private func takePhoto() {
+        guard canShoot, countdown.remaining == nil, phase == .active else { return }
         options = false
+        guard [3, 10].contains(timerSeconds) else { captureNow(); return }
+        guard countdown.begin(seconds: timerSeconds) else { return }
+        countdownTask = Task { @MainActor in
+            while countdown.remaining != nil {
+                do { try await Task.sleep(for: .seconds(1)) }
+                catch { return }
+                guard !Task.isCancelled, canShoot, phase == .active else { cancelCountdown(); return }
+                if countdown.advance() {
+                    countdownTask = nil
+                    captureNow()
+                    return
+                }
+            }
+        }
+    }
+    private func cancelCountdown() {
+        countdownTask?.cancel()
+        countdownTask = nil
+        countdown.cancel()
+    }
+    private func captureNow() {
+        guard canShoot, phase == .active else { return }
         if haptics { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
         let orientation = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first?.interfaceOrientation
         camera.capture(angle: CameraRotation.angle(for: orientation ?? .portrait))

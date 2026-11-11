@@ -77,3 +77,14 @@ Shooting options reports “Study saved with skin mask”, “Study saved; no sk
 For the first mask check: take one well-lit rear-camera portrait at 1× with face, neck and arms in view, and one empty-room negative shot. Repeat the portrait with flash On if the first mask is delivered. Compare the `STUDY` result after each capture. Retrieve the folders with `devicectl device copy from` and run `research/regression/validate_skin_mask.py` on each capture. Review its overlay for alignment, missed skin, and unwanted selection of hair, clothing, walls or wood. Only masks from this same capture may be paired with its original and styled image.
 
 The simulator UI test verifies that the setting persists; simulator and build checks cannot establish actual skin matte delivery. The phone must be connected and unlocked for installation and capture validation.
+
+
+## Portrait timer and hardware shutter — 27 October 2026
+
+Shooting options now include Self-timer Off / 3s / 10s. The chosen delay persists. The shutter starts a visible countdown; Cancel timer stops it. Opening a panel, losing camera readiness, leaving the camera screen, or backgrounding the app cancels the countdown. Repeated presses do not queue additional captures, and capture orientation is read when the timer finishes.
+
+A UIKit `AVCaptureEventInteraction` attached directly to the native preview routes released capture events to the same shutter action used on screen. The initial SwiftUI modifier passed compilation/UI tests but did not receive hardware input during the user test, so it was replaced. This covers volume buttons and supported Camera Control events while Digi is open and actively using the camera. It is disabled during capture, countdown, inactivity, and options/review/picker panels. This does not configure Digi as the system camera launcher or add a lock-screen capture extension. The user confirmed both volume buttons, Camera Control, and the timer work on the iPhone 17 Pro after the UIKit change. iPhone 15 Pro volume-button behavior remains to be tested; that model has no Camera Control button. A small local hardware-event log under Application Support is available for diagnosing interaction state.
+
+Countdown logic check: `swiftc -module-cache-path /tmp/digi-swift-module-cache ios/Digi/ShutterCountdown.swift tests/shutter-countdown/main.swift -o /tmp/digi-countdown-tests && /tmp/digi-countdown-tests` from the repository root.
+
+Apple API reference: https://developer.apple.com/videos/play/wwdc2025/253/
