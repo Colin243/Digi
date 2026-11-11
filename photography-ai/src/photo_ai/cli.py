@@ -2,6 +2,8 @@
 
   photo-ai models
   photo-ai analyze -i a.jpg b.jpg c.jpg -t scene.jpg [--model smolvlm2-500m] [--strategy two_stage]
+  photo-ai scene -t scene.jpg --style relaxed_candid      (Scene Director: one photo, no references)
+  photo-ai scene-demo                                     (reproducible Scene Director demo run)
   photo-ai ui [--port 7860]
   photo-ai runs
 """
@@ -13,7 +15,8 @@ import json
 import sys
 from pathlib import Path
 
-from .backends import DEFAULT_MODEL, MODELS, make_backend
+from . import prompts
+from .backends import DEFAULT_MODEL, MODELS, SELECTED_MODEL, make_backend
 from .pipeline import STRATEGIES, InputError, RunConfig, analyze
 from .render import result_markdown, timing_markdown
 from .storage import DEFAULT_RUNS_DIR, read_index
@@ -33,7 +36,8 @@ def _add_run_args(p: argparse.ArgumentParser) -> None:
 
 
 def _cfg(a: argparse.Namespace) -> RunConfig:
-    return RunConfig(a.strategy, a.max_side, a.max_tokens, a.temperature, a.repetition_penalty, a.seed, a.json_retries)
+    return RunConfig(a.strategy, a.max_side, a.max_tokens, a.temperature, a.repetition_penalty, a.seed, a.json_retries,
+                     shot_format=getattr(a, "shot_format", "v1"))
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -48,7 +52,25 @@ def main(argv: list[str] | None = None) -> int:
     an.add_argument("--label", help="free-text tag saved with the run")
     an.add_argument("--repeat", type=int, default=1, help="run N times with the model kept loaded (warm timings)")
     an.add_argument("--json", action="store_true", help="print the full run record as JSON")
+    an.add_argument("--shot-format", choices=["v1", "v2"], default="v1",
+                    help="v2 adds body pose, head/chin, gaze and an optional expression cue (decomposed strategy)")
     _add_run_args(an)
+
+    sn = sub.add_parser("scene", help="Scene Director (experimental): one scene photo + a style brief -> 3 portrait looks")
+    sn.add_argument("-t", "--target", required=True, help="the scene photo (with or without a person)")
+    sn.add_argument("--style", choices=list(prompts.STYLE_BRIEFS), help="starter style brief")
+    sn.add_argument("--brief", default="", help="extra style notes in your own words")
+    sn.add_argument("--json-format", choices=["shape", "keys"], default="keys")
+    sn.add_argument("--label", help="free-text tag saved with the run")
+    sn.add_argument("--json", action="store_true", help="print the full run record as JSON")
+    _add_run_args(sn)
+    sn.set_defaults(model=SELECTED_MODEL)
+
+    sd = sub.add_parser("scene-demo", help="reproducible Scene Director demo over fixed fixtures")
+    sd.add_argument("--config", type=Path, default=None, help="default: configs/scene_demo.json")
+    sd.add_argument("--model", default=SELECTED_MODEL)
+    sd.add_argument("--demo-id")
+    sd.add_argument("--runs-dir", type=Path, default=DEFAULT_RUNS_DIR)
 
     ui = sub.add_parser("ui", help="launch the local upload interface")
     ui.add_argument("--host", default="127.0.0.1")
@@ -167,6 +189,25 @@ def main(argv: list[str] | None = None) -> int:
                 if n == 0:
                     print(result_markdown(rec), "\n")
                 print(timing_markdown(rec), "\n")
+        return 0
+
+    if a.cmd == "scene":
+        cfg = RunConfig(mode="scene", style=a.style, brief=a.brief, max_side=a.max_side, max_tokens=a.max_tokens,
+                        temperature=a.temperature, repetition_penalty=a.repetition_penalty, seed=a.seed,
+                        json_retries=a.json_retries, json_format=a.json_format)
+        try:
+            rec = analyze(make_backend(a.model), [], a.target, cfg, a.runs_dir, a.label)
+        except InputError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        print(json.dumps(rec, indent=2, ensure_ascii=False) if a.json else f"{result_markdown(rec)}\n\n{timing_markdown(rec)}")
+        return 0
+
+    if a.cmd == "scene-demo":
+        from .scene_demo import load_config, run_demo
+
+        demo = run_demo(load_config(a.config), a.model, a.runs_dir, a.demo_id)
+        print(f"{len(demo['rows'])} runs; report: {a.runs_dir / (demo['demo_id'] + '.md')}")
         return 0
 
     if a.cmd == "ui":

@@ -1,6 +1,8 @@
 """Local Gradio interface. Binds to 127.0.0.1 only; nothing is shared or uploaded off the machine.
 
-Tab "Analyze":  upload 3-5 inspiration photos + 1 target, get 3 compositions.
+Tab "Scene Director": one scene photo (with or without a person) + a style brief, get 3 shot-v2
+                portrait looks (framing, light, body pose, head/chin, gaze, optional expression).
+Tab "Inspiration Director": upload 3-5 inspiration photos + 1 target, get 3 compositions.
 Tab "Evaluate": view any saved run (inspiration, target, recommendations) and score it
                 with the 6-category rubric. Blind by default: the model and strategy are
                 hidden until you save, so scores aren't biased by knowing which model wrote it.
@@ -16,7 +18,8 @@ from pathlib import Path
 
 import gradio as gr
 
-from .backends import DEFAULT_MODEL, MODELS, VLMBackend, make_backend
+from . import prompts
+from .backends import DEFAULT_MODEL, MODELS, SELECTED_MODEL, VLMBackend, make_backend
 from .comparison import LABELS, blind_order, candidates, load_preferences, make_preference, save_preference
 from .evaluation import RUBRIC, load_scores, make_entry, save_score
 from .pipeline import MAX_INSPIRATION, MIN_INSPIRATION, STRATEGIES, InputError, RunConfig, analyze
@@ -77,18 +80,38 @@ def build(runs_dir: Path) -> gr.Blocks:
     runs_dir.mkdir(parents=True, exist_ok=True)
     d = RunConfig()
 
-    def run(files, target, model, strategy, max_side, max_tokens, temperature, label):
+    def run(files, target, model, strategy, shot_format, max_side, max_tokens, temperature, label):
         inspiration = _paths(files)
         if not (MIN_INSPIRATION <= len(inspiration) <= MAX_INSPIRATION):
             raise gr.Error(f"Upload {MIN_INSPIRATION}-{MAX_INSPIRATION} inspiration photos (you have {len(inspiration)}).")
         if not target:
             raise gr.Error("Upload a target scene photo.")
-        cfg = RunConfig(strategy=strategy, max_side=int(max_side), max_tokens=int(max_tokens), temperature=float(temperature))
+        cfg = RunConfig(strategy=strategy, max_side=int(max_side), max_tokens=int(max_tokens), temperature=float(temperature),
+                        shot_format=shot_format)
         try:
             rec = analyze(_backend(model), inspiration, target, cfg, runs_dir, label or None)
         except InputError as exc:
             raise gr.Error(str(exc)) from exc
         return result_markdown(rec), timing_markdown(rec), rec
+
+    style_choices = [(f"{v['zh']} · {v['en']}", k) for k, v in prompts.STYLE_BRIEFS.items()] + [("custom brief only", "")]
+
+    def run_scene(scene, model, style, brief, max_side, temperature, label):
+        if not scene:
+            raise gr.Error("Upload one scene photo.")
+        if not style and not brief.strip():
+            raise gr.Error("Pick a starter style or write a brief.")
+        cfg = RunConfig(mode="scene", style=style or None, brief=brief, max_side=int(max_side),
+                        temperature=float(temperature), json_format="keys")
+        try:
+            rec = analyze(_backend(model), [], scene, cfg, runs_dir, label or None)
+        except InputError as exc:
+            raise gr.Error(str(exc)) from exc
+        return result_markdown(rec), timing_markdown(rec), rec
+
+    def style_text(style):
+        s = prompts.STYLE_BRIEFS.get(style or "")
+        return f"**{s['zh']} · {s['en']}** — {s['brief']}" if s else "*Write your own brief below.*"
 
     # ---- evaluate callbacks
     def refresh(bench, rater, only_unscored, blind):
@@ -131,7 +154,38 @@ def build(runs_dir: Path) -> gr.Blocks:
     with gr.Blocks(title="Digi · Photography AI") as demo:
         gr.Markdown("## Photography AI · local experiments")
         with gr.Tabs():
-            with gr.Tab("Analyze"):
+            with gr.Tab("Scene Director (experimental)"):
+                gr.Markdown(
+                    "Upload **one scene photo**, with or without a person in it. No reference photos needed. "
+                    "Pick a starter style and the model proposes three portrait looks: where to stand, camera height "
+                    "and angle, framing, light, body pose, head and chin, gaze, and an optional expression cue. "
+                    "Expression is a suggestion the subject may choose, never a guess about how anyone feels. "
+                    "Anything the photo can't show is listed under *Check on site*. **Experimental:** the base model "
+                    "sometimes directs people already in the photo or suggests unsafe spots, so check every look on site."
+                )
+                with gr.Row():
+                    with gr.Column(scale=1):
+                        scene = gr.Image(label="Scene photo", type="filepath", height=320)
+                        s_style = gr.Radio(style_choices, value="relaxed_candid", label="Style")
+                        s_style_md = gr.Markdown(style_text("relaxed_candid"))
+                        s_brief = gr.Textbox(label="Your notes (optional)", lines=2,
+                                             placeholder="e.g. she prefers seated poses; keep the neon sign in frame")
+                        s_model = gr.Dropdown(list(MODELS), value=SELECTED_MODEL, label="Model")
+                        with gr.Accordion("Generation settings", open=False):
+                            s_max_side = gr.Slider(384, 2048, value=d.max_side, step=64, label="Max image side (px)")
+                            s_temp = gr.Slider(0.0, 1.0, value=d.temperature, step=0.05, label="Temperature")
+                            s_label = gr.Textbox(label="Run label (optional)")
+                        s_go = gr.Button("Direct the shoot", variant="primary")
+                    with gr.Column(scale=1):
+                        s_result = gr.Markdown()
+                        s_timing = gr.Markdown()
+                        with gr.Accordion("Full run record (JSON)", open=False):
+                            s_record = gr.JSON()
+                s_style.change(style_text, s_style, s_style_md)
+                s_go.click(run_scene, [scene, s_model, s_style, s_brief, s_max_side, s_temp, s_label],
+                           [s_result, s_timing, s_record], concurrency_limit=1)
+
+            with gr.Tab("Inspiration Director"):
                 gr.Markdown(
                     "Upload 3-5 **inspiration** photos and one **target scene**. The model describes the "
                     "inspiration aesthetic and recommends three compositions. Runs locally with MLX; every "
@@ -144,6 +198,9 @@ def build(runs_dir: Path) -> gr.Blocks:
                         target = gr.Image(label="Target scene", type="filepath", height=280)
                         model = gr.Dropdown(list(MODELS), value=DEFAULT_MODEL, label="Model")
                         strategy = gr.Radio(list(STRATEGIES), value=d.strategy, label="Strategy")
+                        shot_format = gr.Radio([("shot-v1 (benchmark format)", "v1"),
+                                                ("shot-v2 (+ pose, head, gaze, expression; decomposed only)", "v2")],
+                                               value="v1", label="Shot format")
                         with gr.Accordion("Generation settings", open=False):
                             max_side = gr.Slider(384, 2048, value=d.max_side, step=64, label="Max image side (px)")
                             max_tokens = gr.Slider(200, 3000, value=d.max_tokens, step=50, label="Max new tokens")
@@ -156,7 +213,7 @@ def build(runs_dir: Path) -> gr.Blocks:
                         with gr.Accordion("Full run record (JSON)", open=False):
                             record = gr.JSON()
                 files.change(lambda f: _paths(f), files, gallery)
-                go.click(run, [files, target, model, strategy, max_side, max_tokens, temperature, label],
+                go.click(run, [files, target, model, strategy, shot_format, max_side, max_tokens, temperature, label],
                          [result_md, timing_md, record], concurrency_limit=1)
 
             with gr.Tab("Evaluate"):

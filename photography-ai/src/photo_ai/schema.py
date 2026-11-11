@@ -1,4 +1,4 @@
-"""Structured output the models are asked to produce (schema v3).
+"""Structured output the models are asked to produce (schema v4).
 
 Validation is lenient about *shape* (a bare string where a list is expected is
 wrapped; duplicate list items are dropped) but strict about *content*: the
@@ -11,6 +11,13 @@ v3 adds, versus v2:
   composition.camera_height / camera_angle / subject_position / distance_and_framing
   composition.visible_evidence what in the target photo the shot relies on (inferred from the still)
   composition.needs_on_site_check  what the photo cannot show (requires moving the camera / more info)
+
+v4 adds the versioned *shot format* shared by the Scene Director and the Inspiration Director:
+  shot-v1  the v3 composition (camera, subject position, framing, light, evidence, checks)
+  shot-v2  shot-v1 plus subject direction: body_pose, head_direction (head/chin), gaze and an
+           optional expression_cue; framing and light become required.
+  target_scene.people_in_frame  who is visible in the scene photo (observable only), or "none".
+Every v4 field is optional on the base models, so v3 / shot-v1 results still validate and render.
 """
 
 from __future__ import annotations
@@ -19,7 +26,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
+SHOT_FORMATS = ("v1", "v2")
 
 
 def _as_list(value: Any) -> Any:
@@ -68,9 +76,10 @@ class TargetScene(_Lenient):
     description: str = Field(min_length=1)
     key_elements: list[str] = Field(default_factory=list)
     constraints: list[str] = Field(default_factory=list)
+    people_in_frame: str = ""
 
     _lists = field_validator("key_elements", "constraints", mode="before")(_as_list)
-    _texts = field_validator("description", mode="before")(_as_text)
+    _texts = field_validator("description", "people_in_frame", mode="before")(_as_text)
 
 
 class Composition(_Lenient):
@@ -87,16 +96,47 @@ class Composition(_Lenient):
     visible_evidence: list[str] = Field(default_factory=list)
     needs_on_site_check: list[str] = Field(default_factory=list)
     steps: list[str] = Field(default_factory=list)
+    # shot-v2 subject direction (optional here so shot-v1 results stay valid)
+    body_pose: str = ""
+    head_direction: str = ""
+    gaze: str = ""
+    expression_cue: str = ""
 
     _lists = field_validator("visible_evidence", "needs_on_site_check", "steps", mode="before")(_as_list)
     _texts = field_validator(
         "title", "uses_principle", "camera_position", "camera_height", "camera_angle", "subject_position",
-        "distance_and_framing", "orientation", "zoom_or_lens", "lighting_tip", mode="before",
+        "distance_and_framing", "orientation", "zoom_or_lens", "lighting_tip",
+        "body_pose", "head_direction", "gaze", "expression_cue", mode="before",
     )(_as_text)
+
+
+class ShotV2(Composition):
+    """shot-v2: framing, light and subject direction are required; the expression cue stays optional."""
+
+    distance_and_framing: str = Field(min_length=1)
+    lighting_tip: str = Field(min_length=1)
+    body_pose: str = Field(min_length=1)
+    head_direction: str = Field(min_length=1)
+    gaze: str = Field(min_length=1)
 
 
 class CompositionSet(_Lenient):
     compositions: list[Composition] = Field(min_length=3)
+
+
+class ShotSetV2(_Lenient):
+    compositions: list[ShotV2] = Field(min_length=3)
+
+
+def shot_set(shot_format: str) -> type[BaseModel]:
+    if shot_format not in SHOT_FORMATS:
+        raise ValueError(f"shot_format must be one of {SHOT_FORMATS}")
+    return ShotSetV2 if shot_format == "v2" else CompositionSet
+
+
+def shot_format_of(record: dict) -> str:
+    """Shot format of a saved run; runs made before shot-v2 existed are shot-v1."""
+    return (record.get("config") or {}).get("shot_format") or record.get("shot_format") or "v1"
 
 
 class RecommendationSet(_Lenient):

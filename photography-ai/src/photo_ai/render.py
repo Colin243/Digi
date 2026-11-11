@@ -11,7 +11,8 @@ def timing_markdown(rec: dict) -> str:
     t = rec["timing"]
     load = "already loaded (warm)" if t["model_was_warm"] else _fmt(t["model_load_s"], " s")
     lines = [
-        f"**Run** `{rec['run_id']}` · model `{rec['model']['repo_id']}` · strategy `{rec['config']['strategy']}`",
+        f"**Run** `{rec['run_id']}` · model `{rec['model']['repo_id']}` · strategy `{rec['config']['strategy']}`"
+        + (f" · shot format `{rec.get('shot_format', 'v1')}`" if rec.get("shot_format") else ""),
         f"**Model load:** {load} · **Inference:** {_fmt(t['inference_s'], ' s')} · "
         f"**Peak memory:** {_fmt(t['peak_memory_gb'], ' GB')} · **Model calls:** {t.get('model_calls', '—')}",
     ]
@@ -47,6 +48,20 @@ def result_markdown(rec: dict) -> str:
     out = []
     if not rec["validation"]["ok"]:
         out.append("> **Partial result** — a later stage failed validation:\n> " + "; ".join(rec["validation"]["errors"]))
+    if res.get("mode") == "scene":
+        st = res.get("style") or {}
+        out.append(f"### Scene Director (experimental) · {st.get('label') or 'custom brief'}")
+        out.append("> Experimental: check every look on site. The base model can direct people who are already in "
+                   "the photo, or suggest a spot that isn't safe; never ask strangers to pose, and skip any direction "
+                   "involving traffic, ledges, railings or water.")
+        d = (rec.get("auto_metrics") or {}).get("direction") or {}
+        warn = [f"{n} look(s) may direct someone already in the photo" for n in [d.get("directs_people_in_frame")] if n]
+        warn += [f"possible unsafe direction: {', '.join(d['unsafe_directions'])}"] if d.get("unsafe_directions") else []
+        warn += [f"wording that guesses feelings: {', '.join(d['emotion_inferences'])}"] if d.get("emotion_inferences") else []
+        if warn:
+            out.append("> **Automated checks flagged:** " + "; ".join(warn))
+        if st.get("brief"):
+            out.append(f"*Brief:* {st['brief']}")
     a = res.get("aesthetic")
     if a:
         out.append("### Inspiration aesthetic")
@@ -60,7 +75,7 @@ def result_markdown(rec: dict) -> str:
     if ts:
         out.append("### Target scene")
         out.append(ts.get("description", ""))
-        out += _bullets([("Use", "key_elements"), ("Watch out for", "constraints")], ts)
+        out += _bullets([("Use", "key_elements"), ("Watch out for", "constraints"), ("People in frame", "people_in_frame")], ts)
     for i, c in enumerate(res.get("compositions", []), 1):
         out.append(f"### {i}. {c.get('title', '')}")
         meta = " · ".join(x for x in (c.get("distance_and_framing") or c.get("framing"), c.get("orientation"), c.get("zoom_or_lens")) if x)
@@ -68,7 +83,9 @@ def result_markdown(rec: dict) -> str:
             out.append(f"*{meta}*")
         out += _bullets([
             ("Transfers", "uses_principle"), ("Stand", "camera_position"), ("Camera height", "camera_height"),
-            ("Angle", "camera_angle"), ("Subject", "subject_position"), ("Light", "lighting_tip"),
+            ("Angle", "camera_angle"), ("Subject", "subject_position"), ("Pose", "body_pose"),
+            ("Head / chin", "head_direction"), ("Gaze", "gaze"), ("Expression (optional)", "expression_cue"),
+            ("Light", "lighting_tip"),
             ("Seen in photo", "visible_evidence"), ("Check on site", "needs_on_site_check"),
             ("Why", "why_it_matches"),
         ], c)

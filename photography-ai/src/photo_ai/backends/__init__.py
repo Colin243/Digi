@@ -39,6 +39,7 @@ MODELS: dict[str, ModelSpec] = {
 }
 
 DEFAULT_MODEL = "smolvlm2-500m"
+SELECTED_MODEL = "qwen3-vl-2b-4bit"  # chosen in Phase 3; default for the Scene Director
 
 
 def resolve_spec(name: str) -> ModelSpec:

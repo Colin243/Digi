@@ -47,6 +47,8 @@ def save_run(run_dir: Path, record: dict, runs_dir: Path) -> Path:
         "created_at": record["created_at"],
         "model": record["model"]["key"],
         "strategy": record["config"]["strategy"],
+        "mode": record.get("mode", "inspiration"),
+        "shot_format": record.get("shot_format", "v1"),
         "prompt_version": record["prompt_version"],
         "n_inspiration": len(record["inputs"]["inspiration"]),
         "valid": record["validation"]["ok"],

@@ -26,8 +26,10 @@ The first real run downloads weights from Hugging Face into `~/.cache/huggingfac
 
 | command | what it does |
 |---|---|
-| `photo-ai ui` | Local web app at http://127.0.0.1:7860. The **Analyze** tab takes uploads and returns recommendations. The **Evaluate** tab views saved runs and scores them with the rubric. |
-| `photo-ai analyze -i a.jpg b.jpg c.jpg -t scene.jpg [--model …] [--strategy …]` | One analysis from the command line. `--repeat N` gives warm timings. |
+| `photo-ai ui` | Local web app at http://127.0.0.1:7860. **Scene Director** takes one scene photo and a style brief. **Inspiration Director** takes 3–5 inspiration photos plus a target. Both return recommendations. The **Evaluate** tab views saved runs and scores them with the rubric. |
+| `photo-ai scene -t scene.jpg --style relaxed_candid [--brief "…"]` | Scene Director from the command line. One photo, with or without a person, and no reference images. Returns 3 shot-v2 looks. Styles: `relaxed_candid` 松弛感, `dreamy_atmospheric` 氛围感, `cool_editorial` 清冷感, `vintage_ccd` 复古 CCD. Defaults to Qwen3-VL-2B. See [docs/scene-director.md](docs/scene-director.md). |
+| `photo-ai scene-demo` | Reproducible Scene Director demo over `configs/scene_demo.json`. It writes `runs/<demo id>.md` and labels its runs so they can be scored blind in the Evaluate tab. |
+| `photo-ai analyze -i a.jpg b.jpg c.jpg -t scene.jpg [--model …] [--strategy …] [--shot-format v2]` | One analysis from the command line. `--repeat N` gives warm timings. `--shot-format v2` (decomposed only) adds body pose, head and chin, gaze, and an optional expression cue. |
 | `photo-ai diagnose --model … [--case …]` | Checks that images reach the model and that it can see the target. See "Diagnostics" below. |
 | `photo-ai bench --models smolvlm2-500m qwen2.5-vl-3b-4bit [--bench-id …]` | Runs every model × case × strategy, plus sampled runs for consistency. It is resumable: rerun with the same `--bench-id` to continue. |
 | `photo-ai report [--bench …] [--out file.md]` | Side-by-side comparison table, including any manual scores saved so far. |
@@ -111,6 +113,13 @@ Each strategy retries once if the JSON is invalid. All three save the same recor
   ]
 }
 ```
+
+**Schema v4 and the shot format.** Every run records `shot_format`; runs saved before v4 count as `v1`.
+- **shot-v1** is the composition above.
+- **shot-v2** adds `body_pose`, `head_direction` (head and chin), `gaze`, and an optional `expression_cue`, and makes `distance_and_framing` and `lighting_tip` required.
+- Scene-mode results carry `"mode": "scene"`, a `style`, and `target_scene.people_in_frame`, but no `aesthetic`.
+- All v4 fields are optional on the base models, so v3 results still validate and render.
+- The shot-v1 prompts are byte-identical to prompt v4, so the Phase 3 benchmark and the LoRA training template are unchanged.
 
 The prompt includes good and bad examples, such as "Place the subject in the left third" versus "take a wide shot". It also tells the model to transfer technique, not scenery. Validation (`schema.py`) rejects missing actionable fields, fewer than 3 compositions, and text copied from the prompt's field descriptions.
 

@@ -125,6 +125,7 @@ def present_mentions(text: str, terms: list[str]) -> list[str]:
 
 
 DIVERSITY_FIELDS = ("camera_position", "camera_height", "camera_angle", "subject_position", "distance_and_framing")
+DIRECTION_FIELDS = ("body_pose", "head_direction", "gaze", "expression_cue")  # shot-v2
 
 
 def diversity(comps: list[dict]) -> dict:
@@ -132,13 +133,51 @@ def diversity(comps: list[dict]) -> dict:
     if len(comps) < 2:
         return {"field_distinct": None, "text_dissimilarity": None}
     per_field = {}
-    for f in DIVERSITY_FIELDS:
+    # shot-v2 pose and gaze count toward diversity only when present, so shot-v1 numbers don't change
+    fields = DIVERSITY_FIELDS + tuple(f for f in ("body_pose", "gaze") if any(c.get(f) for c in comps))
+    for f in fields:
         vals = [_normalize(str(c.get(f, ""))) for c in comps]
         per_field[f] = (len(set(vals)) - 1) / (len(vals) - 1)
     return {
         "field_distinct": round(sum(per_field.values()) / len(per_field), 3),
         "per_field": per_field,
         "text_dissimilarity": round(1 - (pairwise_similarity([composition_text(c) for c in comps]) or 0), 3),
+    }
+
+
+# Wording that guesses a person's inner state ("she looks sad", "feels lonely"). The director may
+# suggest a voluntary expression ("a soft smile"), but must not infer emotion.
+_EMOTION_INFERENCE = re.compile(
+    r"\b(looks?|seems?|appears?|feels?|feeling|is|are)\s+(?:very\s+|a bit\s+|quite\s+)?"
+    r"(happy|sad|lonely|angry|anxious|nervous|depressed|upset|bored|tired|confident|shy|melancholic|content|joyful)\b")
+_UNSAFE = re.compile(r"\b(in(?:to)? (?:the )?(?:traffic|road|middle of the street)|"
+                     r"(?:stand|standing|sit|sitting|step|stepping|perch|perched|perching|balance|balancing) on (?:the |a )?"
+                     r"(?:ledge|railing|parapet|handrail|wall top|bench back)|climb(?:ing|s)? (?:over|onto|up on)|"
+                     r"lean(?:ing|s)? over (?:the |a )?(?:railing|ledge|edge|parapet)|into the water)\b")
+# Directions aimed at someone already in the photo ("ask the person by the door to ..."): the subject is the
+# photographer's friend, and strangers must never be directed.
+_PASSERBY = re.compile(r"\b(?:the|that|this) (?:person|man|woman|people|couple|stranger|passer-?by|cyclist|pedestrian)s?\b")
+_DIRECTION_TEXT = ("subject_position", "body_pose", "head_direction", "gaze", "expression_cue", "steps")
+_GAZE_TARGET = re.compile(r"\b(lens|camera|frame|left|right|down|up|ground|floor|sky|window|sign|wall|over (?:her|his|their) shoulder|"
+                          r"toward|towards|at the|into the|closed)\b")
+
+
+def direction_checks(result: dict | None) -> dict | None:
+    """shot-v2 checks: are pose/head/gaze filled and specific, is emotion inferred, is anything unsafe."""
+    comps = (result or {}).get("compositions") or []
+    if not comps or not any(c.get(f) for c in comps for f in DIRECTION_FIELDS):
+        return None
+    texts = [composition_text(c).lower() for c in comps]
+    people = str(((result or {}).get("target_scene") or {}).get("people_in_frame", "")).lower()
+    return {
+        "fields_filled": {f: sum(bool(c.get(f)) for c in comps) for f in DIRECTION_FIELDS},
+        "gaze_specific": sum(bool(_GAZE_TARGET.search(str(c.get("gaze", "")).lower())) for c in comps),
+        "emotion_inferences": [m.group(0) for t in [*texts, people] for m in _EMOTION_INFERENCE.finditer(t)],
+        "unsafe_directions": [m.group(0) for t in texts for m in _UNSAFE.finditer(t)],
+        # only meaningful when the scene has people in it
+        "directs_people_in_frame": 0 if people.strip() in ("", "none", "none.") else sum(
+            bool(_PASSERBY.search(composition_text({k: c.get(k) for k in _DIRECTION_TEXT if c.get(k)}).lower()))
+            for c in comps),
     }
 
 
@@ -156,6 +195,9 @@ def evaluate_result(result: dict | None, case: Case | None) -> dict:
         out["per_composition"] = specs
         out["distinct_compositions"] = round(1 - (pairwise_similarity([composition_text(c) for c in comps]) or 0), 3)
         out["diversity"] = diversity(comps)
+        checks = direction_checks(result)
+        if checks:
+            out["direction"] = checks
     if case is None:
         return out
     target_text = composition_text(result.get("target_scene") or {})

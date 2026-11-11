@@ -42,8 +42,16 @@ COMPOSITION = {
 }
 
 
-def _compositions() -> list[dict]:
-    return [dict(COMPOSITION, title=f"{COMPOSITION['title']} {i}") for i in (1, 2, 3)]
+DIRECTION = {  # shot-v2 fields
+    "body_pose": "weight on the back foot, left hand loosely in the coat pocket",
+    "head_direction": "head turned toward the window, chin level",
+    "gaze": "looking out of the window, past the frame edge",
+    "expression_cue": "",
+}
+
+
+def _compositions(v2: bool = False) -> list[dict]:
+    return [dict(COMPOSITION, title=f"{COMPOSITION['title']} {i}", **(DIRECTION if v2 else {})) for i in (1, 2, 3)]
 
 
 def default_response(prompt: str) -> str:
@@ -54,8 +62,10 @@ def default_response(prompt: str) -> str:
         return json.dumps(TARGET)
     if "notes on a photographer" in prompt:
         return json.dumps(AESTHETIC)
+    if "Propose ONE portrait look" in prompt:
+        return json.dumps(_compositions(v2=True)[0])
     if "is described as" in prompt:
-        return json.dumps({"compositions": _compositions()})
+        return json.dumps({"compositions": _compositions(v2="gaze" in prompt)})
     if "Inspiration photo 1" in prompt and "TARGET scene photo" in prompt:
         return json.dumps({"aesthetic": AESTHETIC, "target_scene": TARGET, "compositions": _compositions()})
     if "TARGET scene photo" in prompt:
