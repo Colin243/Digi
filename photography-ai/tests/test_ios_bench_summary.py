@@ -60,8 +60,8 @@ def _report(cameras, rid="bench-x"):
         "config": {"preset": "quick", "repeats": len(cameras), "sizes": [1024], "camera_pause_resume": True, "cooldown_seconds": 0},
         "load": {"ok": True, "seconds": 5.0, "footprint_before": GB, "footprint_after": 3 * GB, "peak_footprint": 3 * GB,
                  "available_after": 4 * GB},
-        "summary": [{"workload": "decomposed", "size": 1024, "n": len(cameras), "first_e2e": 20.0, "warm_e2e_median": 18.0,
-                     "warm_e2e_max": 19.0, "ttft_median": 1.0, "gen_tok_per_sec_median": 40.0, "prompt_tok_per_sec_median": 300,
+        "summary": [{"workload": "decomposed", "size": 1024, "n": len(cameras), "first_e_2e": 20.0, "warm_e_2e_median": 18.0,
+                     "warm_e_2e_max": 19.0, "ttft_median": 1.0, "gen_tok_per_sec_median": 40.0, "prompt_tok_per_sec_median": 300,
                      "peak_footprint_max": 3 * GB, "min_available_min": 3 * GB, "camera_recovery_median": 0.2,
                      "camera_recovery_max": 0.2, "json_valid": len(cameras)}],
         "trials": trials, "events": [],
@@ -82,3 +82,55 @@ def test_summary_command_runs_end_to_end(tmp_path):
     first, second = out.stdout.split("## bench-bad")
     assert "## bench-good" in first and "**Overall: PASS**" in first
     assert "**Overall: FAIL**" in second and "1 timed out" in second
+
+
+def test_app_key_spelling_is_read(tmp_path, capsys):
+    """The app writes first_e_2e / warm_e_2e_* (Swift .convertToSnakeCase); they must reach the table and budgets."""
+    import json
+
+    rep = _report([OK, OK, OK])
+    rep["summary"][0].update(warm_e_2e_median=70.0, warm_e_2e_max=72.0)
+    f = tmp_path / "r.json"
+    f.write_text(json.dumps(rep))
+    S.main([str(f)])
+    out = capsys.readouterr().out
+    assert "| 20.0 | 70.0 | 72.0 |" in out
+    assert "FAIL: decomposed@1024 warm median <= 60.0 s" in out
+    assert "PASS: decomposed@1024 warm max <= 90.0 s" in out
+
+
+def test_missing_warm_stats_are_no_data(tmp_path, capsys):
+    import json
+
+    rep = _report([OK, OK, OK])
+    for k in ("warm_e_2e_median", "warm_e_2e_max"):
+        del rep["summary"][0][k]
+    f = tmp_path / "r.json"
+    f.write_text(json.dumps(rep))
+    S.main([str(f)])
+    out = capsys.readouterr().out
+    assert "NO DATA: decomposed@1024 warm median" in out and "**Overall: NO DATA**" in out
+
+
+def test_memory_warning_or_terminated_run_fails():
+    rep = _report([OK, OK])
+    rep["trials"][1]["memory_warnings"] = 1
+    rep["status"] = "aborted"
+    checks = S.health_checks(rep)
+    assert [ok for _, ok in checks] == [False, False]
+    assert S.health_checks(_report([OK, OK])) == [("run finished, not terminated (status finished)", True),
+                                                  ("no memory warnings (0)", True)]
+
+
+def test_soak_sustained_speed_and_critical_thermal():
+    rep = _report([OK, OK, OK])
+    rep["config"]["preset"] = "soak"
+    ok = dict(S.health_checks(rep))
+    assert ok["thermal never critical"] is True
+    assert any(k.startswith("sustained gen tok/s") and v is True for k, v in ok.items())
+    # 50% of the first warm trial (copies: the fixture's trials share call dicts)
+    rep["trials"][2]["calls"] = [{**c, "generation_tokens_per_second": 20.0} for c in rep["trials"][2]["calls"]]
+    rep["trials"][2]["thermal_end"] = "critical"
+    bad = dict(S.health_checks(rep))
+    assert bad["thermal never critical"] is False
+    assert any(k.startswith("sustained gen tok/s") and "50%" in k and v is False for k, v in bad.items())

@@ -26,7 +26,7 @@ from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 
-from . import metrics, prompts
+from . import framing, metrics, prompts
 from .backends import make_backend
 from .cases import PROJECT_ROOT, REPO_ROOT, Case, CaseImage
 from .pipeline import RunConfig, analyze
@@ -437,6 +437,8 @@ def auto_checks(fx: dict, record: dict) -> dict:
         "distinct_fields": div.get("field_distinct"),
         "distinct_titles": len(titles - {""}),
         "scene_recall": (am.get("target_recall") or {}).get("object_recall"),
+        # Informational, outside the frozen criteria: does each look follow the phone setup its framing calls for?
+        "setup_fit": framing.summarize_fit(comps),
         "evidence_grounded_rate": am.get("evidence_grounded_rate"),
         "people_in_frame": ts.get("people_in_frame"),
         "inference_s": record["timing"]["inference_s"],
@@ -571,6 +573,10 @@ def summarize(rows: list[dict]) -> dict:
     s["distinct_fields_mean"] = _mean([r["distinct_fields"] for r in valid])
     s["distinct_titles_mean"] = _mean([r["distinct_titles"] for r in valid])
     s["scene_recall_mean"] = _mean([r["scene_recall"] for r in rows])
+    fits = [r.get("setup_fit") or {} for r in valid]
+    s["setup_looks"] = sum(f.get("with_setup", 0) for f in fits)
+    s["setup_cue_score_mean"] = _mean([f.get("setup_cue_score_mean") for f in fits])
+    s["setup_conflicts"] = sum(f.get("setup_conflicts", 0) for f in fits)
     s["evidence_grounded_mean"] = _mean([r["evidence_grounded_rate"] for r in valid])
     s["inference_s_mean"] = _mean([r["inference_s"] for r in rows])
     s["peak_memory_gb_max"] = max((r["peak_memory_gb"] or 0 for r in rows), default=None)
@@ -595,6 +601,9 @@ def _summary_table(by: dict[str, dict]) -> list[str]:
             ("distinct titles (mean of 3)", lambda s: _fmt(s["distinct_titles_mean"])),
             ("scene recall (annotated objects named)", lambda s: _fmt(s["scene_recall_mean"])),
             ("evidence grounded rate", lambda s: _fmt(s["evidence_grounded_mean"])),
+            ("looks matching a phone setup (informational)", lambda s: str(s.get("setup_looks", "—"))),
+            ("setup cues stated, mean (0-1, informational)", lambda s: _fmt(s.get("setup_cue_score_mean"))),
+            ("setup contradictions (wrong tilt)", lambda s: str(s.get("setup_conflicts", "—"))),
             ("seconds per scene (mean)", lambda s: _fmt(s["inference_s_mean"], 1)),
             ("peak memory GB (max)", lambda s: _fmt(s["peak_memory_gb_max"]))]
     out = ["| automated measure | " + " | ".join(keys) + " |", "|---|" + "---|" * len(keys)]

@@ -20,6 +20,12 @@ History
      byte-identical when shot_format="v1", so the Phase 3 benchmark and LoRA training templates
      are unchanged. Runs record PROMPT_VERSION for shot-v1 inspiration runs and
      PROMPT_VERSION_V5 for scene-mode or shot-v2 runs (see version_for).
+  v6 (2026-11-12.6) Scene Director look plans carry the three phone-portrait setups from framing.py
+     (half body: camera just above the head, tilt down; full body: crouch, tilt up, feet on the bottom
+     edge; seated: stomach height, diagonal). Only LOOK_PLANS changed; v4 prompts stay byte-identical,
+     so the Phase 3 benchmark, the iPhone harness and LoRA training templates are unchanged. The
+     setups reach the v4 pipeline through training labels instead (docs/annotation-guide.md).
+     Scene-eval runs on v5 are not comparable with v6 runs.
 """
 
 from __future__ import annotations
@@ -27,10 +33,11 @@ from __future__ import annotations
 import json
 from contextlib import contextmanager
 
+from . import framing
 from .backends import IMAGE_MARKER
 
 PROMPT_VERSION = "2026-11-09.4"
-PROMPT_VERSION_V5 = "2026-11-10.5"
+PROMPT_VERSION_V5 = "2026-11-12.6"  # name kept: the scene-mode / shot-v2 prompt version
 
 
 def version_for(mode: str = "inspiration", shot_format: str = "v1") -> str:
@@ -358,9 +365,10 @@ def director_scene() -> str:
 # Qwen3-VL-2B wrote look 1 and repeated it twice (scene-demo-v1: field diversity 0.00-0.36).
 LOOK_PLANS = (
     "WIDE: full body, the subject small to medium in the frame, the camera far enough back to show the "
-    "most useful part of the scene.",
+    "most useful part of the scene. Unless the scene needs more distance, use this setup: "
+    + framing.brief("full_body"),
     "MEDIUM: waist up or three-quarter body, the camera in a different place from the earlier looks, and a "
-    "different pose.",
+    "different pose. Use this setup: " + framing.brief("half_body"),
     "CLOSE: head and shoulders, using the light or a foreground element in a new way, with a different gaze "
     "from the earlier looks.",
 )
@@ -368,7 +376,7 @@ LOOK_PLANS = (
 # Extra plans for review pages that offer more choices (RunConfig.n_looks up to 5); the default stays three.
 EXTRA_LOOK_PLANS = (
     "SEATED OR LEANING: use a seat, step, wall or ledge-free surface that is visible in the photo; a new camera "
-    "height from the earlier looks.",
+    "height from the earlier looks. If the subject sits, use this setup: " + framing.brief("seated"),
     "IN MOTION: a candid moment such as a slow walk, a turn or adjusting hair or clothes, on ground visible in "
     "the photo; framing different from the earlier looks.",
 )

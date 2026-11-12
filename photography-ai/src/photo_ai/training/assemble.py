@@ -141,6 +141,75 @@ def assemble_reserve(dataset: str = "train_v1", n_train: int = 10, n_valid: int 
     return new
 
 
+# Phone setups (photo_ai/framing.py): which tagged people photos show each one, strict filter first.
+# The pool is eye-level heavy, so a relaxed filter fills a set when the strict one is too small.
+SETUP_FILTERS = {
+    "half_body": (lambda t: t["camera_angle"] == "high" and t["framing"] in ("half-body", "close-up"),
+                  lambda t: t["framing"] == "half-body" and t["camera_angle"] in ("high", "eye")),
+    "full_body": (lambda t: t["camera_angle"] == "low" and t["framing"] == "full-body",
+                  lambda t: t["camera_angle"] == "low" or (t["framing"] == "full-body" and t["pose"] == "standing")),
+    "seated": (lambda t: t["pose"] == "sitting" and t["framing"] == "full-body",
+               lambda t: t["pose"] == "sitting" and t["framing"] in ("full-body", "half-body")),
+}
+# What a target place must show for the setup to be possible there.
+SETUP_TARGET = {
+    "half_body": None,
+    "full_body": r"pavement|sidewalk|street|path|plaza|square|floor|ground|cobble|steps|road|boardwalk|courtyard",
+    "seated": r"bench|step|stairs|seat|chair|ledge|low wall|sofa|couch|terrace",
+}
+
+
+def assemble_setups(dataset: str = "train_v1", per_setup: dict | None = None, seed: int = 7,
+                    set_size: int = 3) -> list[dict]:
+    """Append examples that teach the three phone setups (ids <dataset>-s<split letter><setup #><nn>).
+
+    Inspiration photos may repeat across setup examples (the strict pools hold only a handful of photos);
+    targets are places whose tagged elements make the setup possible. Same split rules as assemble().
+    Idempotent: existing setup examples are kept and not rebuilt.
+    """
+    import re
+
+    existing = load_examples(dataset)
+    if any(e.get("batch") == "setups" for e in existing):
+        return [e for e in existing if e.get("batch") == "setups"]
+    per_setup = per_setup or {"train": 3, "valid": 1}
+    used_targets = {e["target"] for e in existing}
+    tags, people, places = _candidates(dataset)
+    rng = random.Random(seed)
+    new: list[dict] = []
+    for n, (setup, (strict, relaxed)) in enumerate(SETUP_FILTERS.items(), 1):
+        for split in ("train", "valid"):
+            first = [p for p in people[split] if strict(tags[p]["tags"])]
+            second = [p for p in people[split] if p not in first and relaxed(tags[p]["tags"])]
+            pat = SETUP_TARGET[setup]
+            able = [p for p in places[split] if pat is None or re.search(
+                pat, " ".join([tags[p]["tags"].get("setting", "")] + tags[p]["tags"].get("elements", [])).lower())]
+            fresh = [p for p in able if p not in used_targets]
+            reused = [p for p in able if p in used_targets and p not in {e["target"] for e in new}]
+            rng.shuffle(fresh)
+            rng.shuffle(reused)
+            fits = reused + fresh  # pop() takes fresh places first; reuse only when none are left
+            for k in range(per_setup[split]):
+                rng.shuffle(first)
+                rng.shuffle(second)
+                insp = (first + second)[:set_size]
+                if len(insp) < set_size or not fits:
+                    break
+                target = fits.pop()
+                used_targets.add(target)
+                new.append({"example_id": f"{dataset}-s{split[0]}{n}{k + 1:02d}", "split": split, "batch": "setups",
+                            "technique": {"kind": "setup", "value": setup, "description": framing_brief(setup)},
+                            "inspiration": insp, "target": target, "subject": DEFAULT_SUBJECT})
+    (data_dir(dataset) / "examples.json").write_text(json.dumps(existing + new, indent=1))
+    return new
+
+
+def framing_brief(setup: str) -> str:
+    from ..framing import brief
+
+    return brief(setup)
+
+
 def load_examples(dataset: str = "train_v1") -> list[dict]:
     p = data_dir(dataset) / "examples.json"
     return json.loads(p.read_text()) if p.exists() else []

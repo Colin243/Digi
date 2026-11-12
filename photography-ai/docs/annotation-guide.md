@@ -63,6 +63,24 @@ Each shot must differ from the other two in at least two of these: camera positi
 | `needs_on_site_check` | what a still photo can't tell you: what's behind the camera, real distances, whether a spot is reachable or allowed, how the light changes, foot traffic |
 | `steps` | 2–4 short actions in order |
 
+### Phone setups for subject photos
+
+When a shot frames a person, use the setup that matches its framing. Write the numbers into `camera_height`, `camera_angle` and `distance_and_framing`, adjusted to what the target place allows. The single source is `src/photo_ai/framing.py`; the Scene Director prompts and the scene-eval setup check read the same definitions.
+
+| framing | camera height | angle | distance | in the frame |
+|---|---|---|---|---|
+| **Half body** (waist up) | just above the top of the subject's head | tilt down about 10° | about 1.2 m | face in the centre column; one grid row of space above the head |
+| **Full body** (standing) | low: crouch so the phone is around the subject's waist or below | tilt up about 10°, toward the eyes | about 2 m | feet touch the bottom edge; head on or just above the top grid line |
+| **Seated**, full body | about the subject's stomach height (bend over) | tilt down about 10°, aimed at the stomach | about 1.5 m | whole body along the frame's diagonal; legs crossed and extended toward the subject's better side |
+
+All three use the **1x main lens**. The 0.5x ultra-wide stretches faces and bodies near the frame edges.
+
+- **Why these work:** a camera just above the head keeps the face in proportion; a low camera tilted up lengthens the legs, and feet on the bottom edge stop them looking cut short; the diagonal is the longest line in the frame.
+- **Contradictions to fix:** "full body" with "tilt down", or "half body" with "tilt up from below". The scene-eval setup check counts these.
+- **Not a template:** close-ups, environmental shots and deliberate style choices (a dramatic worm's-eye shot, a top-down shot) are fine; say why in `uses_principle`.
+- **Keep it short.** State each number once. Concise compositions train a model that generates fewer tokens, and on the phone, generated tokens are most of the wait (docs/iphone-benchmark.md, §2).
+- **Body language stays neutral.** Say what the setup does ("lengthens the legs"), never judge the subject's body.
+
 ### Avoid
 
 - Generic phrases: "take a wide shot", "use good lighting", "center the subject", "capture the moment".
