@@ -8,6 +8,7 @@ struct ContentView: View {
     @State private var cameraPauseResume = true
     @State private var reloadTest = true
     @State private var cooldown = 0.0
+    @State private var compositionsMaxTokens = BenchRunner.defaultCompositionsMaxTokens
 
     var body: some View {
         NavigationStack {
@@ -30,12 +31,16 @@ struct ContentView: View {
                     Toggle("Pause camera around inference", isOn: $cameraPauseResume)
                     Toggle("Reload test at the end", isOn: $reloadTest)
                     Stepper("Cooldown between trials: \(Int(cooldown)) s", value: $cooldown, in: 0...120, step: 15)
+                    Stepper(compositionsMaxTokens == 0 ? "Compositions max tokens: off (1600)"
+                                : "Compositions max tokens: \(compositionsMaxTokens)",
+                            value: $compositionsMaxTokens, in: 0...1600, step: 50)
                     if runner.running {
                         Button("Stop after current call", role: .destructive) { runner.stop() }
                     } else {
                         Button("Start benchmark") {
                             runner.start(preset: preset, repeats: repeats, cameraPauseResume: cameraPauseResume,
-                                         reloadTest: reloadTest, cooldown: cooldown)
+                                         reloadTest: reloadTest, cooldown: cooldown,
+                                         compositionsMaxTokens: compositionsMaxTokens)
                         }
                         .bold()
                     }

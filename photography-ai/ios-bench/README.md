@@ -9,6 +9,7 @@ The method, budgets and go/no-go criteria are in [`../docs/iphone-benchmark.md`]
 For each run it writes one JSON file to the app's `Documents/results/` and saves it after every trial, so a jetsam kill still leaves the data:
 
 - **Load:** cold load time, then a reload after unloading.
+- **Compositions streaming:** the compositions call is scanned while it decodes. Each shot is parsed the moment its object closes, so `first_shot_seconds` (request start to shot 1 parsed) is recorded next to TTFT. Its max-token cap is set in the app (default 700, enough for two complete shots; 0 = the 1600 from `prompts.json`). If the cap cuts the JSON off, the output is rebuilt from the complete shots so it still parses. The truncated text is kept as `raw_output`. See `docs/iphone-benchmark.md` section 8.
 - **Every model call:** time to first token, prefill, decode and end-to-end time; prompt and generation tok/s; peak `phys_footprint` sampled every 25 ms; minimum `os_proc_available_memory`; MLX peak memory; thermal state before and after.
 - **Camera:** around every trial, an `AVCaptureSession` (back camera, `.photo` preset) is stopped before inference and restarted after. It records the stop time, the `startRunning()` time and the time until the first video frame arrives (capture recovery).
 - **Run context:** device model, iOS version and build, RAM, GPU, battery, Low Power Mode, uptime, and network status (unreachable means airplane mode). It also records exact package versions (from the bundled `Package.resolved`), the model revision and the prompt version.
@@ -75,8 +76,11 @@ This prints the markdown tables and budget check for `docs/iphone-benchmark.md`.
 cd photography-ai/ios-bench/MacSmoke
 xcodebuild -scheme MacSmoke -destination 'platform=macOS,arch=arm64' -configuration Release \
   -clonedSourcePackagesDirPath ../build/spm -derivedDataPath ../build/dd-mac build
-../build/dd-mac/Build/Products/Release/MacSmoke ../Resources 1024 2
+../build/dd-mac/Build/Products/Release/MacSmoke ../Resources 1024 2        # compositions capped at 700 (default)
+../build/dd-mac/Build/Products/Release/MacSmoke ../Resources 1024 2 0      # uncapped (prompts.json: 1600)
 ```
+
+The fourth argument is the compositions max-token cap. The compositions line also prints the first token time, when each shot became ready, and whether the output was repaired after the cap.
 
 ## Files
 
