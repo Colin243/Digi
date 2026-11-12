@@ -1,6 +1,32 @@
 import XCTest
 
 final class CameraUITests: XCTestCase {
+    func testSelfTimerOptionsPersist() throws {
+        let app = XCUIApplication()
+        XCUIDevice.shared.orientation = .portrait
+        app.launch()
+        XCTAssertTrue(app.buttons["Camera options"].waitForExistence(timeout: 10))
+        app.buttons["Camera options"].tap()
+        let timer = app.segmentedControls["self-timer"]
+        XCTAssertTrue(timer.waitForExistence(timeout: 3))
+        timer.buttons["10s"].tap()
+        XCTAssertTrue(timer.buttons["10s"].isSelected)
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(app.buttons["Camera options"].waitForExistence(timeout: 10))
+        app.buttons["Camera options"].tap()
+        let restored = app.segmentedControls["self-timer"]
+        XCTAssertTrue(restored.waitForExistence(timeout: 3))
+        XCTAssertTrue(restored.buttons["10s"].isSelected)
+        restored.buttons["3s"].tap()
+        XCTAssertTrue(restored.buttons["3s"].isSelected)
+        restored.buttons["Off"].tap()
+        XCTAssertTrue(restored.buttons["Off"].isSelected)
+        let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        screenshot.name = "Portrait timer options"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+    }
     func testCaptureStudySettingPersistsAcrossLaunch() throws {
         let app = XCUIApplication()
         XCUIDevice.shared.orientation = .portrait
