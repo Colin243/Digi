@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>LoRA Training Monitor</title>
+<title>Digi · Training studio</title>
 <style>
 :root {
   color-scheme: light;
@@ -125,20 +125,83 @@ code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-
 .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
 .seg button { border: 0; border-radius: 0; background: transparent; }
 .seg button.on { background: var(--surface-2); font-weight: 600; }
+
+/* Digi training studio: warm neutral surfaces, quiet hierarchy, no external assets. */
+body { font-size:14px; letter-spacing:-.01em; }
+header { padding:12px 28px; gap:12px; background:var(--bg); }
+.brand { display:flex; align-items:center; gap:14px; margin-right:auto; }
+.brandmark { font-size:23px; font-weight:650; letter-spacing:-1px; border-right:1px solid var(--border); padding-right:16px; }
+header h1 { font-size:13px; font-weight:500; color:var(--text-2); }
+#runSel { max-width:560px; min-width:220px; flex:1; width:100%; }
+select,input,button { border-radius:7px; min-height:36px; padding:7px 11px; }
+button { transition:background .15s,color .15s,border-color .15s; }
+button:hover { border-color:var(--text-2); }
+:focus-visible { outline:2px solid var(--s1); outline-offset:3px; }
+.path-control { position:relative; font-size:12px; }
+.path-control summary { cursor:pointer; color:var(--text-2); padding:8px; }
+.path-fields { position:absolute; right:0; top:38px; z-index:10; display:flex; gap:8px; padding:14px; background:var(--surface); border:1px solid var(--border); border-radius:10px; }
+#themeSel { width:82px; min-width:0; font-size:12px; }
+.header-note { flex-basis:100%; font-size:11px; color:var(--muted); }
+.banner { margin:12px 28px 0; padding:12px 16px; border-radius:5px; border-left:3px solid var(--warn-ink); font-size:12px; font-weight:450; max-width:1500px; }
+.studio-title { padding:18px 28px 8px; display:flex; justify-content:space-between; align-items:flex-end; gap:20px; }
+.eyebrow { font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--muted); }
+.studio-title h2 { font-size:32px; line-height:1.15; font-weight:550; letter-spacing:-1.2px; margin:7px 0; }
+.studio-title p { margin:0; color:var(--text-2); max-width:620px; font-size:13px; }
+.readonly-note { color:var(--muted); font-size:12px; text-align:right; }
+.replay { margin:10px 28px 18px; padding:12px 0; border-top:1px solid var(--border); border-bottom:1px solid var(--border); font-size:12px; }
+.replay input { accent-color:var(--s1); min-height:20px; }
+nav { padding:0 28px; gap:24px; border-bottom:1px solid var(--border); }
+nav button,nav button.on { border:0; border-bottom:2px solid transparent; border-radius:0; background:none; padding:12px 0; font-size:13px; }
+nav button.on { border-bottom-color:var(--text); }
+main { padding:18px 28px 40px; }
+section.tab { border:0; padding:0; border-radius:0; background:none; }
+#tiles { grid-template-columns:repeat(4,minmax(0,1fr)); gap:0; border:1px solid var(--border); border-radius:10px; overflow:hidden; margin-bottom:18px; }
+#tiles .tile { border-radius:0; background:var(--surface); padding:20px 22px; border-right:1px solid var(--border); }
+#tiles .tile:last-child { border:0; }
+#tiles .tile .v { font-size:32px; font-weight:550; margin:7px 0; letter-spacing:-1px; }
+.tile .k { color:var(--text-2); font-size:12px; }
+.tile .s { font-size:11px; }
+.secondary-metrics { margin:0 0 24px; }
+.secondary-metrics summary { cursor:pointer; color:var(--text-2); font-size:12px; padding:8px 0; }
+#secondaryTiles { margin-top:12px; grid-template-columns:repeat(auto-fit,minmax(155px,1fr)); }
+#secondaryTiles .tile { border-radius:6px; padding:12px; }
+.charts { grid-template-columns:repeat(12,minmax(0,1fr)); gap:18px; }
+.chart { grid-column:span 6; border-radius:9px; padding:18px 20px; }
+.chart:first-child { grid-column:span 8; }
+.chart:nth-child(2) { grid-column:span 4; }
+.chart h3 { font-size:14px; margin-bottom:5px; font-weight:550; }
+.chart .sub { font-size:11px; min-height:30px; color:var(--muted); }
+.chart svg { height:205px; }
+.legend { font-size:11px; margin:6px 0; }
+.explain { font-size:12px; line-height:1.7; padding:18px; border-radius:7px; }
+.arch,.arch.netmode { grid-template-columns:minmax(0,1fr) 320px; gap:20px; align-items:start; }
+.detail { position:sticky; top:145px; background:var(--surface); border:1px solid var(--border); padding:18px; border-radius:9px; max-height:75vh; overflow:auto; }
+.detail h3 { font-size:12px; line-height:1.7; }
+.netwrap { background:#101110; border:1px solid #30312e; border-radius:9px; }
+.netwrap canvas { height:560px; min-height:360px; }
+#archHead .tile { background:var(--surface); padding:14px; border:1px solid var(--border); }
+#archScale { line-height:2; margin:12px 0; }
+.panel { background:var(--surface); padding:22px; border-radius:9px; line-height:1.7; }
+th,td { padding:9px 7px; } td.num,.tile .v { font-variant-numeric:tabular-nums; }
+#pageError { margin:12px 28px; padding:12px; background:var(--crit-bg); color:var(--crit-ink); border-radius:6px; }
+@media(min-width:1800px) { main,.studio-title,nav,header { padding-left:48px; padding-right:48px; } .arch,.arch.netmode { grid-template-columns:minmax(0,1fr) 380px; } .netwrap canvas { height:65vh; } }
+@media(max-width:1000px) { .arch,.arch.netmode { grid-template-columns:1fr; } .detail { position:static; max-height:none; } .chart:first-child,.chart:nth-child(2),.chart { grid-column:span 6; } .brand { flex-basis:100%; } }
+@media(max-width:650px) { header,main,nav,.studio-title { padding-left:16px; padding-right:16px; } #tiles { grid-template-columns:repeat(2,minmax(0,1fr)); } #tiles .tile { padding:14px; border-bottom:1px solid var(--border); } #tiles .tile .v { font-size:25px; } .chart:first-child,.chart:nth-child(2),.chart { grid-column:span 12; } .banner,.replay { margin-left:16px; margin-right:16px; } nav { gap:14px; } .studio-title h2 { font-size:27px; } .readonly-note { display:none; } .path-fields { right:-95px; } input[type=text] { min-width:180px; } }
+@media(prefers-reduced-motion:reduce) { * { transition:none!important; } }
+
 </style>
 </head>
 <body>
 <header>
-  <h1>LoRA Training Monitor</h1>
+  <div class="brand"><span class="brandmark">Digi<span style="color:var(--s1)">.</span></span><h1>Training studio</h1></div>
   <select id="runSel" aria-label="Run"></select>
-  <input id="pathIn" type="text" placeholder="…or paste a run folder path" aria-label="Run folder path">
-  <button id="openBtn">Open</button>
+  <details class="path-control"><summary>Open folder</summary><div class="path-fields"><input id="pathIn" type="text" placeholder="…or paste a run folder path" aria-label="Run folder path">
+  <button id="openBtn">Open</button></div></details><select id="themeSel" aria-label="Color theme"><option value="auto">System</option><option value="light">Light</option><option value="dark">Dark</option></select>
   <span id="stateBadge" class="badge">no run</span>
   <span id="pollInfo" style="color:var(--text-2);font-size:12px"></span>
-  <span style="flex:1"></span>
-  <span style="color:var(--muted);font-size:12px">read-only · opening or reloading never touches training</span>
+  <span class="header-note">Qwen3-VL-2B · local MLX instrumentation · read-only</span>
 </header>
-<div id="banners"></div>
+<div class="studio-title"><div><div class="eyebrow">Photography AI / model observatory</div><h2 id="viewTitle">Training overview</h2><p>Follow the run. Inspect the changes. Evaluate the recommendations separately.</p></div><span class="readonly-note">Local measurements<br>No training controls</span></div><div id="pageError" role="alert" hidden></div><div id="banners" aria-live="polite"></div>
 <div class="replay">
   <button id="playBtn" title="Replay the run from the start">▶ Replay</button>
   <label for="cursor">Showing up to step</label>
@@ -156,7 +219,7 @@ code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-
 <main>
 <section class="tab on" id="tab-live">
   <div class="tiles" id="tiles"></div>
-  <div class="charts" id="charts"></div>
+  <details class="secondary-metrics"><summary>More run metrics · timing, gradients, cache and logging</summary><div class="tiles" id="secondaryTiles"></div></details><div class="charts" id="charts"></div>
   <div class="explain">
     <b>Memory on Apple silicon (unified memory).</b> <b>MLX active</b> = bytes in live MLX arrays (weights, activations, gradients, optimizer state).
     <b>MLX cache</b> = freed MLX buffers kept for reuse (capped by <code>cache_limit_gb</code>); resident but unused.
@@ -207,6 +270,11 @@ code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-
 <script>
 "use strict";
 const $ = (s) => document.querySelector(s);
+let themeChoice = "auto";
+try { const saved = localStorage.getItem("digi.monitor.theme"); if (["auto", "light", "dark"].includes(saved)) themeChoice = saved; } catch (_) { /* Storage may be disabled; theming still works. */ }
+function applyTheme(value) { if (value === "auto") delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = value; }
+applyTheme(themeChoice); $("#themeSel").value = themeChoice;
+$("#themeSel").onchange = e => { applyTheme(e.target.value); try { localStorage.setItem("digi.monitor.theme",e.target.value); } catch (_) {} render(); };
 const NA = '<span class="na">unavailable</span>';
 const S = { path: null, run: null, events: [], offset: 0, malformed: 0, steps: [], evals: [], samples: [], ckpts: [], notes: [],
   dropped: null, summary: null, start: null, state: null, status: {}, follow: true, cursor: 0, maxStep: 0,
@@ -240,7 +308,7 @@ async function loadRuns(selectPath) {
 $("#runSel").onchange = () => openRun($("#runSel").value);
 $("#openBtn").onclick = async () => {
   const p = $("#pathIn").value.trim(); if (!p) return;
-  try { const r = await api("/api/open", { path: p }); await loadRuns(r.path); } catch (e) { alert(e.message); }
+  try { const r = await api("/api/open", { path: p }); await loadRuns(r.path); $("#pageError").hidden = true; $(".path-control").open = false; } catch (e) { const box = $("#pageError"); box.textContent = e.message; box.hidden = false; }
 };
 
 async function openRun(path) {
@@ -307,6 +375,7 @@ document.querySelectorAll("#tabs button").forEach((b) => b.onclick = () => {
 
 // ---------------------------------------------------------------- render
 function render() {
+  $("#viewTitle").textContent = ({live:"Training overview",arch:"Inside the model",ckpt:"Checkpoint comparison",eval:"Photography evaluation",log:"Run provenance"})[document.querySelector("nav button.on")?.dataset.tab] || "Training overview";
   cur.max = S.maxStep; cur.value = S.cursor;
   $("#cursorLab").textContent = S.maxStep ? `${S.cursor} / ${S.maxStep}${S.follow ? " (latest)" : ""}` : "–";
   const b = $("#stateBadge"); const st = S.state || "no run";
@@ -364,6 +433,9 @@ function renderLive() {
     tile("Swap used (system)", gb(last.swap_used_gb), dswap != null ? `${dswap >= 0 ? "+" : ""}${dswap.toFixed(2)} GB since start` : "") +
     tile("Memory pressure", prTxt, "") +
     tile("Dropped samples", String((S.status.dropped_total ?? (S.dropped && S.dropped.dropped_total)) || 0), `${S.events.length} events read`);
+  const metricTiles = [...$("#tiles").children];
+  $("#secondaryTiles").replaceChildren(...metricTiles.filter((_,i) => ![0,4,5,10].includes(i)));
+  $("#tiles").replaceChildren(...[0,4,5,10].map(i => metricTiles[i]));
   const x = vs.map((s) => s.step);
   const valPts = ev.filter((e) => e.val_loss != null && e.step <= S.cursor);
   $("#charts").innerHTML = "";
@@ -595,7 +667,7 @@ function drawNet(lo, hi) {
   if (cv.width !== W * dpr || cv.height !== H * dpr) { cv.width = W * dpr; cv.height = H * dpr; }
   if (!S.net || S.net.W !== W || S.net.H !== H || S.net.path !== S.path) { S.net = buildNet(W, H); S.net.path = S.path; }
   const ctx = cv.getContext("2d"); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.fillStyle = "#05060a"; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = "#101110"; ctx.fillRect(0, 0, W, H);
   const val = (n) => { if (n.kind !== "lora") return null; const s = lastSampleFor(n.key); return s ? s.v[S.metric] : undefined; };
   ctx.lineWidth = 0.7;
   for (const [p, q, c] of S.net.edges) { ctx.strokeStyle = c; ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.stroke(); }
