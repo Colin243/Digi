@@ -666,7 +666,7 @@ function renderDetail() {
   const dist = (p) => `<tr><td>${p.toUpperCase()} entries</td><td class="num">mean ${fmt(v[`dist_${p}_mean`], 4)} · std ${fmt(v[`dist_${p}_std`], 4)}<br>p01 ${fmt(v[`dist_${p}_q01`], 4)} · p50 ${fmt(v[`dist_${p}_q50`], 4)} · p99 ${fmt(v[`dist_${p}_q99`], 4)} · |max| ${fmt(v[`dist_${p}_absmax`], 4)}</td></tr>`;
   d.innerHTML = `<h3>${esc(u.name)}</h3>
     <p><span class="badge ${u.status}">${u.status}</span> <span class="badge ${u.instrumented ? "" : "uninst"}">${u.instrumented ? "instrumented" : "uninstrumented"}</span> <span class="badge meas">measurement</span></p>
-    <div class="kv"><div>class</div><div>${esc(u.class)}${L.base_class ? ` wrapping ${esc(L.base_class)} (${L.base_bits ?? "?"}-bit)` : ""}</div>
+    <div class="kv"><div>class</div><div>${esc(u.class)}${L.base_class ? ` wrapping ${esc(L.base_class)} (${L.base_bits ? L.base_bits + "-bit" : "full precision, not quantized"})` : ""}</div>
     <div>total params</div><div>${big(u.total_params)}</div><div>trainable</div><div>${big(u.trainable_params)}</div>
     ${u.lora ? `<div>LoRA rank r</div><div>${L.rank}</div><div>scale (α/r)</div><div>${L.scale}</div><div>dropout</div><div>${L.dropout ?? "unavailable"}</div><div>A · B</div><div class="mono">${L.d_in}×${L.rank} · ${L.rank}×${L.d_out}</div><div>‖W₀‖ base</div><div>${fmt(L.base_weight_norm, 2)}</div>` : ""}
     <div>last sampled</div><div>${s ? `step ${s.step}` : NA + " (not sampled at or before this step)"}</div></div>
