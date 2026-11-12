@@ -196,6 +196,17 @@ def main(argv: list[str] | None = None) -> int:
     mo.add_argument("--warmup", type=int, default=3)
     mo.add_argument("--out", type=Path)
 
+    pk = sub.add_parser("picks", help="tap-to-pick review: generate looks, build the page, import picks, export training data")
+    pk.add_argument("action", choices=["generate", "site", "import", "pull", "delete", "export", "status"])
+    pk.add_argument("--slot", help="delete: the submission slot to remove (shown by pull)")
+    pk.add_argument("--url", default="https://jasmine-picks.vercel.app", help="pull: the live page")
+    pk.add_argument("--config", type=Path, default=None, help="default: configs/picks_v1.json")
+    pk.add_argument("--model", default=SELECTED_MODEL)
+    pk.add_argument("--file", type=Path, help="import: the picks file she sent back")
+    pk.add_argument("--site", type=Path, help="import: the page folder she was sent (ties picks to the looks shown)")
+    pk.add_argument("--reviewer", help="import: her name (default: the name in the file)")
+    pk.add_argument("--runs-dir", type=Path, default=DEFAULT_RUNS_DIR)
+
     rn = sub.add_parser("runs", help="summarize saved runs")
     rn.add_argument("--runs-dir", type=Path, default=DEFAULT_RUNS_DIR)
     rn.add_argument("--last", type=int, default=20)
@@ -379,6 +390,35 @@ def main(argv: list[str] | None = None) -> int:
         if a.run_name:
             cfg.run_name = a.run_name
         print(json.dumps(train(cfg, monitor=False if a.no_monitor else None), indent=1))
+        return 0
+
+    if a.cmd == "picks":
+        from . import picks as PK
+
+        cfg = PK.load_config(a.config)
+        if a.action == "generate":
+            done = PK.generate(cfg, a.model, a.runs_dir)
+            print(f"{sum(r['valid'] for r in done['runs'])}/{len(done['runs'])} valid runs")
+        elif a.action == "site":
+            print(json.dumps(PK.build_site(cfg), indent=1))
+        elif a.action == "import":
+            print(json.dumps(PK.import_picks(cfg, json.loads(a.file.read_text()), a.site, a.reviewer), indent=1))
+        elif a.action in ("pull", "delete"):
+            import os
+
+            key_file = PK.pick_dir(cfg).parent / ".read_key"
+            key = os.environ.get("PICKS_READ_KEY") or (key_file.read_text().strip() if key_file.exists() else "")
+            if not key:
+                print(f"set PICKS_READ_KEY or write it to {key_file}", file=sys.stderr)
+                return 2
+            if a.action == "delete":
+                print(json.dumps(PK.delete_submission(a.url, key, a.slot), indent=1))
+            else:
+                print(json.dumps(PK.pull(cfg, a.url, key, a.site), indent=1, ensure_ascii=False))
+        elif a.action == "export":
+            print(json.dumps(PK.export(cfg), indent=1))
+        else:
+            print(json.dumps(PK.status(cfg), indent=1))
         return 0
 
     if a.cmd == "monitor":

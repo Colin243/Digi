@@ -130,6 +130,34 @@ STYLE_BRIEFS = {
                  "half-turn mid-laugh. Gaze straight into the lens. Expression optional: a big natural grin "
                  "or a playful pout.",
     },
+    "japanese_fresh": {
+        "zh": "日系", "en": "Japanese fresh",
+        "brief": "Bright, airy and a little overexposed, like soft Japanese film. Pale, low-contrast colours, lots of "
+                 "light and empty space. Eye level, often half or full body with the subject small and off-centre. "
+                 "Quiet everyday moments: holding a drink, looking out of a window, a slow walk. Gaze away or down. "
+                 "Expression optional: a small natural smile.",
+    },
+    "hk_retro": {
+        "zh": "港风", "en": "Hong Kong retro",
+        "brief": "1990s Hong Kong film look: warm, saturated reds and greens, neon or tungsten light, a little "
+                 "grain and haze. Slightly low or eye-level angles, half body, the subject framed by signs, doorways "
+                 "or street lights. Cool, confident poses: a glance over the shoulder, a hand in the hair, leaning in "
+                 "a doorway. Gaze past the lens or a direct stare. Expression optional: unsmiling, cool.",
+    },
+    "french_chic": {
+        "zh": "法式", "en": "French chic",
+        "brief": "Effortless and elegant. Soft natural light, muted warm tones, classic architecture or café details. "
+                 "Eye level, full or three-quarter body, the subject walking or pausing mid-step, holding a bag or "
+                 "a coat. Gaze down or off to the side, sometimes a quick look back. Expression optional: a slight, "
+                 "closed-mouth smile.",
+    },
+    "korean_clean": {
+        "zh": "韩系", "en": "Korean clean",
+        "brief": "Clean, soft and polished. Even, flattering front or window light, bright skin, simple backgrounds "
+                 "with soft pastel or neutral colours. Eye level or slightly high, waist up or close-up, the subject "
+                 "centred. Gentle poses: hands near the face, a head tilt, sitting neatly. Gaze into the lens. "
+                 "Expression optional: a soft, bright smile.",
+    },
 }
 
 
@@ -337,6 +365,15 @@ LOOK_PLANS = (
     "from the earlier looks.",
 )
 
+# Extra plans for review pages that offer more choices (RunConfig.n_looks up to 5); the default stays three.
+EXTRA_LOOK_PLANS = (
+    "SEATED OR LEANING: use a seat, step, wall or ledge-free surface that is visible in the photo; a new camera "
+    "height from the earlier looks.",
+    "IN MOTION: a candid moment such as a slow walk, a turn or adjusting hair or clothes, on ground visible in "
+    "the photo; framing different from the earlier looks.",
+)
+ALL_LOOK_PLANS = LOOK_PLANS + EXTRA_LOOK_PLANS
+
 PEOPLE_RULE = ("If people are already visible in the photo, treat them as passers-by: direct only the subject, "
                "place the subject where the photo shows free space, and do not ask strangers to do anything.")
 
@@ -352,7 +389,7 @@ def _style_text(style_key: str | None, brief: str) -> str:
 
 
 def scene_look(scene: dict, style_key: str | None = None, brief: str = "", subject: str = DEFAULT_SUBJECT,
-               look: int = 1, previous: list[dict] | None = None) -> str:
+               look: int = 1, previous: list[dict] | None = None, total: int = 3) -> str:
     """Prompt for ONE shot-v2 look (look = 1..3); earlier looks are listed so this one differs."""
     shot = _blank(SCENE_SHOT_FIELDS)
     avoid = ""
@@ -367,7 +404,7 @@ def scene_look(scene: dict, style_key: str | None = None, brief: str = "", subje
         f"You are a portrait photography director. The SCENE photo is described as:\n{_shape(scene)}\n\n"
         f"{_style_text(style_key, brief)}\n\n"
         f"The subject will be {subject}. {PEOPLE_RULE}\n"
-        f"{avoid}Propose ONE portrait look, look {look} of 3, in that style. Plan for this look: {LOOK_PLANS[look - 1]}\n\n"
+        f"{avoid}Propose ONE portrait look, look {look} of {max(3, total)}, in that style. Plan for this look: {ALL_LOOK_PLANS[look - 1]}\n\n"
         f"{_guide('Fields', SCENE_SHOT_FIELDS)}\n\n"
         f"{SPECIFICITY_RULES}\n{DIRECTION_RULES}\n{_RULES}\n{_answer(shot)}"
     )

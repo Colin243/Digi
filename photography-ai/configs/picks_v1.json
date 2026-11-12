@@ -1,0 +1,9 @@
+{
+ "about": "Jasmine's tap-to-pick review: training-split CC0 scenes (never held-out or scene_eval) x the four starter themes. Each scene/theme gets one Scene Director run; she picks the look she likes best.",
+ "pick_id": "picks-v1",
+ "dataset": "train_v1",
+ "max_side": 1024,
+ "themes": ["relaxed_candid", "dreamy_atmospheric", "cool_editorial", "vintage_ccd"],
+ "scenes": ["02a793da47cc", "2b09b5b90017", "5749b16490a3", "9250e990ae5a", "86e244f17345",
+            "7b7485eaf8f1", "5dfe9d073b28", "ab74950a1739", "ee8ae9f0c364", "a962f0e663e3"]
+}
