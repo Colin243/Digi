@@ -76,6 +76,30 @@ behavior, not model quality or training overhead.
    distinction between measured scores and interpretation. Do not load two models concurrently.
 4. Run a small reviewed-data pilot, inspect held-out recommendations, then decide whether to scale.
 
+### Interactive 3D architecture
+
+**3D network** uses world-space XYZ coordinates, perspective, depth-sorted drawing and
+foreground hit testing. Drag to orbit, scroll to zoom, Shift-drag or right-drag to pan,
+and click an architectural unit to inspect its measurements. Two-finger gestures pan/pinch.
+The camera controls also offer zoom and **Reset view**; focus the canvas and use arrow keys,
+plus/minus, or zero/Home. **Grid** remains available, including keyboard-selectable cells.
+The camera angle persists across replay and metric updates, and resets when opening another run.
+
+The placement is a schematic layout, not physical neuron locations or a representation of
+learned concepts. The backdrop stays clear. Measured adapters have stronger local halos driven by the selected
+statistic; frozen units use a fixed subtle halo, and unsampled adapters remain hollow. Geometry changes only the view: node identity, data-flow connections and
+measurement provenance stay the same. Unsampled adapters remain hollow/unavailable.
+The renderer is local and dependency-free, with no continuous idle animation loop. The earlier
+training overhead result measures instrumentation; it does not measure interaction with this
+new 3D view.
+
+Verification: `node --test tests/monitor_network3d.test.cjs` covers rotation, perspective,
+bounded controls and foreground picking. Browser checks cover orbit vs selection, wheel/keyboard
+controls, pan/pinch, cancellation cleanup, metric/replay camera persistence, missing samples,
+the grid fallback and themes. The default framing was checked across 21 yaw angles and three
+pitch angles. These browser interaction checks use synthetic events; native trackpad/touch
+behavior still benefits from hands-on testing.
+
 **Replay.** The step slider scrubs every tab to "state as of step N". **▶ Replay** animates from
 step 0, so you can watch the adapter changes light up across the network. **Follow latest**
 returns to live.

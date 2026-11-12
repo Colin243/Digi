@@ -178,7 +178,11 @@ section.tab { border:0; padding:0; border-radius:0; background:none; }
 .detail { position:sticky; top:145px; background:var(--surface); border:1px solid var(--border); padding:18px; border-radius:9px; max-height:75vh; overflow:auto; }
 .detail h3 { font-size:12px; line-height:1.7; }
 .netwrap { background:#101110; border:1px solid #30312e; border-radius:9px; }
-.netwrap canvas { height:560px; min-height:360px; }
+.netwrap canvas { height:560px; min-height:360px; touch-action:none; cursor:grab; }
+.netwrap canvas.dragging { cursor:grabbing; }
+.net-tools { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; margin:0 0 10px; color:var(--muted); font-size:11px; }
+.net-tools [role=group] { display:flex; gap:5px; }
+.net-tools button { min-height:32px; font-size:12px; }
 #archHead .tile { background:var(--surface); padding:14px; border:1px solid var(--border); }
 #archScale { line-height:2; margin:12px 0; }
 .panel { background:var(--surface); padding:22px; border-radius:9px; line-height:1.7; }
@@ -234,13 +238,14 @@ th,td { padding:9px 7px; } td.num,.tile .v { font-variant-numeric:tabular-nums; 
   <div class="arch netmode" id="archGrid">
     <div>
       <div class="scale" id="archScale"></div>
-      <div class="seg" style="margin-bottom:8px"><button id="vNet" class="on">Network</button><button id="vGrid">Grid</button></div>
-      <div class="netwrap" id="netwrap"><canvas id="net"></canvas><div class="tip" id="netTip"></div>
+      <div class="seg" style="margin-bottom:8px"><button id="vNet" class="on">3D network</button><button id="vGrid">Grid</button></div>
+      <div id="netTools" class="net-tools"><span id="netHelp">Drag to orbit · scroll to zoom · Shift-drag to pan · click to inspect</span><div role="group" aria-label="3D camera controls"><button id="netZoomOut" aria-label="Zoom out">−</button><button id="netZoomIn" aria-label="Zoom in">+</button><button id="netReset">Reset view</button></div></div>
+      <div class="netwrap" id="netwrap"><canvas id="net" tabindex="0" aria-label="Interactive 3D architecture. Arrow keys rotate, plus and minus zoom, zero resets." aria-describedby="netHelp"></canvas><div class="tip" id="netTip"></div>
         <div class="nettitle" id="netTitle"></div>
         <div class="netleg"><span><i style="background:#3fb7e8"></i>vision encoder (frozen)</span><span><i style="background:#f4c542"></i>connector (frozen)</span>
         <span><i style="background:linear-gradient(90deg,#ff8a3d,#ff4f7b,#8f6bff)"></i>language model layers 0→27</span><span><i style="background:#555;border:1px solid #888"></i>frozen, no gradient</span>
         <span><i style="border:1.5px solid #ccc;background:transparent"></i>LoRA module not sampled yet (unavailable)</span>
-        <span>glow &amp; size of LoRA nodes = selected statistic · lines = real data flow</span></div></div>
+        <span>schematic layout · adapter glow &amp; size = selected metric · frozen halos fixed · lines = data flow</span></div></div>
       <div class="flow" id="flow" style="display:none"></div>
     </div>
     <div class="detail" id="detail"><div class="empty">Click a block or a LoRA cell.</div></div>
@@ -554,8 +559,14 @@ function renderArch() {
     }
   }
   html += `</div><div class="sub" style="margin-top:6px">rows: decoder layers · columns: q k v o (attention), g u d (MLP gate/up/down)</div></div>`;
+  const focusedCell=$("#flow").contains(document.activeElement)?document.activeElement.dataset.sel:null;
   $("#flow").innerHTML = html;
-  $("#flow").querySelectorAll("[data-sel]").forEach((el) => el.onclick = () => { S.selected = el.dataset.sel; renderArch(); });
+  $("#flow").querySelectorAll("[data-sel]").forEach(el => {
+    el.setAttribute("role","button");el.tabIndex=0;el.setAttribute("aria-label",el.title);
+    const choose=()=>{S.selected=el.dataset.sel;renderArch();[...$("#flow").querySelectorAll("[data-sel]")].find(x=>x.dataset.sel===S.selected)?.focus({preventScroll:true});};
+    el.onclick=choose;el.onkeydown=ev=>{if(ev.key==="Enter"||ev.key===" "){ev.preventDefault();choose();}};
+  });
+  if(focusedCell)[...$("#flow").querySelectorAll("[data-sel]")].find(el=>el.dataset.sel===focusedCell)?.focus({preventScroll:true});
   drawNet(lo, hi);
   renderDetail();
 }
@@ -605,14 +616,41 @@ function renderDetail() {
 // "dataflow"). Positions are a deterministic layout, not learned geometry. Glow = the selected measured
 // statistic; it shows where adapter weights moved, not what was learned.
 S.view = "net";
-$("#vNet").onclick = () => { S.view = "net"; $("#vNet").classList.add("on"); $("#vGrid").classList.remove("on"); $("#netwrap").style.display = ""; $("#flow").style.display = "none"; $("#archGrid").classList.add("netmode"); renderArch(); };
-$("#vGrid").onclick = () => { S.view = "grid"; $("#vGrid").classList.add("on"); $("#vNet").classList.remove("on"); $("#netwrap").style.display = "none"; $("#flow").style.display = ""; $("#archGrid").classList.remove("netmode"); renderArch(); };
+$("#vNet").onclick = () => { S.view = "net"; $("#vNet").classList.add("on"); $("#vGrid").classList.remove("on"); $("#netwrap").style.display = ""; $("#netTools").style.display = ""; $("#flow").style.display = "none"; $("#archGrid").classList.add("netmode"); renderArch(); };
+$("#vGrid").onclick = () => { S.view = "grid"; $("#vGrid").classList.add("on"); $("#vNet").classList.remove("on"); $("#netwrap").style.display = "none"; $("#netTools").style.display = "none"; $("#flow").style.display = ""; $("#archGrid").classList.remove("netmode"); renderArch(); };
 function rnd(seed) { let x = Math.sin(seed * 9301 + 49297) * 233280; return x - Math.floor(x); }
 function lmColor(i, n, a = 1) {  // orange -> pink -> violet along depth
   const t = n > 1 ? i / (n - 1) : 0; const stops = [[255, 138, 61], [255, 79, 123], [143, 107, 255]];
   const k = t < 0.5 ? 0 : 1, u = t < 0.5 ? t * 2 : (t - 0.5) * 2; const c = stops[k].map((v, j) => Math.round(v + (stops[k + 1][j] - v) * u));
   return `rgba(${c[0]},${c[1]},${c[2]},${a})`;
 }
+// BEGIN NETWORK3D MATH
+// Pure camera math, shared by rendering and Node regression tests. Positive depth is farther away.
+const Network3D = (() => {
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const camera = () => ({ yaw:-0.24, pitch:0.12, zoom:1, panX:0, panY:0 });
+  const rotate = (p, c) => {
+    const cy=Math.cos(c.yaw), sy=Math.sin(c.yaw), cp=Math.cos(c.pitch), sp=Math.sin(c.pitch);
+    const x=p.x*cy+p.z*sy, z=-p.x*sy+p.z*cy;
+    return {x, y:p.y*cp-z*sp, z:p.y*sp+z*cp};
+  };
+  const project = (p, c, w, h) => {
+    const r=rotate(p,c), perspective=1400/Math.max(160,1400+r.z);
+    const scale=Math.min(Math.max(100,w-50)/1100,Math.max(100,h-120)/1100)*c.zoom*perspective;
+    return {x:w/2+c.panX+r.x*scale,y:(h-90)/2+c.panY+r.y*scale,depth:r.z,scale};
+  };
+  const zoom = (c, factor) => { c.zoom=clamp(c.zoom*factor,0.4,3.5); };
+  const orbit = (c, dx, dy) => { c.yaw=(c.yaw+dx*0.006)%(2*Math.PI); c.pitch=clamp(c.pitch+dy*0.006,-Math.PI*.49,Math.PI*.49); };
+  const pan = (c, dx, dy, w, h) => { c.panX=clamp(c.panX+dx,-w,w); c.panY=clamp(c.panY+dy,-h,h); };
+  const pick = (nodes, x, y) => {
+    let best=null;
+    for(const n of nodes) if(Math.hypot(n.px-x,n.py-y)<=Math.max(9,n.screenR+4) && (!best||n.depth<best.depth)) best=n;
+    return best;
+  };
+  return {camera,rotate,project,zoom,orbit,pan,pick};
+})();
+// END NETWORK3D MATH
+
 function buildNet(W, H) {
   const a = S.run.architecture; const nodes = [], edges = [], byKey = {};
   const add = (n) => { nodes.push(n); byKey[n.key] = n; return n; };
@@ -659,48 +697,129 @@ function buildNet(W, H) {
     for (const m of [g, u]) if (m && d) edges.push([m, d, lmColor(i, lb.length, 0.28)]);
     prev = d || hub;
   });
-  return { nodes, edges, W, H };
+  for(const n of nodes) {
+    const block=Number(n.key.split(":").pop());
+    if(n.kind==="lora") {
+      const module=LORA_COLS.indexOf(n.key.split(".").pop()), angle=module/LORA_COLS.length*Math.PI*2+n.layer*.4;
+      n.z=95*Math.sin(n.layer/Math.max(lb.length-1,1)*Math.PI*2)+68*Math.sin(angle);
+    } else if(n.kind==="hub") n.z=95*Math.sin(block/Math.max(lb.length-1,1)*Math.PI*2);
+    else if(n.key.includes("vision_encoder") && Number.isFinite(block)) n.z=85*Math.sin(block*.65);
+    else if(n.key.includes("deepstack")) n.z=-95+Number(n.key.split(".").pop())*95;
+    else n.z=0;
+  }
+  // Center once in world space; changing viewport size never changes the 3D model.
+  for(const axis of ["x","y","z"]) {
+    const values=nodes.map(n=>n[axis]), center=(Math.min(...values)+Math.max(...values))/2;
+    for(const n of nodes)n[axis]-=center;
+  }
+  return {nodes,edges};
 }
 function drawNet(lo, hi) {
-  if (S.view !== "net" || !S.run || !S.run.architecture) return;
-  const cv = $("#net"); const W = cv.clientWidth || 800, H = cv.clientHeight || 520; const dpr = window.devicePixelRatio || 1;
-  if (cv.width !== W * dpr || cv.height !== H * dpr) { cv.width = W * dpr; cv.height = H * dpr; }
-  if (!S.net || S.net.W !== W || S.net.H !== H || S.net.path !== S.path) { S.net = buildNet(W, H); S.net.path = S.path; }
-  const ctx = cv.getContext("2d"); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.fillStyle = "#101110"; ctx.fillRect(0, 0, W, H);
-  const val = (n) => { if (n.kind !== "lora") return null; const s = lastSampleFor(n.key); return s ? s.v[S.metric] : undefined; };
-  ctx.lineWidth = 0.7;
-  for (const [p, q, c] of S.net.edges) { ctx.strokeStyle = c; ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.stroke(); }
-  ctx.globalCompositeOperation = "lighter";
-  for (const n of S.net.nodes) {
-    n.v = val(n);
-    if (n.kind !== "lora" || n.v == null || !isFinite(n.v)) continue;
-    const t = hi > lo ? Math.max(0, (n.v - lo) / (hi - lo)) : 0.5; const R = 4 + 16 * Math.sqrt(t);
-    const g = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, R); g.addColorStop(0, lmColor(n.layer, 28, 0.08 + 0.32 * t)); g.addColorStop(1, lmColor(n.layer, 28, 0));
-    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(n.x, n.y, R, 0, Math.PI * 2); ctx.fill();
+  if(S.view!=="net"||!S.run?.architecture) return;
+  const cv=$("#net"),W=cv.clientWidth||800,H=cv.clientHeight||560,dpr=window.devicePixelRatio||1;
+  if(cv.width!==W*dpr||cv.height!==H*dpr){cv.width=W*dpr;cv.height=H*dpr;}
+  if(!S.net||S.net.path!==S.path){S.net=buildNet(1000,600);S.net.path=S.path;S.netCamera=Network3D.camera();}
+  const camera=S.netCamera;
+  S.netRange=[lo,hi];
+  const ctx=cv.getContext("2d");ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.fillStyle="#101110";ctx.fillRect(0,0,W,H);
+  const amount=n=>hi>lo?Math.max(0,Math.min(1,(n.v-lo)/(hi-lo))):0.5;
+  for(const n of S.net.nodes){
+    const p=Network3D.project(n,camera,W,H);n.px=p.x;n.py=p.y;n.depth=p.depth;n.scale=p.scale;
+    const sample=n.kind==="lora"?lastSampleFor(n.key):null;n.v=sample?sample.v[S.metric]:null;
+    n.screenR=Math.max(2,(n.kind==="lora"&&Number.isFinite(n.v)?2+3*Math.sqrt(amount(n)):n.r)*p.scale);
   }
-  ctx.globalCompositeOperation = "source-over";
-  for (const n of S.net.nodes) {
-    ctx.beginPath();
-    if (n.kind === "lora") {
-      if (n.v == null || !isFinite(n.v)) { ctx.strokeStyle = "rgba(220,220,230,0.7)"; ctx.lineWidth = 1; ctx.arc(n.x, n.y, 2.6, 0, Math.PI * 2); ctx.stroke(); }
-      else { const t = hi > lo ? (n.v - lo) / (hi - lo) : 0.5; ctx.fillStyle = `rgba(255,255,255,${0.45 + 0.55 * Math.max(t, 0)})`; ctx.arc(n.x, n.y, 1.6 + 2.6 * Math.sqrt(Math.max(t, 0)), 0, Math.PI * 2); ctx.fill(); }
-    } else { ctx.fillStyle = n.kind === "hub" ? n.col : n.col; ctx.globalAlpha = n.kind === "frozen" ? 0.75 : 1; ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1; }
-    if (S.selected === n.key) { ctx.strokeStyle = "#fff"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(n.x, n.y, 9, 0, Math.PI * 2); ctx.stroke(); }
+  // Painter's order applies to edges and nodes together, so nearer geometry covers farther geometry.
+  const items=S.net.edges.map(edge=>({edge,depth:(edge[0].depth+edge[1].depth)/2}));
+  items.push(...S.net.nodes.map(node=>({node,depth:node.depth})));
+  items.sort((a,b)=>b.depth-a.depth);
+  for(const item of items){
+    if(item.edge){
+      const [a,b,color]=item.edge;ctx.globalAlpha=.7;ctx.strokeStyle=color;ctx.lineWidth=.8;
+      ctx.beginPath();ctx.moveTo(a.px,a.py);ctx.lineTo(b.px,b.py);ctx.stroke();ctx.globalAlpha=1;continue;
+    }
+    const n=item.node, measured=n.kind==="lora"&&n.v!=null&&Number.isFinite(n.v);
+    const fade=Math.max(.4,Math.min(1,1-n.depth/1000));
+    if(measured){
+      const t=amount(n),R=n.screenR*(3+2*Math.sqrt(t));
+      const glow=ctx.createRadialGradient(n.px,n.py,0,n.px,n.py,R);
+      glow.addColorStop(0,lmColor(n.layer,28,.65+.25*t));
+      glow.addColorStop(.3,lmColor(n.layer,28,.35+.25*t));
+      glow.addColorStop(.65,lmColor(n.layer,28,.08+.12*t));
+      glow.addColorStop(1,lmColor(n.layer,28,0));
+      ctx.fillStyle=glow;ctx.beginPath();ctx.arc(n.px,n.py,R,0,Math.PI*2);ctx.fill();
+    }
+    ctx.globalAlpha=fade;ctx.beginPath();ctx.arc(n.px,n.py,n.screenR,0,Math.PI*2);
+    if(n.kind==="lora"&&!measured){ctx.strokeStyle="#c9c7c0";ctx.lineWidth=1;ctx.stroke();}
+    else {
+      ctx.shadowColor=measured?lmColor(n.layer,28):n.col;ctx.shadowBlur=measured?8:5;
+      ctx.fillStyle=measured?lmColor(n.layer,28):n.col;ctx.fill();ctx.shadowBlur=0;
+      if(measured){ctx.fillStyle=`rgba(255,255,255,${.25+.65*amount(n)})`;ctx.beginPath();ctx.arc(n.px,n.py,n.screenR*.6,0,Math.PI*2);ctx.fill();}
+    }
+    ctx.globalAlpha=1;
+    if(S.selected===n.key){ctx.strokeStyle="#fff";ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(n.px,n.py,n.screenR+5,0,Math.PI*2);ctx.stroke();}
   }
-  const sampled = S.net.nodes.filter((n) => n.kind === "lora" && n.v != null).length, total = S.net.nodes.filter((n) => n.kind === "lora").length;
-  $("#netTitle").textContent = `${(METRICS.find((m) => m[0] === S.metric) || [, S.metric])[1]} · step ≤ ${S.cursor} · ${sampled}/${total} LoRA modules sampled`;
+  // Small world axes make depth and orbit direction visible, independent of zoom/pan.
+  const origin={x:W-45,y:H-43},axisCamera={...camera,zoom:1,panX:0,panY:0};
+  for(const [label,p,color] of [["X",{x:24,y:0,z:0},"#ef8c7d"],["Y",{x:0,y:24,z:0},"#76bd96"],["Z",{x:0,y:0,z:24},"#7ba7e6"]]){
+    const r=Network3D.rotate(p,axisCamera);ctx.strokeStyle=color;ctx.fillStyle=color;ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(origin.x,origin.y);ctx.lineTo(origin.x+r.x,origin.y+r.y);ctx.stroke();ctx.font="10px system-ui";ctx.fillText(label,origin.x+r.x+2,origin.y+r.y-2);
+  }
+  const sampled=S.net.nodes.filter(n=>n.kind==="lora"&&n.v!=null).length,total=S.net.nodes.filter(n=>n.kind==="lora").length;
+  $("#netTitle").textContent=`3D · ${(METRICS.find(m=>m[0]===S.metric)||[,S.metric])[1]} · step ≤ ${S.cursor} · ${sampled}/${total} sampled · ${camera.zoom.toFixed(1)}×`;
 }
 (() => {
-  const cv = $("#net"), tip = $("#netTip");
-  const hit = (ev) => { if (!S.net) return null; const r = cv.getBoundingClientRect(), x = ev.clientX - r.left, y = ev.clientY - r.top; let best = null, bd = 14 * 14;
-    for (const n of S.net.nodes) { const d = (n.x - x) ** 2 + (n.y - y) ** 2; if (d < bd) { bd = d; best = n; } } return best; };
-  cv.onmousemove = (ev) => { const n = hit(ev); if (!n) { tip.style.display = "none"; return; }
-    const r = cv.getBoundingClientRect();
-    tip.innerHTML = `<b>${esc(n.label)}</b>` + (n.kind === "lora" ? `<br>${esc(S.metric)}: ${n.v == null ? "unavailable (not sampled yet)" : shortNum(n.v)}` : "");
-    tip.style.display = "block"; tip.style.left = Math.min(r.width - 260, ev.clientX - r.left + 12) + "px"; tip.style.top = (ev.clientY - r.top + 12) + "px"; };
-  cv.onmouseleave = () => { tip.style.display = "none"; };
-  cv.onclick = (ev) => { const n = hit(ev); if (n) { S.selected = n.key; renderArch(); $("#detail").scrollIntoView({ behavior: "smooth", block: "nearest" }); } };
+  const cv=$("#net"),tip=$("#netTip"),pointers=new Map();let dragged=false,gesture=null,frame=null;
+  const repaint=()=>{if(frame!==null)return;frame=requestAnimationFrame(()=>{frame=null;if(S.view==="net"&&$("#tab-arch").classList.contains("on"))drawNet(...(S.netRange||[0,1]));});};
+  const camera=()=>S.netCamera||(S.netCamera=Network3D.camera());
+  const hit=ev=>{if(!S.net)return null;const r=cv.getBoundingClientRect();return Network3D.pick(S.net.nodes,ev.clientX-r.left,ev.clientY-r.top);};
+  const multi=()=>{const [a,b]=[...pointers.values()];return a&&b?{x:(a.x+b.x)/2,y:(a.y+b.y)/2,d:Math.hypot(a.x-b.x,a.y-b.y)}:null;};
+  const select=ev=>{const n=hit(ev);if(n){S.selected=n.key;renderArch();$("#detail").scrollIntoView({behavior:matchMedia("(prefers-reduced-motion: reduce)").matches?"instant":"smooth",block:"nearest"});}};
+  cv.onpointerdown=ev=>{
+    if(ev.button!==0&&ev.button!==2)return;
+    cv.focus({preventScroll:true});tip.style.display="none";
+    if(!pointers.size)dragged=false;
+    pointers.set(ev.pointerId,{x:ev.clientX,y:ev.clientY,startX:ev.clientX,startY:ev.clientY});
+    if(pointers.size>1){dragged=true;gesture=multi();}
+    try{cv.setPointerCapture(ev.pointerId);}catch(_){}
+    cv.classList.add("dragging");ev.preventDefault();
+  };
+  cv.onpointermove=ev=>{
+    const old=pointers.get(ev.pointerId);
+    if(old){
+      const dx=ev.clientX-old.x,dy=ev.clientY-old.y;
+      if(Math.hypot(ev.clientX-old.startX,ev.clientY-old.startY)>5)dragged=true;
+      pointers.set(ev.pointerId,{...old,x:ev.clientX,y:ev.clientY});
+      if(pointers.size>1){const next=multi();if(gesture&&next){Network3D.zoom(camera(),gesture.d>0?next.d/gesture.d:1);Network3D.pan(camera(),next.x-gesture.x,next.y-gesture.y,cv.clientWidth,cv.clientHeight);}gesture=next;}
+      else if(dragged){if(ev.shiftKey||ev.buttons===2)Network3D.pan(camera(),dx,dy,cv.clientWidth,cv.clientHeight);else Network3D.orbit(camera(),dx,dy);}
+      repaint();return;
+    }
+    if(ev.pointerType==="touch")return;
+    const n=hit(ev);if(!n){tip.style.display="none";return;}
+    const r=cv.getBoundingClientRect();tip.innerHTML=`<b>${esc(n.label)}</b>`+(n.kind==="lora"?`<br>${esc(S.metric)}: ${n.v==null?"unavailable (not sampled yet)":shortNum(n.v)}`:"");
+    tip.style.display="block";tip.style.left=Math.max(4,Math.min(r.width-260,ev.clientX-r.left+12))+"px";tip.style.top=Math.min(r.height-70,ev.clientY-r.top+12)+"px";
+  };
+  cv.onpointerup=ev=>{
+    if(!pointers.has(ev.pointerId))return;
+    if(pointers.size===1&&!dragged&&ev.button===0)select(ev);
+    pointers.delete(ev.pointerId);gesture=multi();
+    if(!pointers.size)cv.classList.remove("dragging");
+  };
+  cv.onpointercancel=ev=>{pointers.delete(ev.pointerId);gesture=multi();dragged=true;if(!pointers.size)cv.classList.remove("dragging");};
+  cv.onlostpointercapture=ev=>{pointers.delete(ev.pointerId);gesture=multi();if(!pointers.size)cv.classList.remove("dragging");};
+  cv.onpointerleave=()=>{tip.style.display="none";};cv.oncontextmenu=ev=>ev.preventDefault();
+  cv.addEventListener("wheel",ev=>{ev.preventDefault();const unit=ev.deltaMode===1?16:ev.deltaMode===2?cv.clientHeight:1;Network3D.zoom(camera(),Math.exp(-Math.max(-300,Math.min(300,ev.deltaY*unit))*.0015));tip.style.display="none";repaint();},{passive:false});
+  const reset=()=>{S.netCamera=Network3D.camera();repaint();};
+  $("#netReset").onclick=reset;
+  $("#netZoomIn").onclick=()=>{Network3D.zoom(camera(),1.2);repaint();};
+  $("#netZoomOut").onclick=()=>{Network3D.zoom(camera(),1/1.2);repaint();};
+  cv.onkeydown=ev=>{
+    if(ev.key==="0"||ev.key==="Home")reset();
+    else if(ev.key==="+"||ev.key==="=")Network3D.zoom(camera(),1.2);
+    else if(ev.key==="-")Network3D.zoom(camera(),1/1.2);
+    else if(ev.key.startsWith("Arrow")){const dx=ev.key==="ArrowLeft"?-16:ev.key==="ArrowRight"?16:0,dy=ev.key==="ArrowUp"?-16:ev.key==="ArrowDown"?16:0;Network3D.orbit(camera(),dx,dy);}
+    else return;ev.preventDefault();repaint();
+  };
 })();
 
 // ---------------------------------------------------------------- checkpoints
