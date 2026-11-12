@@ -193,6 +193,38 @@ th,td { padding:9px 7px; } td.num,.tile .v { font-variant-numeric:tabular-nums; 
 @media(max-width:650px) { header,main,nav,.studio-title { padding-left:16px; padding-right:16px; } #tiles { grid-template-columns:repeat(2,minmax(0,1fr)); } #tiles .tile { padding:14px; border-bottom:1px solid var(--border); } #tiles .tile .v { font-size:25px; } .chart:first-child,.chart:nth-child(2),.chart { grid-column:span 12; } .banner,.replay { margin-left:16px; margin-right:16px; } nav { gap:14px; } .studio-title h2 { font-size:27px; } .readonly-note { display:none; } .path-fields { right:-95px; } input[type=text] { min-width:180px; } }
 @media(prefers-reduced-motion:reduce) { * { transition:none!important; } }
 
+
+/* Observatory: the same real graph, presented as a quiet local display. */
+.display-hud,.display-controls { display:none; }
+body.network-display { overflow:hidden; background:#080a0f; }
+.network-display header,.network-display .studio-title,.network-display .replay,.network-display nav,
+.network-display #archHead,.network-display #archScale,.network-display #netTools,.network-display #archGrid>div>.seg { display:none!important; }
+.network-display main,.network-display #tab-arch,.network-display #archGrid { padding:0; margin:0; border:0; display:block; }
+.network-display #netwrap { position:fixed; inset:0; margin:0; border:0; border-radius:0; }
+.network-display #net { width:100vw; height:100vh!important; min-height:0; }
+.network-display #detail { display:none; }
+.network-display.display-inspector #detail { display:block; position:fixed; right:26px; top:106px; width:310px; max-height:calc(100vh - 230px); z-index:12; background:#141820; color:#eceef4; --text:#eceef4; --text-2:#b9bfce; --muted:#9ba4b7; --border:#303746; --surface:#141820; }
+.network-display .display-hud { display:flex; position:fixed; inset:28px 32px auto; z-index:10; justify-content:space-between; gap:20px; pointer-events:none; color:#eeeef3; }
+.observatory-brand { font-size:25px; font-weight:600; letter-spacing:-1px; }
+.observatory-brand span { color:#749deb; }
+.observatory-label { margin-top:5px; font-size:10px; letter-spacing:.19em; color:#969fb3; text-transform:uppercase; }
+.display-meta { text-align:right; font-size:12px; line-height:1.8; color:#bdc4d1; }
+#displayProvenance { color:#d7b77b; font-size:11px; }
+.network-display .display-controls { max-width:calc(100vw - 32px); box-sizing:border-box; display:flex; flex-wrap:wrap; align-items:center; gap:7px; position:fixed; z-index:15; right:28px; bottom:25px; padding:7px; border:1px solid #2b303c; border-radius:12px; background:rgba(17,21,29,.88); transition:opacity .4s; }
+.display-controls button { color:#dbe0eb; background:transparent; border-color:transparent; font-size:12px; min-height:32px; }
+.display-controls button:hover,.display-controls button[aria-pressed=true] { background:#262e3d; color:#fff; }
+.network-display #netTitle { max-width:calc(100vw - 64px); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; left:32px; top:95px; font-size:11px; color:#8e98ad; }
+.network-display .netleg { display:none; }
+.network-display.display-resting .display-controls { opacity:.12; }
+.network-display.display-resting .display-controls:hover,.network-display.display-resting .display-controls:focus-within { opacity:1; }
+.network-display.display-resting .netleg,.network-display.display-resting #netTitle { opacity:.14; }
+.network-display #banners { position:fixed; bottom:90px; left:20px; z-index:16; max-width:700px; }
+.network-display #banners .banner:not(.crit) { display:none; }
+.network-display.display-offline #displayRunState { color:#efb4a4; }
+@media(max-width:550px) { .network-display .display-hud { inset:16px 16px auto!important; gap:8px; } .observatory-brand { font-size:21px; } .observatory-label { font-size:8px; letter-spacing:.12em; } .display-meta { max-width:54vw; font-size:10px; overflow-wrap:anywhere; } #displayProvenance { font-size:9px; } .display-controls button { font-size:11px; padding:5px 8px; } }
+@media(max-height:430px) { .network-display #netTitle { display:none; } .network-display.display-inspector #detail { top:80px; max-height:calc(100vh - 190px); } }
+@media(max-width:850px) { .network-display .netleg { display:none; } .network-display .display-hud { inset:20px 20px auto; } .network-display .display-controls { right:16px; bottom:16px; } .display-meta { max-width:190px; } }
+
 </style>
 </head>
 <body>
@@ -239,7 +271,7 @@ th,td { padding:9px 7px; } td.num,.tile .v { font-variant-numeric:tabular-nums; 
     <div>
       <div class="scale" id="archScale"></div>
       <div class="seg" style="margin-bottom:8px"><button id="vNet" class="on">3D network</button><button id="vGrid">Grid</button></div>
-      <div id="netTools" class="net-tools"><span id="netHelp">Drag to orbit · scroll to zoom · Shift-drag to pan · click to inspect</span><div role="group" aria-label="3D camera controls"><button id="netZoomOut" aria-label="Zoom out">−</button><button id="netZoomIn" aria-label="Zoom in">+</button><button id="netReset">Reset view</button></div></div>
+      <div id="netTools" class="net-tools"><span id="netHelp">Drag to orbit · scroll to zoom · Shift-drag to pan · click to inspect</span><div role="group" aria-label="3D camera controls"><button id="netZoomOut" aria-label="Zoom out">−</button><button id="netZoomIn" aria-label="Zoom in">+</button><button id="netReset">Reset view</button><button id="netDisplay">Display mode ↗</button></div></div>
       <div class="netwrap" id="netwrap"><canvas id="net" tabindex="0" aria-label="Interactive 3D architecture. Arrow keys rotate, plus and minus zoom, zero resets." aria-describedby="netHelp"></canvas><div class="tip" id="netTip"></div>
         <div class="nettitle" id="netTitle"></div>
         <div class="netleg"><span><i style="background:#3fb7e8"></i>vision encoder (frozen)</span><span><i style="background:#f4c542"></i>connector (frozen)</span>
@@ -272,6 +304,8 @@ th,td { padding:9px 7px; } td.num,.tile .v { font-variant-numeric:tabular-nums; 
 </section>
 <section class="tab" id="tab-log"><div id="logOut"></div></section>
 </main>
+<div class="display-hud"><div><div class="observatory-brand">Digi<span>.</span></div><div class="observatory-label">Model observatory</div></div><div class="display-meta"><div id="displayModel">Loading architecture…</div><div id="displayRunState"></div><div id="displayProvenance"></div></div></div>
+<div class="display-controls" role="group" aria-label="Observatory display controls"><button id="displayMotion" aria-pressed="true">Idle orbit on</button><button id="displayReset">Reset view</button><button id="displayInspect" aria-pressed="false">Inspector</button><button id="displayCycle" aria-pressed="false" title="During idle orbit, inspect the next node every 5 seconds. Off keeps the current node.">Cycle nodes off</button><button id="displayFullscreen">Full screen</button><button id="displayExit">Dashboard ↗</button></div>
 <script>
 "use strict";
 const $ = (s) => document.querySelector(s);
@@ -318,12 +352,14 @@ $("#openBtn").onclick = async () => {
 
 async function openRun(path) {
   if (!path) return;
+  const generation=(S.runGeneration||0)+1;S.runGeneration=generation;stopPlay();
   clearTimeout(S.timer);
-  Object.assign(S, { path, events: [], offset: 0, malformed: 0, steps: [], evals: [], samples: [], ckpts: [], notes: [], dropped: null,
+  Object.assign(S, { path, run:null, net:null, readyGeneration:null, events: [], offset: 0, malformed: 0, steps: [], evals: [], samples: [], ckpts: [], notes: [], dropped: null,
     summary: null, start: null, follow: true, selected: null, playing: null });
   const u = new URL(location.href); u.searchParams.set("run", path); history.replaceState(null, "", u);
   const r = await api("/api/run", { path });
-  S.run = r; S.state = r.state; S.status = r.status || {};
+  if(generation!==S.runGeneration)return;
+  S.run = r; S.readyGeneration=generation; S.net=null; S.state = r.state; S.status = r.status || {};
   renderBanners(); renderLog(); renderArchShell(); fillCkptSelects(r.checkpoints);
   await poll();
 }
@@ -331,18 +367,25 @@ async function openRun(path) {
 // ---------------------------------------------------------------- polling (reconnect = continue from byte offset)
 async function poll() {
   clearTimeout(S.timer);
+  if(S.polling){S.refreshQueued=true;return;}
+  if(!S.path||S.readyGeneration!==S.runGeneration)return;
+  S.polling=true;
+  const generation=S.runGeneration,path=S.path;
   try {
-    let more = true;
-    while (more) {
-      const r = await api("/api/events", { path: S.path, offset: S.offset });
-      ingest(r.events); S.offset = r.next_offset; S.malformed += r.malformed;
-      S.state = r.state; S.status = r.status || {}; more = !r.eof && r.events.length > 0;
+    let more=true;
+    while(more){
+      const r=await api("/api/events",{path,offset:S.offset});
+      if(generation!==S.runGeneration)return;
+      ingest(r.events);S.offset=r.next_offset;S.malformed+=r.malformed;
+      S.state=r.state;S.status=r.status||{};more=!r.eof&&r.events.length>0;
     }
-    S.lastPoll = Date.now(); S.pollErr = null;
-  } catch (e) { S.pollErr = e.message; }
-  render();
-  const live = S.state === "running";
-  S.timer = setTimeout(poll, live ? 2000 : 15000);
+    S.lastPoll=Date.now();S.pollErr=null;
+  } catch(e){if(generation===S.runGeneration)S.pollErr=e.message;}
+  finally {
+    S.polling=false;
+    if(generation===S.runGeneration){render();S.timer=setTimeout(poll,S.state==="running"?2000:15000);}
+    if(S.refreshQueued){S.refreshQueued=false;clearTimeout(S.timer);S.timer=setTimeout(poll,0);}
+  }
 }
 function ingest(evs) {
   for (const e of evs) {
@@ -359,6 +402,9 @@ function ingest(evs) {
   S.maxStep = S.steps.length ? S.steps[S.steps.length - 1].step : 0;
   if (S.follow) S.cursor = S.maxStep;
 }
+
+// Refresh data without navigation, resetting the camera, or reloading the WKWebView.
+window.DigiMonitor={refresh(){if(S.path&&S.run)void poll();}};
 
 // ---------------------------------------------------------------- replay controls
 const cur = $("#cursor");
@@ -389,10 +435,17 @@ function render() {
   $("#pollInfo").textContent = S.pollErr ? `poll failed: ${S.pollErr} (retrying)` :
     st === "running" ? `heartbeat ${age !== null ? age.toFixed(0) + "s" : "?"} ago · polling every 2 s` :
     st === "interrupted" ? `no heartbeat for ${dur(age)}: training process is gone; showing what was logged` : "";
-  renderBanners();
+  renderBanners(); renderDisplayStatus();
   const on = document.querySelector("section.tab.on").id;
   if (on === "tab-live") renderLive();
-  if (on === "tab-arch") renderArch();
+  if(on==="tab-arch"){
+    if(document.body.classList.contains("network-display")){
+      if(S.run?.architecture&&window.DigiDisplay?.isVisible()){
+        const {lo,hi}=architectureRange();drawNet(lo,hi);
+        if(document.body.classList.contains("display-inspector"))renderDetail();
+      }
+    }else renderArch();
+  }
   if (on === "tab-log") renderLog();
 }
 function visSteps() { return S.steps.filter((s) => s.step <= S.cursor); }
@@ -525,12 +578,15 @@ function renderArchShell() {
   $("#metricSel").onchange = (e) => { S.metric = e.target.value; renderArch(); };
 }
 function unitsBy(pred) { return (S.run.architecture.units || []).filter(pred); }
+function architectureRange(units=unitsBy(u=>u.group==="language_model"&&u.lora)){
+  const values=units.map(u=>{const s=lastSampleFor(u.name);return s?s.v[S.metric]:null;}).filter(v=>v!=null&&isFinite(v));
+  return {lo:values.length?Math.min(...values):0,hi:values.length?Math.max(...values):1,count:values.length};
+}
 function renderArch() {
   const a = S.run && S.run.architecture; if (!a) return;
   const lmUnits = unitsBy((u) => u.group === "language_model" && u.lora);
-  const vals = lmUnits.map((u) => { const s = lastSampleFor(u.name); return s ? s.v[S.metric] : null; }).filter((v) => v != null && isFinite(v));
-  const lo = vals.length ? Math.min(...vals) : 0, hi = vals.length ? Math.max(...vals) : 1;
-  $("#rampLab").textContent = vals.length ? `${shortNum(lo)} → ${shortNum(hi)} (at step ≤ ${S.cursor})` : "no samples yet";
+  const {lo,hi,count}=architectureRange(lmUnits);
+  $("#rampLab").textContent = count ? `${shortNum(lo)} → ${shortNum(hi)} (at step ≤ ${S.cursor})` : "no samples yet";
   const color = (v) => { if (v == null || !isFinite(v)) return null; const t = hi > lo ? (v - lo) / (hi - lo) : 0.5; return `var(--seq${Math.min(6, Math.floor(t * 6.999))})`; };
   const blocks = (g) => [...new Set(unitsBy((u) => u.group === g && u.block != null).map((u) => u.block))].sort((x, y) => x - y);
   const vb = blocks("vision_encoder"), cb = unitsBy((u) => u.group === "connector");
@@ -637,7 +693,7 @@ const Network3D = (() => {
   const project = (p, c, w, h) => {
     const r=rotate(p,c), perspective=1400/Math.max(160,1400+r.z);
     const scale=Math.min(Math.max(100,w-50)/1100,Math.max(100,h-120)/1100)*c.zoom*perspective;
-    return {x:w/2+c.panX+r.x*scale,y:(h-90)/2+c.panY+r.y*scale,depth:r.z,scale};
+    return {x:w/2+c.panX+r.x*scale,y:(h-90)/2+30+c.panY+r.y*scale,depth:r.z,scale};
   };
   const zoom = (c, factor) => { c.zoom=clamp(c.zoom*factor,0.4,3.5); };
   const orbit = (c, dx, dy) => { c.yaw=(c.yaw+dx*0.006)%(2*Math.PI); c.pitch=clamp(c.pitch+dy*0.006,-Math.PI*.49,Math.PI*.49); };
@@ -647,82 +703,66 @@ const Network3D = (() => {
     for(const n of nodes) if(Math.hypot(n.px-x,n.py-y)<=Math.max(9,n.screenR+4) && (!best||n.depth<best.depth)) best=n;
     return best;
   };
-  return {camera,rotate,project,zoom,orbit,pan,pick};
+  const shouldOrbit=(s,now)=>s.enabled&&s.display&&s.visible&&!s.hidden&&(!s.reducedMotion||s.motionOverride)&&now-s.lastInteraction>=20000;
+  const shouldCycle=(s,now)=>s.enabled&&s.orbiting&&s.inspectorOpen&&s.lastChange!=null&&now-s.lastChange>=5000;
+  const nextNode=(nodes,selected)=>nodes.length?nodes[(nodes.findIndex(n=>n.key===selected)+1)%nodes.length].key:null;
+  return {camera,rotate,project,zoom,orbit,pan,pick,shouldOrbit,shouldCycle,nextNode};
 })();
 // END NETWORK3D MATH
 
 function buildNet(W, H) {
-  const a = S.run.architecture; const nodes = [], edges = [], byKey = {};
-  const add = (n) => { nodes.push(n); byKey[n.key] = n; return n; };
-  const vb = [...new Set(a.units.filter((u) => u.group === "vision_encoder" && u.block != null).map((u) => u.block))].sort((x, y) => x - y);
-  const lb = [...new Set(a.units.filter((u) => u.group === "language_model" && u.block != null).map((u) => u.block))].sort((x, y) => x - y);
-  // vision: a drifting cloud on the left
-  const pe = add({ key: "block:vision_encoder:vision_tower.patch_embed.proj", x: W * 0.04, y: H * 0.62, r: 4, kind: "frozen", col: "#3fb7e8", label: "patch embedding (frozen)" });
-  let prev = pe;
-  vb.forEach((b, i) => {
-    const t = i / Math.max(vb.length - 1, 1);
-    const n = add({ key: `block:vision_encoder:${b}`, x: W * (0.06 + 0.2 * t) + (rnd(b + 1) - 0.5) * W * 0.05, y: H * (0.55 - 0.18 * Math.sin(t * 3.2)) + (rnd(b + 7) - 0.5) * H * 0.38,
-      r: 3.5, kind: "frozen", col: `rgba(${Math.round(63 + 40 * t)},${Math.round(183 - 30 * t)},232,1)`, label: `vision block ${b} (frozen)` });
-    edges.push([prev, n, "rgba(120,190,255,0.35)"]); prev = n;
+  const a=S.run.architecture,nodes=[],edges=[],byKey={};
+  const add=n=>{nodes.push(n);byKey[n.key]=n;return n;};
+  const blocks=g=>[...new Set(a.units.filter(u=>u.group===g&&u.block!=null).map(u=>u.block))].sort((a,b)=>a-b);
+  const vb=blocks("vision_encoder"),lb=blocks("language_model");
+  let prev=add({key:"block:vision_encoder:vision_tower.patch_embed.proj",x:-385,y:175,z:0,r:4,kind:"frozen",col:"#58b9ea",label:"patch embedding (frozen)"});
+  // Vision blocks occupy a layered volume; no decorative units or connections are invented.
+  vb.forEach((b,i)=>{
+    const x=(i%3-1)*65,y=(Math.floor(i/3)%4-1.5)*65,z=(Math.floor(i/12)-.5)*125;
+    const n=add({key:`block:vision_encoder:${b}`,x:-370+x,y,z,r:3.6,kind:"frozen",col:"#67b7e5",label:`vision block ${b} (frozen)`});
+    edges.push([prev,n,"rgba(111,187,234,.55)"]);prev=n;
   });
-  const lastV = prev;
-  const merger = add({ key: "block:connector:vision_tower.merger", x: W * 0.33, y: H * 0.5, r: 6, kind: "frozen", col: "#f4c542", label: "patch merger (frozen)" });
-  edges.push([lastV, merger, "rgba(244,197,66,0.5)"]);
-  const df = a.dataflow || {}; const dsi = df.deepstack_visual_indexes || [];
-  const ds = dsi.map((vi, j) => {
-    const n = add({ key: `block:connector:vision_tower.deepstack_merger_list.${j}`, x: W * (0.3 + 0.025 * j), y: H * (0.18 + 0.12 * j), r: 4.5, kind: "frozen", col: "#f4c542", label: `DeepStack merger ${j} (frozen): vision block ${vi} → LM layer ${j}` });
-    if (byKey[`block:vision_encoder:${vi}`]) edges.push([byKey[`block:vision_encoder:${vi}`], n, "rgba(244,197,66,0.45)"]);
-    return n;
+  const merger=add({key:"block:connector:vision_tower.merger",x:-155,y:15,z:0,r:6,kind:"frozen",col:"#dfbc71",label:"patch merger (frozen)"});
+  edges.push([prev,merger,"rgba(221,188,116,.6)"]);
+  const ds=(a.dataflow?.deepstack_visual_indexes||[]).map((vi,j)=>{
+    const n=add({key:`block:connector:vision_tower.deepstack_merger_list.${j}`,x:-200+j*23,y:-100+j*83,z:-65+j*65,r:4.5,kind:"frozen",col:"#dfbc71",label:`DeepStack merger ${j} (frozen): vision block ${vi} → LM layer ${j}`});
+    const source=byKey[`block:vision_encoder:${vi}`];if(source)edges.push([source,n,"rgba(221,188,116,.4)"]);return n;
   });
-  // language model: hubs along a sweeping arc; 7 LoRA modules orbit each hub
-  const emb = add({ key: "block:language_model:language_model.model.embed_tokens", x: W * 0.38, y: H * 0.62, r: 5, kind: "frozen", col: "#888", label: "token embedding (frozen, 4-bit; tied LM head)" });
-  edges.push([merger, emb, "rgba(244,197,66,0.5)"]);
-  prev = emb;
-  const loraUnits = Object.fromEntries(a.units.filter((u) => u.lora).map((u) => [u.name, u]));
-  lb.forEach((b, i) => {
-    const t = i / Math.max(lb.length - 1, 1);
-    const hx = W * (0.43 + 0.52 * t), hy = H * (0.6 - 0.42 * Math.sin(t * Math.PI * 1.05)) + (rnd(b + 40) - 0.5) * H * 0.1;
-    const hub = add({ key: `block:language_model:${b}`, x: hx, y: hy, r: 3, kind: "hub", col: lmColor(i, lb.length), label: `decoder layer ${b} (base frozen)` });
-    edges.push([prev, hub, lmColor(i, lb.length, 0.55)]);
-    if (i < ds.length) edges.push([ds[i], hub, "rgba(244,197,66,0.35)"]);
-    const mods = LORA_COLS.map((c, j) => {
-      const sub = ["gate_proj", "up_proj", "down_proj"].includes(c) ? "mlp" : "self_attn";
-      const name = `language_model.model.layers.${b}.${sub}.${c}`; if (!loraUnits[name]) return null;
-      const ang = (j / LORA_COLS.length) * Math.PI * 2 + rnd(b * 7 + j) * 0.6 + i * 0.4, rad = 18 + rnd(b * 13 + j) * 30;
-      return add({ key: name, x: hx + Math.cos(ang) * rad, y: hy + Math.sin(ang) * rad * 1.25, r: 2.5, kind: "lora", col: lmColor(i, lb.length), layer: i, label: `${name.replace("language_model.model.", "")} · LoRA r=${loraUnits[name].lora.rank}` });
+  const emb=add({key:"block:language_model:language_model.model.embed_tokens",x:-75,y:82,z:0,r:4.5,kind:"frozen",col:"#8793aa",label:"token embedding (frozen; tied LM head)"});
+  edges.push([merger,emb,"rgba(221,188,116,.55)"]);prev=emb;
+  const loraUnits=Object.fromEntries(a.units.filter(u=>u.lora).map(u=>[u.name,u]));
+  // Low-discrepancy placement fills an ellipsoidal volume, rather than a single spiral or shell.
+  lb.forEach((b,i)=>{
+    const t=i/Math.max(lb.length-1,1),angle=i*Math.PI*(3-Math.sqrt(5)),vertical=1-2*(i+.5)/lb.length,ring=Math.sqrt(1-vertical*vertical),shell=.48+.52*((i*.61803398875)%1);
+    const hx=210+230*shell*ring*Math.cos(angle),hy=185*shell*vertical,hz=205*shell*ring*Math.sin(angle);
+    const hub=add({key:`block:language_model:${b}`,x:hx,y:hy,z:hz,r:3,kind:"hub",col:lmColor(i,lb.length),label:`decoder layer ${b} (base frozen)`});
+    edges.push([prev,hub,lmColor(i,lb.length,.52)]);if(i<ds.length)edges.push([ds[i],hub,"rgba(221,188,116,.4)"]);
+    const mods=LORA_COLS.map((c,j)=>{
+      const sub=["gate_proj","up_proj","down_proj"].includes(c)?"mlp":"self_attn",name=`language_model.model.layers.${b}.${sub}.${c}`;
+      if(!loraUnits[name])return null;
+      const orbit=j*Math.PI*(3-Math.sqrt(5))+i*.35,up=1-2*(j+.5)/LORA_COLS.length,radius=34,across=Math.sqrt(1-up*up);
+      return add({key:name,x:hx+Math.cos(orbit)*across*radius,y:hy+up*radius,z:hz+Math.sin(orbit)*across*radius,r:2.5,kind:"lora",col:lmColor(i,lb.length),layer:i,label:`${name.replace("language_model.model.","")} · LoRA r=${loraUnits[name].lora.rank}`});
     });
-    const [q, k, v, o, g, u, d] = mods;
-    for (const m of [q, k, v]) if (m) { edges.push([hub, m, lmColor(i, lb.length, 0.28)]); if (o) edges.push([m, o, lmColor(i, lb.length, 0.28)]); }
-    for (const m of [g, u]) if (m && o) edges.push([o, m, lmColor(i, lb.length, 0.28)]);
-    for (const m of [g, u]) if (m && d) edges.push([m, d, lmColor(i, lb.length, 0.28)]);
-    prev = d || hub;
+    const [q,k,v,o,g,u,d]=mods;
+    for(const m of [q,k,v])if(m){edges.push([hub,m,lmColor(i,lb.length,.32)]);if(o)edges.push([m,o,lmColor(i,lb.length,.32)]);}
+    for(const m of [g,u])if(m&&o)edges.push([o,m,lmColor(i,lb.length,.32)]);
+    for(const m of [g,u])if(m&&d)edges.push([m,d,lmColor(i,lb.length,.32)]);
+    prev=d||hub;
   });
-  for(const n of nodes) {
-    const block=Number(n.key.split(":").pop());
-    if(n.kind==="lora") {
-      const module=LORA_COLS.indexOf(n.key.split(".").pop()), angle=module/LORA_COLS.length*Math.PI*2+n.layer*.4;
-      n.z=95*Math.sin(n.layer/Math.max(lb.length-1,1)*Math.PI*2)+68*Math.sin(angle);
-    } else if(n.kind==="hub") n.z=95*Math.sin(block/Math.max(lb.length-1,1)*Math.PI*2);
-    else if(n.key.includes("vision_encoder") && Number.isFinite(block)) n.z=85*Math.sin(block*.65);
-    else if(n.key.includes("deepstack")) n.z=-95+Number(n.key.split(".").pop())*95;
-    else n.z=0;
-  }
-  // Center once in world space; changing viewport size never changes the 3D model.
-  for(const axis of ["x","y","z"]) {
-    const values=nodes.map(n=>n[axis]), center=(Math.min(...values)+Math.max(...values))/2;
-    for(const n of nodes)n[axis]-=center;
-  }
+  for(const axis of ["x","y","z"]){const values=nodes.map(n=>n[axis]),center=(Math.min(...values)+Math.max(...values))/2;for(const n of nodes)n[axis]-=center;}
   return {nodes,edges};
 }
 function drawNet(lo, hi) {
   if(S.view!=="net"||!S.run?.architecture) return;
   const cv=$("#net"),W=cv.clientWidth||800,H=cv.clientHeight||560,dpr=window.devicePixelRatio||1;
   if(cv.width!==W*dpr||cv.height!==H*dpr){cv.width=W*dpr;cv.height=H*dpr;}
-  if(!S.net||S.net.path!==S.path){S.net=buildNet(1000,600);S.net.path=S.path;S.netCamera=Network3D.camera();}
+  if(!S.net||S.net.path!==S.path||S.net.architecture!==S.run.architecture){S.net=buildNet(1000,600);S.net.path=S.path;S.net.architecture=S.run.architecture;S.netCamera=Network3D.camera();}
   const camera=S.netCamera;
   S.netRange=[lo,hi];
   const ctx=cv.getContext("2d");ctx.setTransform(dpr,0,0,dpr,0,0);
-  ctx.fillStyle="#101110";ctx.fillRect(0,0,W,H);
+  ctx.fillStyle="#080b12";ctx.fillRect(0,0,W,H);
+  const backdrop=ctx.createRadialGradient(W*.5,H*.44,0,W*.5,H*.44,Math.max(W,H)*.7);
+  backdrop.addColorStop(0,"#111722");backdrop.addColorStop(1,"#07090e");ctx.fillStyle=backdrop;ctx.fillRect(0,0,W,H);
   const amount=n=>hi>lo?Math.max(0,Math.min(1,(n.v-lo)/(hi-lo))):0.5;
   for(const n of S.net.nodes){
     const p=Network3D.project(n,camera,W,H);n.px=p.x;n.py=p.y;n.depth=p.depth;n.scale=p.scale;
@@ -735,7 +775,7 @@ function drawNet(lo, hi) {
   items.sort((a,b)=>b.depth-a.depth);
   for(const item of items){
     if(item.edge){
-      const [a,b,color]=item.edge;ctx.globalAlpha=.7;ctx.strokeStyle=color;ctx.lineWidth=.8;
+      const [a,b,color]=item.edge;ctx.globalAlpha=Math.max(.3,Math.min(.9,.7-item.depth/900));ctx.strokeStyle=color;ctx.lineWidth=a.kind!=="lora"&&b.kind!=="lora"?1.2:.65;
       ctx.beginPath();ctx.moveTo(a.px,a.py);ctx.lineTo(b.px,b.py);ctx.stroke();ctx.globalAlpha=1;continue;
     }
     const n=item.node, measured=n.kind==="lora"&&n.v!=null&&Number.isFinite(n.v);
@@ -760,13 +800,16 @@ function drawNet(lo, hi) {
     if(S.selected===n.key){ctx.strokeStyle="#fff";ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(n.px,n.py,n.screenR+5,0,Math.PI*2);ctx.stroke();}
   }
   // Small world axes make depth and orbit direction visible, independent of zoom/pan.
+  if(!document.body.classList.contains("network-display")){
   const origin={x:W-45,y:H-43},axisCamera={...camera,zoom:1,panX:0,panY:0};
   for(const [label,p,color] of [["X",{x:24,y:0,z:0},"#ef8c7d"],["Y",{x:0,y:24,z:0},"#76bd96"],["Z",{x:0,y:0,z:24},"#7ba7e6"]]){
     const r=Network3D.rotate(p,axisCamera);ctx.strokeStyle=color;ctx.fillStyle=color;ctx.lineWidth=1;
     ctx.beginPath();ctx.moveTo(origin.x,origin.y);ctx.lineTo(origin.x+r.x,origin.y+r.y);ctx.stroke();ctx.font="10px system-ui";ctx.fillText(label,origin.x+r.x+2,origin.y+r.y-2);
   }
+  }
   const sampled=S.net.nodes.filter(n=>n.kind==="lora"&&n.v!=null).length,total=S.net.nodes.filter(n=>n.kind==="lora").length;
-  $("#netTitle").textContent=`3D · ${(METRICS.find(m=>m[0]===S.metric)||[,S.metric])[1]} · step ≤ ${S.cursor} · ${sampled}/${total} sampled · ${camera.zoom.toFixed(1)}×`;
+  const caption=`3D · ${(METRICS.find(m=>m[0]===S.metric)||[,S.metric])[1]} · step ≤ ${S.cursor} · ${sampled}/${total} sampled · ${camera.zoom.toFixed(1)}×`;
+  if($("#netTitle").textContent!==caption)$("#netTitle").textContent=caption;
 }
 (() => {
   const cv=$("#net"),tip=$("#netTip"),pointers=new Map();let dragged=false,gesture=null,frame=null;
@@ -774,7 +817,7 @@ function drawNet(lo, hi) {
   const camera=()=>S.netCamera||(S.netCamera=Network3D.camera());
   const hit=ev=>{if(!S.net)return null;const r=cv.getBoundingClientRect();return Network3D.pick(S.net.nodes,ev.clientX-r.left,ev.clientY-r.top);};
   const multi=()=>{const [a,b]=[...pointers.values()];return a&&b?{x:(a.x+b.x)/2,y:(a.y+b.y)/2,d:Math.hypot(a.x-b.x,a.y-b.y)}:null;};
-  const select=ev=>{const n=hit(ev);if(n){S.selected=n.key;renderArch();$("#detail").scrollIntoView({behavior:matchMedia("(prefers-reduced-motion: reduce)").matches?"instant":"smooth",block:"nearest"});}};
+  const select=ev=>{const n=hit(ev);if(n){S.selected=n.key;renderArch();if(document.body.classList.contains("network-display")){document.body.classList.add("display-inspector");$("#displayInspect").setAttribute("aria-pressed","true");}$("#detail").scrollIntoView({behavior:matchMedia("(prefers-reduced-motion: reduce)").matches?"instant":"smooth",block:"nearest"});}};
   cv.onpointerdown=ev=>{
     if(ev.button!==0&&ev.button!==2)return;
     cv.focus({preventScroll:true});tip.style.display="none";
@@ -813,6 +856,59 @@ function drawNet(lo, hi) {
   $("#netReset").onclick=reset;
   $("#netZoomIn").onclick=()=>{Network3D.zoom(camera(),1.2);repaint();};
   $("#netZoomOut").onclick=()=>{Network3D.zoom(camera(),1/1.2);repaint();};
+  const motionPreference=matchMedia("(prefers-reduced-motion: reduce)");
+  const displayState={enabled:!motionPreference.matches,display:false,visible:true,hidden:document.hidden,reducedMotion:motionPreference.matches,motionOverride:false,lastInteraction:performance.now()};
+  let autoStarted=null,lastOrbit=null,autoPitch=0,cycleEnabled=false,lastCycle=null,cycleRun=null;
+  const activity=()=>{displayState.lastInteraction=performance.now();autoStarted=null;lastOrbit=null;lastCycle=null;document.body.classList.remove("display-resting");};
+  for(const name of ["pointerdown","pointermove","wheel","keydown","click"])document.addEventListener(name,activity,{passive:true});
+  document.addEventListener("visibilitychange",()=>{displayState.hidden=document.hidden;lastOrbit=null;});
+  motionPreference.addEventListener("change",e=>{displayState.reducedMotion=e.matches;if(!displayState.motionOverride)displayState.enabled=!e.matches;updateMotionButton();});
+  function updateMotionButton(){ $("#displayMotion").textContent=displayState.enabled?"Idle orbit on":"Idle orbit off";$("#displayMotion").setAttribute("aria-pressed",String(displayState.enabled)); }
+  window.DigiDisplay={
+    set(enabled){
+      displayState.display=Boolean(enabled);document.body.classList.toggle("network-display",displayState.display);document.body.classList.remove("display-inspector");$("#displayInspect").setAttribute("aria-pressed","false");
+      const u=new URL(location.href);if(enabled)u.searchParams.set("display","network");else u.searchParams.delete("display");history.replaceState(null,"",u);
+      if(enabled){document.querySelector('[data-tab="arch"]').click();$("#vNet").click();}
+      activity();render();repaint();
+    },
+    setVisible(visible){displayState.visible=Boolean(visible);lastOrbit=null;if(visible)repaint();},
+    isVisible(){return displayState.visible&&!document.hidden;}
+  };
+  $("#netDisplay").onclick=()=>window.DigiDisplay.set(true);
+  $("#displayExit").onclick=()=>window.DigiDisplay.set(false);
+  $("#displayReset").onclick=()=>{activity();reset();};
+  $("#displayMotion").onclick=()=>{activity();displayState.enabled=!displayState.enabled;displayState.motionOverride=true;updateMotionButton();};
+  $("#displayInspect").onclick=()=>{const open=document.body.classList.toggle("display-inspector");$("#displayInspect").setAttribute("aria-pressed",String(open));};
+  $("#displayCycle").onclick=()=>{
+    activity();cycleEnabled=!cycleEnabled;lastCycle=null;
+    $("#displayCycle").setAttribute("aria-pressed",String(cycleEnabled));
+    $("#displayCycle").textContent=cycleEnabled?"Cycle nodes · 5s":"Cycle nodes off";
+  };
+  $("#displayFullscreen").onclick=async()=>{
+    if(window.webkit?.messageHandlers?.digi){window.webkit.messageHandlers.digi.postMessage({action:"toggleFullscreen"});return;}
+    try{if(document.fullscreenElement)await document.exitFullscreen();else if(document.documentElement.requestFullscreen)await document.documentElement.requestFullscreen();}catch(_){/* Display mode still fills the available window. */}
+  };
+  document.addEventListener("keydown",ev=>{if(ev.key==="Escape"&&displayState.display){window.DigiDisplay.set(false);ev.preventDefault();}});
+  function tick(){
+    const now=performance.now(),active=Network3D.shouldOrbit(displayState,now)&&!pointers.size&&S.net&&S.view==="net";
+    if(displayState.display)document.body.classList.toggle("display-resting",now-displayState.lastInteraction>3500);
+    if(active){
+      if(autoStarted===null){autoStarted=now;lastOrbit=now;autoPitch=camera().pitch;}
+      const dt=Math.min(100,now-(lastOrbit||now));camera().yaw=(camera().yaw+dt*.000045)%(Math.PI*2);camera().pitch=Math.max(-Math.PI*.49,Math.min(Math.PI*.49,autoPitch+.10*Math.sin((now-autoStarted)/18000)));lastOrbit=now;repaint();
+    } else {lastOrbit=null;autoStarted=null;}
+    const inspectorOpen=document.body.classList.contains("display-inspector");
+    if(cycleEnabled&&active&&inspectorOpen){
+      if(lastCycle===null||cycleRun!==S.path){lastCycle=now;cycleRun=S.path;}
+      if(Network3D.shouldCycle({enabled:cycleEnabled,orbiting:active,inspectorOpen,lastChange:lastCycle},now)){
+        const next=Network3D.nextNode(S.net.nodes,S.selected);
+        if(next!==null){S.selected=next;renderDetail();repaint();}
+        lastCycle=now;
+      }
+    }else lastCycle=null;
+    setTimeout(tick,active?50:displayState.hidden||!displayState.visible?1000:250);
+  }
+  updateMotionButton();tick();
+  if(new URLSearchParams(location.search).get("display")==="network")window.DigiDisplay.set(true);
   cv.onkeydown=ev=>{
     if(ev.key==="0"||ev.key==="Home")reset();
     else if(ev.key==="+"||ev.key==="=")Network3D.zoom(camera(),1.2);
@@ -864,6 +960,13 @@ function renderLog() {
   <h3>Metric definitions</h3><table><tr><th>metric</th><th>cadence</th><th>definition</th></tr>${Object.entries(m.metric_definitions).map(([k, d]) => `<tr><td class="mono">${esc(k)}</td><td>${esc(d.cadence || "")}</td><td>${esc(d.def)}${d.unit ? ` (${esc(d.unit)})` : ""}</td></tr>`).join("")}</table>`;
 }
 
+function renderDisplayStatus(){
+  const manifest=S.run?.manifest;
+  $("#displayModel").textContent=manifest?.base_model?.repo?.split("/").pop()||"Loading architecture…";
+  document.body.classList.toggle("display-offline",Boolean(S.pollErr));
+  $("#displayRunState").textContent=S.pollErr?`Offline · retrying · last recorded step ${S.cursor}`:S.run?`${S.state||""} · step ${S.cursor} / ${S.maxStep} · ${S.run.architecture?.totals?.lora_units||0} LoRA modules`:"Connecting to local monitor";
+  $("#displayProvenance").textContent=manifest?.data?.includes_unapproved_drafts?"Smoke data · unreviewed labels · measurements only":S.run?"Measured weights · schematic layout":"";
+}
 window.addEventListener("resize", () => render());
 loadRuns().catch((e) => { $("#banners").innerHTML = `<div class="banner crit">${esc(e.message)}</div>`; });
 </script>
