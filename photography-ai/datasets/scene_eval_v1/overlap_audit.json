@@ -1,0 +1,850 @@
+{
+ "dataset": "scene_eval_v1",
+ "version": "1.0.0",
+ "references": [
+  {
+   "name": "train_v1",
+   "kind": "training",
+   "items": 821,
+   "with_pixels": 359
+  },
+  {
+   "name": "portrait_v1",
+   "kind": "evaluation",
+   "items": 69,
+   "with_pixels": 69
+  }
+ ],
+ "fixtures": [
+  {
+   "id": "cafe-green-chair-window",
+   "split": "heldout",
+   "group": "xhs_aligned",
+   "location": null,
+   "pixels_checked": true,
+   "hits": [],
+   "warnings": [],
+   "status": "ok"
+  },
+  {
+   "id": "cafe-window-seats-bright",
+   "split": "heldout",
+   "group": "xhs_aligned",
+   "location": null,
+   "pixels_checked": true,
+   "hits": [],
+   "warnings": [],
+   "status": "ok"
+  },
+  {
+   "id": "cafe-piano-bistro",
+   "split": "heldout",
+   "group": "xhs_aligned",
+   "location": "maybachufer, berlin, germany",
+   "pixels_checked": true,
+   "hits": [],
+   "warnings": [
+    {
+     "reference": "train_v1",
+     "item": "03e9ec5c8cf2",
+     "why": "same_city",
+     "city": "berlin"
+    },
+    {
+     "reference": "train_v1",
+     "item": "162346399554",
+     "why": "same_city",
+     "city": "berlin"
+    },
+    {
+     "reference": "train_v1",
+     "item": "3c5505b80996",
+     "why": "same_city",
+     "city": "berlin"
+    },
+    {
+     "reference": "train_v1",
+     "item": "892ee26266aa",
+     "why": "same_city",
+     "city": "berlin"
+    }
+   ],
+   "status": "warn"
+  },
+  {
+   "id": "cafe-terrace-occupied",
+   "split": "heldout",
+   "group": "xhs_aligned",
+   "location": "café mishiguene lafinur 3368 hoy en cabello 3181 , buenos aires, argentina",
+   "pixels_checked": true,
+   "hits": [],
+   "warnings": [],
+   "status": "ok"
+  },
+  {
+   "id": "cafe-orange-chairs-terrace",
+   "split": "heldout",
+   "group": "xhs_aligned",
+   "location": "leiden, netherlands",
+   "pixels_checked": true,
+   "hits": [],
+   "warnings": [],
+   "status": "ok"
+  },
+  {
+   "id": "storefront-white-facade",
+   "split": "heldout",
+   "group": "xhs_aligned",
+   "location": null,
+   "pixels_checked": true,
+   "hits": [],
+   "warnings": [],
+   "status": "ok"
+  },
+  {
+   "id": "storefront-night-street",
+   "split": "heldout",
+   "group": "xhs_aligned",
+   "location": "annapolis, united states",
+   "pixels_checked": true,
+   "hits": [],
+   "warnings": [],
+   "status": "ok"
+  },
+  {
+   "id": "tiled-facade-windows",
+   "split": "heldout",
+   "group": "xhs_aligned",
+   "location": null,
+   "pixels_checked": true,
+   "hits": [],
+   "warnings": [],
+   "status": "ok"
+  },
+  {
+   "id": "white-stairs",
+   "split": "heldout",
+   "group": "xhs_aligned",
+   "location": "munich, germany",
+   "pixels_checked": true,
+   "hits": [],
+   "warnings": [],
+   "status": "ok"
+  },
+  {
+   "id": "red-shutter-wall",
+   "split": "heldout",
+   "group": "xhs_aligned",
+   "location": "samsonite, ciudad de méxico, mexico",
+   "pixels_checked": true,
+   "hits": [],
+   "warnings": [],
+   "status": "ok"
+  },
+  {
+   "id": "underground-parking",
+   "split": "heldout",
+   "group": "ordinary",
+   "location": "landmark place, cardiff, united kingdom",
+   "pixels_checked": true,
+   "hits": [],
+   "warnings": [],
+   "status": "ok"
+  },
+  {
+   "id": "office-parking-lot",
+   "split": "heldout",
+   "group": "ordinary",
+   "location": "danderyds sjukhus, danderyd, sweden",
+   "pixels_checked": true,
+   "hits": [],
+   "warnings": [],
+   "status": "ok"
+  },
+  {
+   "id": "school-corridor",
+   "split": "heldout",
+   "group": "ordinary",
+   "location": "tokyo, chiyodaku, 日本",
+   "pixels_checked": true,
+   "hits": [],
+   "warnings": [],
+   "status": "ok"
+  },
+  {
+   "id": "dark-hallway-occupied",
+   "split": "heldout",
+   "group": "ordinary",
+   "location": null,
+   "pixels_checked": true,
+   "hits": [],
+   "warnings": [],
+   "status": "ok"
+  },
+  {
+   "id": "dim-store-aisle-occupied",
+   "split": "heldout",
+   "group": "ordinary",
+   "location": null,
+   "pixels_checked": true,
+   "hits": [],
+   "warnings": [],
+   "status": "ok"
+  },
+  {
+   "id": "desk-corner",
+   "split": "heldout",
+   "group": "ordinary",
+   "location": "heritage hill, grand rapids, united states",
+   "pixels_checked": true,
+   "hits": [],
+   "warnings": [
+    {
+     "reference": "train_v1",
+     "item": "1083ec8d18fe",
+     "why": "same_city",
+     "city": "grand rapids"
+    }
+   ],
+   "status": "warn"
+  },
+  {
+   "id": "fenced-sidewalk",
+   "split": "heldout",
+   "group": "ordinary",
+   "location": "santa barbara, usa",
+   "pixels_checked": true,
+   "hits": [],
+   "warnings": [],
+   "status": "ok"
+  },
+  {
+   "id": "crowded-sidewalk",
+   "split": "heldout",
+   "group": "ordinary",
+   "location": "toronto, canada",
+   "pixels_checked": true,
+   "hits": [],
+   "warnings": [
+    {
+     "reference": "train_v1",
+     "item": "58110adea1dc",
+     "why": "same_city",
+     "city": "toronto"
+    },
+    {
+     "reference": "train_v1",
+     "item": "6089afc6b42f",
+     "why": "same_city",
+     "city": "toronto"
+    },
+    {
+     "reference": "train_v1",
+     "item": "6c4b6dfb0eb6",
+     "why": "same_city",
+     "city": "toronto"
+    },
+    {
+     "reference": "train_v1",
+     "item": "8eba57529c17",
+     "why": "same_city",
+     "city": "toronto"
+    },
+    {
+     "reference": "train_v1",
+     "item": "938a1cf90c60",
+     "why": "same_city",
+     "city": "toronto"
+    },
+    {
+     "reference": "train_v1",
+     "item": "9b5d0fef5720",
+     "why": "same_city",
+     "city": "toronto"
+    },
+    {
+     "reference": "train_v1",
+     "item": "ab637a26cd58",
+     "why": "same_city",
+     "city": "toronto"
+    },
+    {
+     "reference": "train_v1",
+     "item": "f33cf0c65d99",
+     "why": "same_city",
+     "city": "toronto"
+    },
+    {
+     "reference": "train_v1",
+     "item": "fb1fdaad4b95",
+     "why": "same_city",
+     "city": "toronto"
+    },
+    {
+     "reference": "train_v1",
+     "item": "fc5ce8bfa80a",
+     "why": "same_city",
+     "city": "toronto"
+    },
+    {
+     "reference": "train_v1",
+     "item": "fd6350522802",
+     "why": "same_city",
+     "city": "toronto"
+    },
+    {
+     "reference": "train_v1",
+     "item": "fe4cefb5c34d",
+     "why": "same_city",
+     "city": "toronto"
+    },
+    {
+     "reference": "portrait_v1",
+     "item": "colorful-wall-headshot/inspiration_2.jpg",
+     "why": "same_city",
+     "city": "toronto"
+    }
+   ],
+   "status": "warn"
+  },
+  {
+   "id": "subway-platform",
+   "split": "heldout",
+   "group": "ordinary",
+   "location": "new york, usa",
+   "pixels_checked": true,
+   "hits": [],
+   "warnings": [
+    {
+     "reference": "train_v1",
+     "item": "08cd6971cb8e",
+     "why": "same_city",
+     "city": "new york"
+    },
+    {
+     "reference": "train_v1",
+     "item": "243ae62186d9",
+     "why": "same_city",
+     "city": "new york"
+    },
+    {
+     "reference": "train_v1",
+     "item": "2d06a02254fb",
+     "why": "same_city",
+     "city": "new york"
+    },
+    {
+     "reference": "train_v1",
+     "item": "3254782509fd",
+     "why": "same_city",
+     "city": "new york"
+    },
+    {
+     "reference": "train_v1",
+     "item": "3f7b84682176",
+     "why": "same_city",
+     "city": "new york"
+    },
+    {
+     "reference": "train_v1",
+     "item": "4dd3e899aa4f",
+     "why": "same_city",
+     "city": "new york"
+    },
+    {
+     "reference": "train_v1",
+     "item": "54e98d9da0b1",
+     "why": "same_city",
+     "city": "new york"
+    },
+    {
+     "reference": "train_v1",
+     "item": "596e70411ad6",
+     "why": "same_city",
+     "city": "new york"
+    },
+    {
+     "reference": "train_v1",
+     "item": "73f301fbd96f",
+     "why": "same_city",
+     "city": "new york"
+    },
+    {
+     "reference": "train_v1",
+     "item": "7b353af852e9",
+     "why": "same_city",
+     "city": "new york"
+    },
+    {
+     "reference": "train_v1",
+     "item": "87d70f1a62ea",
+     "why": "same_city",
+     "city": "new york"
+    },
+    {
+     "reference": "train_v1",
+     "item": "90af89d356cf",
+     "why": "same_city",
+     "city": "new york"
+    },
+    {
+     "reference": "train_v1",
+     "item": "a38fdae7f002",
+     "why": "same_city",
+     "city": "new york"
+    },
+    {
+     "reference": "train_v1",
+     "item": "a3e1b6531724",
+     "why": "same_city",
+     "city": "new york"
+    },
+    {
+     "reference": "train_v1",
+     "item": "a4738e34f79a",
+     "why": "same_city",
+     "city": "new york"
+    },
+    {
+     "reference": "train_v1",
+     "item": "a6865c9af25f",
+     "why": "same_city",
+     "city": "new york"
+    },
+    {
+     "reference": "train_v1",
+     "item": "a753f3ece231",
+     "why": "same_city",
+     "city": "new york"
+    },
+    {
+     "reference": "train_v1",
+     "item": "a86bc66a2602",
+     "why": "same_city",
+     "city": "new york"
+    },
+    {
+     "reference": "train_v1",
+     "item": "a8c9169d22a9",
+     "why": "same_city",
+     "city": "new york"
+    },
+    {
+     "reference": "train_v1",
+     "item": "b6e263efa3a9",
+     "why": "same_city",
+     "city": "new york"
+    },
+    {
+     "reference": "train_v1",
+     "item": "bcefb67ac14e",
+     "why": "same_city",
+     "city": "new york"
+    },
+    {
+     "reference": "train_v1",
+     "item": "d10c8ebfb099",
+     "why": "same_city",
+     "city": "new york"
+    },
+    {
+     "reference": "train_v1",
+     "item": "d8322fbb0862",
+     "why": "same_city",
+     "city": "new york"
+    },
+    {
+     "reference": "train_v1",
+     "item": "e92220d9515e",
+     "why": "same_city",
+     "city": "new york"
+    },
+    {
+     "reference": "train_v1",
+     "item": "ea7556921ac4",
+     "why": "same_city",
+     "city": "new york"
+    },
+    {
+     "reference": "train_v1",
+     "item": "ec31637f5d67",
+     "why": "same_city",
+     "city": "new york"
+    },
+    {
+     "reference": "train_v1",
+     "item": "f04d2e95767f",
+     "why": "same_city",
+     "city": "new york"
+    },
+    {
+     "reference": "train_v1",
+     "item": "f52b057e4869",
+     "why": "same_city",
+     "city": "new york"
+    },
+    {
+     "reference": "train_v1",
+     "item": "f5c3c5f95bec",
+     "why": "same_city",
+     "city": "new york"
+    },
+    {
+     "reference": "portrait_v1",
+     "item": "cafe-window-candid/inspiration_2.jpg",
+     "why": "same_city",
+     "city": "new york"
+    },
+    {
+     "reference": "portrait_v1",
+     "item": "colorful-wall-headshot/target.jpg",
+     "why": "same_city",
+     "city": "new york"
+    },
+    {
+     "reference": "portrait_v1",
+     "item": "night-street-moody/inspiration_2.jpg",
+     "why": "same_city",
+     "city": "new york"
+    },
+    {
+     "reference": "portrait_v1",
+     "item": "winter-portrait/target.jpg",
+     "why": "same_city",
+     "city": "new york"
+    }
+   ],
+   "status": "warn"
+  },
+  {
+   "id": "kitchen-stools",
+   "split": "heldout",
+   "group": "ordinary",
+   "location": "boston, united states",
+   "pixels_checked": true,
+   "hits": [],
+   "warnings": [
+    {
+     "reference": "train_v1",
+     "item": "00344b1938c2",
+     "why": "same_city",
+     "city": "boston"
+    },
+    {
+     "reference": "train_v1",
+     "item": "a62585098542",
+     "why": "same_city",
+     "city": "boston"
+    }
+   ],
+   "status": "warn"
+  },
+  {
+   "id": "dev-cafe-window-tables",
+   "split": "dev",
+   "group": "xhs_aligned",
+   "location": null,
+   "pixels_checked": true,
+   "hits": [],
+   "warnings": [],
+   "status": "ok"
+  },
+  {
+   "id": "dev-shop-shelves",
+   "split": "dev",
+   "group": "xhs_aligned",
+   "location": "london, united kingdom",
+   "pixels_checked": true,
+   "hits": [],
+   "warnings": [
+    {
+     "reference": "train_v1",
+     "item": "003df0c16847",
+     "why": "same_city",
+     "city": "london"
+    },
+    {
+     "reference": "train_v1",
+     "item": "0ff1f36657f8",
+     "why": "same_city",
+     "city": "london"
+    },
+    {
+     "reference": "train_v1",
+     "item": "141576670d5c",
+     "why": "same_city",
+     "city": "london"
+    },
+    {
+     "reference": "train_v1",
+     "item": "1972092116c3",
+     "why": "same_city",
+     "city": "london"
+    },
+    {
+     "reference": "train_v1",
+     "item": "1a338e818c65",
+     "why": "same_city",
+     "city": "london"
+    },
+    {
+     "reference": "train_v1",
+     "item": "2387660a4e72",
+     "why": "same_city",
+     "city": "london"
+    },
+    {
+     "reference": "train_v1",
+     "item": "2c75f3b1826e",
+     "why": "same_city",
+     "city": "london"
+    },
+    {
+     "reference": "train_v1",
+     "item": "2edee27a015a",
+     "why": "same_city",
+     "city": "london"
+    },
+    {
+     "reference": "train_v1",
+     "item": "39575d5b9f30",
+     "why": "same_city",
+     "city": "london"
+    },
+    {
+     "reference": "train_v1",
+     "item": "39eeefdf640c",
+     "why": "same_city",
+     "city": "london"
+    },
+    {
+     "reference": "train_v1",
+     "item": "400b04b024c4",
+     "why": "same_city",
+     "city": "london"
+    },
+    {
+     "reference": "train_v1",
+     "item": "41f2a07bd724",
+     "why": "same_city",
+     "city": "london"
+    },
+    {
+     "reference": "train_v1",
+     "item": "4a26506c8a33",
+     "why": "same_city",
+     "city": "london"
+    },
+    {
+     "reference": "train_v1",
+     "item": "4aad00d805f9",
+     "why": "same_city",
+     "city": "london"
+    },
+    {
+     "reference": "train_v1",
+     "item": "4eaef1957d0b",
+     "why": "same_city",
+     "city": "london"
+    },
+    {
+     "reference": "train_v1",
+     "item": "5122a3c80cf1",
+     "why": "same_city",
+     "city": "london"
+    },
+    {
+     "reference": "train_v1",
+     "item": "5923eed0571d",
+     "why": "same_city",
+     "city": "london"
+    },
+    {
+     "reference": "train_v1",
+     "item": "62f1615ee537",
+     "why": "same_city",
+     "city": "london"
+    },
+    {
+     "reference": "train_v1",
+     "item": "63a4f4cf5410",
+     "why": "same_city",
+     "city": "london"
+    },
+    {
+     "reference": "train_v1",
+     "item": "73e36f9548c5",
+     "why": "same_city",
+     "city": "london"
+    },
+    {
+     "reference": "train_v1",
+     "item": "7af367458cda",
+     "why": "same_city",
+     "city": "london"
+    },
+    {
+     "reference": "train_v1",
+     "item": "81e79b7d2529",
+     "why": "same_city",
+     "city": "london"
+    },
+    {
+     "reference": "train_v1",
+     "item": "82abb87a502e",
+     "why": "same_city",
+     "city": "london"
+    },
+    {
+     "reference": "train_v1",
+     "item": "835023839c51",
+     "why": "same_city",
+     "city": "london"
+    },
+    {
+     "reference": "train_v1",
+     "item": "910e35856086",
+     "why": "same_city",
+     "city": "london"
+    },
+    {
+     "reference": "train_v1",
+     "item": "92b991327e5f",
+     "why": "same_city",
+     "city": "london"
+    },
+    {
+     "reference": "train_v1",
+     "item": "9ea5625aab6c",
+     "why": "same_city",
+     "city": "london"
+    },
+    {
+     "reference": "train_v1",
+     "item": "a1f9a28a1a7a",
+     "why": "same_city",
+     "city": "london"
+    },
+    {
+     "reference": "train_v1",
+     "item": "be1acc2a82c3",
+     "why": "same_city",
+     "city": "london"
+    },
+    {
+     "reference": "train_v1",
+     "item": "c990f2abf8aa",
+     "why": "same_city",
+     "city": "london"
+    },
+    {
+     "reference": "train_v1",
+     "item": "ca8b04e0123f",
+     "why": "same_city",
+     "city": "london"
+    },
+    {
+     "reference": "train_v1",
+     "item": "ccfa7be8fad8",
+     "why": "same_city",
+     "city": "london"
+    },
+    {
+     "reference": "train_v1",
+     "item": "ce062c7dc960",
+     "why": "same_city",
+     "city": "london"
+    },
+    {
+     "reference": "train_v1",
+     "item": "d95e6cb89cd9",
+     "why": "same_city",
+     "city": "london"
+    },
+    {
+     "reference": "train_v1",
+     "item": "e7d241c6f897",
+     "why": "same_city",
+     "city": "london"
+    },
+    {
+     "reference": "train_v1",
+     "item": "f61e6f4da95e",
+     "why": "same_city",
+     "city": "london"
+    },
+    {
+     "reference": "portrait_v1",
+     "item": "colorful-wall-headshot/inspiration_3.jpg",
+     "why": "same_city",
+     "city": "london"
+    },
+    {
+     "reference": "portrait_v1",
+     "item": "seated-on-steps/inspiration_3.jpg",
+     "why": "same_city",
+     "city": "london"
+    },
+    {
+     "reference": "portrait_v1",
+     "item": "street-candid-motion/inspiration_1.jpg",
+     "why": "same_city",
+     "city": "london"
+    },
+    {
+     "reference": "portrait_v1",
+     "item": "street-candid-motion/inspiration_3.jpg",
+     "why": "same_city",
+     "city": "london"
+    }
+   ],
+   "status": "warn"
+  },
+  {
+   "id": "dev-beach-stairs",
+   "split": "dev",
+   "group": "xhs_aligned",
+   "location": null,
+   "pixels_checked": true,
+   "hits": [],
+   "warnings": [],
+   "status": "ok"
+  },
+  {
+   "id": "dev-parking-corner",
+   "split": "dev",
+   "group": "ordinary",
+   "location": "ljubljana",
+   "pixels_checked": true,
+   "hits": [],
+   "warnings": [],
+   "status": "ok"
+  },
+  {
+   "id": "dev-bright-kitchen",
+   "split": "dev",
+   "group": "ordinary",
+   "location": "springville, united states",
+   "pixels_checked": true,
+   "hits": [],
+   "warnings": [],
+   "status": "ok"
+  },
+  {
+   "id": "dev-open-corridor",
+   "split": "dev",
+   "group": "ordinary",
+   "location": null,
+   "pixels_checked": true,
+   "hits": [],
+   "warnings": [],
+   "status": "ok"
+  }
+ ],
+ "summary": {
+  "fixtures": 26,
+  "fail": 0,
+  "warn": 6,
+  "pixels_checked": 26
+ }
+}

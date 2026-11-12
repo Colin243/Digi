@@ -61,6 +61,11 @@ class LoraConfig:
     # Measured on the longest real row (2,971 tokens): peak 19.1 GB -> 8.4 GB, step 37-53 s -> 12 s.
     grad_checkpoint: bool = True
     stages: list[str] = field(default_factory=lambda: ["notes", "target_scene", "aesthetic", "compositions"])
+    # 0 = use every row. Smaller values are for smoke/overhead runs only (first N rows, deterministic).
+    max_train_rows: int = 0
+    max_valid_rows: int = 0
+    # Training monitor (docs/training-monitor.md). Keys: see monitor.sampler.MonitorConfig.
+    monitor: dict = field(default_factory=lambda: {"enabled": True})
 
     @classmethod
     def load(cls, path: str | Path) -> "LoraConfig":
@@ -200,7 +205,8 @@ def save_adapter(model, path: Path) -> int:
 
 # --------------------------------------------------------------------------- training
 
-def train(cfg: LoraConfig, log=print) -> dict:
+def train(cfg: LoraConfig, log=print, monitor: bool | None = None) -> dict:
+    """Run LoRA training. `monitor` overrides cfg.monitor["enabled"] (None = use the config)."""
     import mlx.core as mx
     import mlx.nn as nn
     import mlx.optimizers as optim
@@ -215,6 +221,10 @@ def train(cfg: LoraConfig, log=print) -> dict:
     data_dir = PROJECT_ROOT / cfg.data_dir
     train_rows = read_rows(data_dir / "train.jsonl", cfg.stages)
     valid_rows = read_rows(data_dir / "valid.jsonl", cfg.stages)
+    if cfg.max_train_rows:
+        train_rows = train_rows[: cfg.max_train_rows]
+    if cfg.max_valid_rows:
+        valid_rows = valid_rows[: cfg.max_valid_rows]
     if not train_rows:
         raise SystemExit(f"no training rows in {data_dir}; export approved labels first")
     info = json.loads((data_dir / "export_info.json").read_text()) if (data_dir / "export_info.json").exists() else {}
@@ -239,15 +249,48 @@ def train(cfg: LoraConfig, log=print) -> dict:
     value_and_grad = nn.value_and_grad(model, lambda m, b: loss_fn(m, b)[0])
     model.train()
 
+    from .monitor.sampler import MonitorConfig, TrainingMonitor, build_manifest
+
+    mcfg = MonitorConfig.from_dict(cfg.monitor)
+    if monitor is not None:
+        mcfg.enabled = monitor
+    mon = None
+    if mcfg.enabled:
+        mon = TrainingMonitor(out / "monitor", mcfg)
+        mon.start(model, build_manifest(cfg, mcfg, data_dir, train_rows, valid_rows, kind="train",
+                                        extra={"load_s": round(load_s, 1), "params": params}))
+    try:
+        return _train_loop(cfg, model, train_b, valid_b, schedule, opt, value_and_grad, out, info, params, load_s,
+                           mon, log)
+    except BaseException as exc:
+        if mon:
+            mon.close("stopped" if isinstance(exc, KeyboardInterrupt) else "failed",
+                      {"error": f"{type(exc).__name__}: {exc}"[:300]})
+            mon = None
+        raise
+
+
+def _train_loop(cfg, model, train_b, valid_b, schedule, opt, value_and_grad, out, info, params, load_s, mon, log):
+    import mlx.core as mx
+    from mlx.utils import tree_map
+
     log_path = out / "train_log.jsonl"
     log_f = open(log_path, "a")
     best_val, bad_evals, history = math.inf, 0, []
     order = list(range(len(train_b)))
-    step_t0 = time.perf_counter()
     val0 = evaluate(model, valid_b)
     log_f.write(json.dumps({"step": 0, "val_loss": val0}) + "\n")
+    if mon:
+        mon.eval(0, val0)
+        # initial adapter (B = 0, A random) so "init vs step N" can be compared offline; outside step timing
+        ck0 = out / "checkpoints" / "00000_adapters.safetensors"
+        save_adapter(model, ck0)
+        mon.checkpoint(0, ck0, "initial")
     log(f"step 0: val_loss {val0}")
+    step_t0 = time.perf_counter()
+    rows_seen = 0
     for step in range(1, cfg.iters + 1):
+        ts = time.perf_counter()
         acc, losses = None, []
         for _ in range(cfg.grad_accum):
             if not order:
@@ -258,27 +301,45 @@ def train(cfg: LoraConfig, log=print) -> dict:
             losses.append(float(loss))
             acc = grads if acc is None else tree_map(lambda a, g: a + g, acc, grads)
         acc = tree_map(lambda g: g / cfg.grad_accum, acc)
+        rows_seen += cfg.grad_accum
+        if mon:
+            mon.before_update(step, acc)
         gn = grad_norm(acc)
         if cfg.grad_clip and gn > cfg.grad_clip:
             acc = tree_map(lambda g: g * (cfg.grad_clip / gn), acc)
         opt.update(model, acc)
         mx.eval(model.parameters(), opt.state)
+        t_upd = time.perf_counter()
         rec = {"step": step, "train_loss": sum(losses) / len(losses), "grad_norm": gn,
+               "grad_clipped": bool(cfg.grad_clip and gn > cfg.grad_clip),
                "lr": float(schedule(step)), "peak_memory_gb": mx.get_peak_memory() / 1e9,
-               "elapsed_s": time.perf_counter() - step_t0}
+               "elapsed_s": t_upd - step_t0, "step_s": t_upd - ts, "epoch": rows_seen / len(train_b),
+               "progress": step / cfg.iters, "iters": cfg.iters}
+        if mon:
+            mon.after_update(step, rec)
+        # wall time of the whole step INCLUDING monitoring (excludes validation/checkpoint below);
+        # this is the number the monitoring-overhead comparison uses
+        rec["step_wall_s"] = time.perf_counter() - ts
         if step % cfg.eval_every == 0 or step == cfg.iters:
             model.eval()
             rec["val_loss"] = evaluate(model, valid_b)
             model.train()
+            if mon:
+                mon.eval(step, rec["val_loss"])
             if rec["val_loss"] is not None:
                 if rec["val_loss"] < best_val - 1e-4:
                     best_val, bad_evals = rec["val_loss"], 0
                     save_adapter(model, out / "adapters.safetensors")  # best-so-far
                     rec["saved_best"] = True
+                    if mon:
+                        mon.checkpoint(step, out / "adapters.safetensors", "best")
                 else:
                     bad_evals += 1
         if step % cfg.save_every == 0:
-            save_adapter(model, out / "checkpoints" / f"{step:05d}_adapters.safetensors")
+            ck = out / "checkpoints" / f"{step:05d}_adapters.safetensors"
+            save_adapter(model, ck)
+            if mon:
+                mon.checkpoint(step, ck, "periodic")
         history.append(rec)
         log_f.write(json.dumps(rec) + "\n")
         log_f.flush()
@@ -291,6 +352,8 @@ def train(cfg: LoraConfig, log=print) -> dict:
     log_f.close()
     if not valid_b or not (out / "adapters.safetensors").exists():
         save_adapter(model, out / "adapters.safetensors")
+        if mon:
+            mon.checkpoint(history[-1]["step"], out / "adapters.safetensors", "final")
     summary = {
         "run": cfg.run_name, "out_dir": str(out), "data": info, "params": params,
         "train_rows": len(train_b), "valid_rows": len(valid_b), "load_s": round(load_s, 1),
@@ -299,5 +362,8 @@ def train(cfg: LoraConfig, log=print) -> dict:
         "final_train_loss": history[-1]["train_loss"], "peak_memory_gb": round(mx.get_peak_memory() / 1e9, 2),
         "adapter_mb": round((out / "adapters.safetensors").stat().st_size / 1e6, 2),
     }
+    if mon:
+        summary["monitor_dir"] = str(mon.dir)
+        mon.close("finished", summary)
     (out / "summary.json").write_text(json.dumps(summary, indent=1))
     return summary

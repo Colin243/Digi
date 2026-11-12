@@ -1,0 +1,35 @@
+{
+ "prompt_version": "2026-11-09.4",
+ "json_format": "keys",
+ "image_marker": "<<image>>",
+ "subject": "a person (the photographer's friend) posing in the scene",
+ "n_inspiration": 4,
+ "sentinels": {
+  "note": "__NOTE_{i}__",
+  "style_json": "{\"__STYLE_JSON__\": \"\"}",
+  "target_json": "{\"__TARGET_JSON__\": \"\"}"
+ },
+ "stages": {
+  "image_notes": {
+   "prompt": "Photo: <<image>>\nIn 2-3 sentences, say what this photo shows and how it was shot: camera height and angle, framing, where the main subject sits in the frame, how much empty space there is, and the light.",
+   "max_tokens": 200
+  },
+  "target_scene": {
+   "prompt": "TARGET scene photo: <<image>>\n\nDescribe this scene for a photographer who is standing there now.\n\nFields:\n- description (string): one or two sentences on what is in the target scene\n- key_elements (list of strings): 3-6 specific things visible in the target photo that a shot can use (objects, lines, surfaces, light sources)\n- constraints (list of strings): 1-3 things in the target photo that limit the shot, e.g. clutter or harsh light\n\nAnswer with ONLY one JSON object, no markdown, no commentary. Write your own words about THESE photos; do not repeat the field descriptions. Do not repeat list items.\nReturn only a JSON object with keys: \"description\" (a string); \"key_elements\" (a list of strings); \"constraints\" (a list of strings).",
+   "max_tokens": 500
+  },
+  "aesthetic_from_notes": {
+   "prompt": "You are a photography director. Here are notes on a photographer's inspiration photos:\nInspiration photo 1: __NOTE_1__\nInspiration photo 2: __NOTE_2__\nInspiration photo 3: __NOTE_3__\nInspiration photo 4: __NOTE_4__\n\nDescribe the style they share and the techniques that could transfer to a different location. For per_image, summarize each note in one line, in order.\n\nFields:\n- per_image (list of strings): one short line per inspiration photo, in order: what it shows and how it was shot\n- summary (string): one or two sentences on the visual style the photos share\n- principles (list of strings): 2-4 transferable techniques (camera height, angle, framing, subject placement, negative space, light) that could be reused somewhere else\n- color_palette (list of strings): 2-4 dominant colors or tones\n- lighting (string): light quality, direction, time of day\n- mood (string): the emotional feel in a few words\n- composition_patterns (list of strings): 2-4 recurring framing or layout choices\n- subject_treatment (string): how people or subjects are shown\n\nAnswer with ONLY one JSON object, no markdown, no commentary. Write your own words about THESE photos; do not repeat the field descriptions. Do not repeat list items.\nReturn only a JSON object with keys: \"per_image\" (a list of strings); \"summary\" (a string); \"principles\" (a list of strings); \"color_palette\" (a list of strings); \"lighting\" (a string); \"mood\" (a string); \"composition_patterns\" (a list of strings); \"subject_treatment\" (a string).",
+   "max_tokens": 900
+  },
+  "compositions": {
+   "prompt": "TARGET scene photo: <<image>>\n\nYou are a photography director. The TARGET scene photo is described as:\n{\"__TARGET_JSON__\": \"\"}\n\nThe photographer wants to recreate this style from other photos:\n{\"__STYLE_JSON__\": \"\"}\n\nThe subject will be a person (the photographer's friend) posing in the scene. Give exactly 3 different compositions for shooting in the TARGET scene with that style.\n\neach of the 3 compositions:\n- title (string): a short name\n- uses_principle (string): which inspiration principle this shot transfers\n- camera_position (string): where to stand, relative to named things in the target photo\n- camera_height (string): camera height relative to the subject's body or a scene object\n- camera_angle (string): which way to tilt or turn the camera and roughly how much\n- subject_position (string): where the subject stands in the scene and where they sit in the frame\n- distance_and_framing (string): approximate distance and how much of the subject is in frame\n- orientation (string): portrait, landscape or square\n- zoom_or_lens (string): zoom amount or focal length feel\n- lighting_tip (string): how to use the light that is visible in the target photo\n- visible_evidence (list of strings): things you can actually see in the target photo that this shot depends on\n- needs_on_site_check (list of strings): things the still photo cannot tell you, which the photographer must check by moving the camera or looking around\n- steps (list of strings): 2-4 short actionable steps\n\nMake every composition concrete enough to follow without guessing.\nGood: \"Hold the camera slightly below the subject's waist.\" \"Place the subject in the left third of the frame.\" \"Tilt up slightly to emphasize height.\" \"Move to the right of the subject so the railing leads into the frame.\"\nBad (too generic, never write these): \"take a wide shot\", \"use good lighting\", \"center the subject\", \"capture the moment\".\nOnly use things that are visible in the TARGET photo. Do not bring objects or backgrounds from the inspiration photos into the target scene; transfer the technique, not the scenery.\nSeparate what you can see from what you are assuming: put visible facts in visible_evidence, and put anything the still photo cannot show (what is behind the camera, true distances, light at another time, whether a spot is reachable) in needs_on_site_check.\nWrite new instructions for THIS scene; do not reuse the example sentences above.\nAnswer with ONLY one JSON object, no markdown, no commentary. Write your own words about THESE photos; do not repeat the field descriptions. Do not repeat list items.\nReturn only a JSON object with keys: \"compositions\" (a list of exactly 3 objects, each with keys: \"title\" (a string); \"uses_principle\" (a string); \"camera_position\" (a string); \"camera_height\" (a string); \"camera_angle\" (a string); \"subject_position\" (a string); \"distance_and_framing\" (a string); \"orientation\" (a string); \"zoom_or_lens\" (a string); \"lighting_tip\" (a string); \"visible_evidence\" (a list of strings); \"needs_on_site_check\" (a list of strings); \"steps\" (a list of strings)).",
+   "max_tokens": 1600
+  }
+ },
+ "generation": {
+  "temperature": 0.0,
+  "repetition_penalty": null,
+  "json_retries": 0
+ }
+}

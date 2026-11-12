@@ -72,10 +72,29 @@ def main(argv: list[str] | None = None) -> int:
     sd.add_argument("--demo-id")
     sd.add_argument("--runs-dir", type=Path, default=DEFAULT_RUNS_DIR)
 
+    se = sub.add_parser("scene-eval", help="held-out Scene Director evaluation (issue #21)")
+    se.add_argument("action", choices=["validate", "fetch", "audit", "run", "report", "pack", "import-review", "score"])
+    se.add_argument("--manifest", type=Path, default=None, help="default: datasets/scene_eval_v1/manifest.json")
+    se.add_argument("--lock", action="store_true", help="fetch: record sha256 and dHash for fixtures that have none")
+    se.add_argument("--pool", type=Path, nargs="*", default=None,
+                    help="audit: training pool.json file(s) (default: data/train_v1/pool.json)")
+    se.add_argument("--out", type=Path, help="audit: write JSON + markdown here (default: next to the manifest)")
+    se.add_argument("--split", choices=["heldout", "dev"], default="heldout")
+    se.add_argument("--model", default=SELECTED_MODEL)
+    se.add_argument("--only", nargs="*", help="run: only these fixture ids (smoke runs)")
+    se.add_argument("--eval-id", help="run/report: evaluation id; pack: one or two ids (baseline first)", nargs="*")
+    se.add_argument("--pack", type=Path, help="import-review/score: review pack folder")
+    se.add_argument("--pack-id", help="pack: id for the new pack (default: derived from the eval ids)")
+    se.add_argument("--file", type=Path, help="import-review: exported review JSON")
+    se.add_argument("--reviewer", help="import-review: override the reviewer name in the file")
+    se.add_argument("--runs-dir", type=Path, default=DEFAULT_RUNS_DIR)
+
     ui = sub.add_parser("ui", help="launch the local upload interface")
     ui.add_argument("--host", default="127.0.0.1")
     ui.add_argument("--port", type=int, default=7860)
     ui.add_argument("--runs-dir", type=Path, default=DEFAULT_RUNS_DIR)
+    ui.add_argument("--monitor-port", type=int, default=7870,
+                    help="also serve the read-only training monitor on this port (0 = don't)")
 
     dg = sub.add_parser("diagnose", help="check image plumbing and perception on benchmark cases")
     dg.add_argument("--model", default=DEFAULT_MODEL)
@@ -134,7 +153,7 @@ def main(argv: list[str] | None = None) -> int:
 
     td = sub.add_parser("train-data", help="Phase 4 training data: pool, fetch, tags, examples, labels, export")
     td.add_argument("action", choices=["pool", "fetch", "status", "attribution", "assemble", "qa", "export",
-                                       "import-tags", "import-labels", "draft", "import-review", "review-site"])
+                                       "import-tags", "import-labels", "draft", "import-review", "review-site", "audit"])
     td.add_argument("--reviewer", help="import-review: the human reviewer's name (default: the name in the file)")
     td.add_argument("--site", type=Path, help="import-review: the review page folder (or HTML file) the reviewer was "
                                                "sent; ties the review to the answer versions it showed")
@@ -150,6 +169,9 @@ def main(argv: list[str] | None = None) -> int:
     td.add_argument("--n-train", type=int, default=10, help="assemble --reserve: training examples to add")
     td.add_argument("--n-valid", type=int, default=3, help="assemble --reserve: validation examples to add")
     td.add_argument("--batch", type=int, help="assemble --reserve: new batch number (default 2); review-site: only this batch")
+    td.add_argument("--min-examples", type=int, default=3, help="audit: minimum approved examples per mode and style")
+    td.add_argument("--min-shots", type=int, default=3, help="audit: minimum approved shots per pose and expression")
+    td.add_argument("--json", action="store_true", help="audit: print the report as JSON")
     td.add_argument("--include-unapproved", action="store_true",
                     help="export drafts too (ONLY for pipeline smoke tests; never for real training)")
 
@@ -158,6 +180,21 @@ def main(argv: list[str] | None = None) -> int:
     lr.add_argument("--config", type=Path, required=True)
     lr.add_argument("--rows", type=int, default=4, help="smoke: rows to use")
     lr.add_argument("--steps", type=int, default=12, help="smoke: overfit steps")
+    lr.add_argument("--no-monitor", action="store_true", help="train: disable the training monitor")
+    lr.add_argument("--run-name", help="train: override run_name (output folder)")
+
+    mo = sub.add_parser("monitor", help="LoRA training monitor: dashboard, checkpoint compare, overhead")
+    mo.add_argument("action", choices=["serve", "compare", "overhead"])
+    mo.add_argument("--host", default="127.0.0.1")
+    mo.add_argument("--port", type=int, default=7870)
+    mo.add_argument("--run", type=Path, action="append", default=[], help="serve: extra run folder(s) to list")
+    mo.add_argument("--a", help="compare: checkpoint .safetensors or 'base'")
+    mo.add_argument("--b", help="compare: checkpoint .safetensors or 'base'")
+    mo.add_argument("--json", action="store_true")
+    mo.add_argument("--off", type=Path, nargs="+", help="overhead: run dirs trained with --no-monitor")
+    mo.add_argument("--on", type=Path, nargs="+", help="overhead: matching run dirs trained with the monitor")
+    mo.add_argument("--warmup", type=int, default=3)
+    mo.add_argument("--out", type=Path)
 
     pk = sub.add_parser("picks", help="tap-to-pick review: generate looks, build the page, import picks, export training data")
     pk.add_argument("action", choices=["generate", "site", "import", "pull", "delete", "export", "status"])
@@ -218,10 +255,13 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{len(demo['rows'])} runs; report: {a.runs_dir / (demo['demo_id'] + '.md')}")
         return 0
 
+    if a.cmd == "scene-eval":
+        return _scene_eval(a)
+
     if a.cmd == "ui":
         from .app import launch
 
-        launch(a.host, a.port, a.runs_dir)
+        launch(a.host, a.port, a.runs_dir, monitor_port=a.monitor_port)
         return 0
 
     if a.cmd == "diagnose":
@@ -347,7 +387,9 @@ def main(argv: list[str] | None = None) -> int:
             rep = run_smoke(cfg, a.rows, a.steps)
             print(f"smoke test {'PASSED' if rep['all_pass'] else 'FAILED'} -> {cfg.out_dir / 'smoke_report.json'}")
             return 0 if rep["all_pass"] else 1
-        print(json.dumps(train(cfg), indent=1))
+        if a.run_name:
+            cfg.run_name = a.run_name
+        print(json.dumps(train(cfg, monitor=False if a.no_monitor else None), indent=1))
         return 0
 
     if a.cmd == "picks":
@@ -379,6 +421,11 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(PK.status(cfg), indent=1))
         return 0
 
+    if a.cmd == "monitor":
+        from .training.monitor.cli import run_monitor
+
+        return run_monitor(a)
+
     if a.cmd == "runs":
         rows = read_index(a.runs_dir)[-a.last :]
         if not rows:
@@ -391,6 +438,74 @@ def main(argv: list[str] | None = None) -> int:
                 f"{r['run_id']:42} {r['strategy']:12} {str(r['valid']):5} {f(r['model_load_s']):>7} "
                 f"{f(r['inference_s']):>8} {f(r['peak_memory_gb'], 2):>7}  {r.get('label') or ''}"
             )
+        return 0
+    return 1
+
+
+def _scene_eval(a: argparse.Namespace) -> int:
+    from . import scene_eval as se
+
+    manifest_path = a.manifest or se.MANIFEST
+    if a.action == "validate":
+        problems = se.validate_manifest(se.load_manifest(manifest_path), check_files=True)
+        for p in problems:
+            print(f"problem: {p}", file=sys.stderr)
+        print(f"{len(problems)} problem(s) in {manifest_path}")
+        return 1 if problems else 0
+    if a.action == "fetch":
+        res = se.fetch(manifest_path, lock=a.lock)
+        for p in res["problems"]:
+            print(f"problem: {p}", file=sys.stderr)
+        print(f"{res['fixtures']} fixtures; locked={res['locked']}")
+        return 1 if res["problems"] else 0
+    if a.action == "audit":
+        from .training.pool import data_dir
+
+        pools = a.pool or [data_dir("train_v1") / "pool.json"]
+        refs = [se.training_reference(p) for p in pools]
+        refs.append(se.manifest_reference(se.PROJECT_ROOT / "datasets" / "portrait_v1" / "manifest.json"))
+        audit = se.audit_overlap(se.load_manifest(manifest_path), refs)
+        out = a.out or Path(manifest_path).parent
+        out.mkdir(parents=True, exist_ok=True)
+        (out / "overlap_audit.json").write_text(json.dumps(audit, indent=1, ensure_ascii=False) + "\n")
+        (out / "overlap_audit.md").write_text(se.overlap_markdown(audit))
+        print(se.overlap_markdown(audit))
+        return 1 if audit["summary"]["fail"] else 0
+    if a.action == "run":
+        doc = se.run_eval(a.split, a.model, a.runs_dir, (a.eval_id or [None])[0], manifest_path, only=a.only)
+        print(f"{len(doc['rows'])} runs; report: {se.eval_dir(a.runs_dir, doc['eval_id']) / 'report.md'}")
+        return 0
+    if a.action == "report":
+        doc = se.load_eval(a.runs_dir, a.eval_id[0])
+        md = se.report_markdown(doc)
+        (se.eval_dir(a.runs_dir, doc["eval_id"]) / "report.md").write_text(md)
+        print(md)
+        return 0
+    from . import scene_review as sr
+
+    if a.action == "pack":
+        if not a.eval_id or len(a.eval_id) > 2:
+            print("error: pass one eval id (base only) or two (baseline first, then candidate)", file=sys.stderr)
+            return 2
+        try:
+            res = sr.build_pack([se.load_eval(a.runs_dir, e) for e in a.eval_id], a.runs_dir, a.pack_id, manifest_path)
+        except sr.PackError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        print(f"pack {res['pack_id']}: {res['fixtures']} fixtures -> {res['page']}\n"
+              f"key (do not send to reviewers): {res['key']}")
+        return 0
+    if a.action == "import-review":
+        try:
+            path = sr.import_review(a.pack, a.file, a.reviewer)
+        except sr.PackError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        print(f"saved -> {path}")
+        return 0
+    if a.action == "score":
+        res = sr.score_pack(a.pack, se.load_criteria())
+        print(res["markdown"])
         return 0
     return 1
 

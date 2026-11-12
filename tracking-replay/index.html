@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Digi subject replay</title>
+<style>
+body{background:#141719;color:#eee;font:17px system-ui;max-width:900px;margin:36px auto;padding:20px}
+button,input{font:inherit;margin:8px 8px 8px 0;padding:10px}button{cursor:pointer}
+canvas{display:block;width:auto;height:auto;max-width:100%;max-height:65vh;background:#252a30;touch-action:none}
+#status{font-weight:bold;padding:16px;border-left:5px solid #e8b45c}
+#status[data-state="tracking"]{border-color:#6ee7a0}#status[data-state="lost"]{border-color:#ff7777}
+small,#source{color:#bbb}video{display:none}#timeline{display:block;width:95%;padding:0}
+</style>
+<h1>Digi · subject replay</h1>
+<p>Follow one selected subject in a recorded clip. Load a clip, pause, then drag a tight box around the subject’s torso and press Play.</p>
+<label>Recorded clip <input id="file" type="file" accept="video/*"></label>
+<div><button id="fixture">Run synthetic crossing</button><button id="play">Play</button><button id="reset">Restart</button><button id="download">Export events</button></div>
+<p id="source">Synthetic crossing · select manually or run the demo</p>
+<p id="status" role="status" aria-live="polite">UNSELECTED · drag to select</p>
+<canvas id="screen" width="320" height="180" aria-label="Replay frame. Drag a box around the selected torso."></canvas>
+<label>Replay position <input id="timeline" type="range" min="0" max="7" step="0.1" value="0"></label>
+<video id="video" muted playsinline></video>
+<p>When appearance is missing or ambiguous, tracking stops, the box disappears, and <strong>LOST</strong> stays visible. Pause and draw a new box to resume. Seeking also clears the active track.</p>
+<p><small>Experimental fixed-scale appearance matching, not identity recognition. Similar clothing, camera motion, scale changes and occlusion can cause loss or incorrect matches. The synthetic crossing is a regression demonstration, not real-person validation. Clip processing stays in this page; nothing is uploaded.</small></p>
+<script src="tracker.cjs"></script><script src="session.cjs"></script><script src="replay.js"></script>
+</html>

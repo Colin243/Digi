@@ -8,6 +8,7 @@ It runs fully on-device with [MLX-VLM](https://github.com/Blaizzy/mlx-vlm) on Ap
 - **Phase 2:** diagnostics, a benchmark across models and strategies, a human scoring rubric and an evaluation UI. The findings are in [`docs/phase2-benchmark.md`](docs/phase2-benchmark.md).
 - **Phase 3:** a 14-scenario portrait/lifestyle dataset (CC0), Qwen2.5-VL-3B vs Qwen3-VL-2B vs SmolVLM2-2.2B, blind side-by-side comparison, rubric v2 with shot diversity, and the model-selection report: [`docs/phase3-model-selection.md`](docs/phase3-model-selection.md).
 - **Phase 4 (in progress):** licensed training-data pipeline, AI-drafted labels that only become training data after human approval (the **Label** tab), and LoRA training for Qwen3-VL-2B on MLX with a verified smoke test. How it works, what LoRA changes, and current status: [`docs/phase4-finetuning.md`](docs/phase4-finetuning.md). Labelling standard: [`docs/annotation-guide.md`](docs/annotation-guide.md).
+- **Offline iPhone benchmark (issue #7, in progress):** a standalone on-device harness in [`ios-bench/`](ios-bench/README.md) that runs Qwen3-VL-2B with mlx-swift-lm and measures latency, memory, thermals and camera recovery. The method, budgets and go/no-go criteria are in [`docs/iphone-benchmark.md`](docs/iphone-benchmark.md).
 
 ## Setup
 
@@ -30,6 +31,7 @@ The first real run downloads weights from Hugging Face into `~/.cache/huggingfac
 | `photo-ai scene -t scene.jpg --style relaxed_candid [--brief "…"]` | Scene Director from the command line. One photo, with or without a person, and no reference images. Returns 3 shot-v2 looks. Styles: `relaxed_candid` 松弛感, `dreamy_atmospheric` 氛围感, `cool_editorial` 清冷感, `vintage_ccd` 复古 CCD. Defaults to Qwen3-VL-2B. See [docs/scene-director.md](docs/scene-director.md). |
 | `photo-ai picks generate / site / import / export` | Tap-to-pick review for the creative director: pick a theme, then tap the best of three looks (an example photo plus short notes) per scene. Picks become SFT rows for the chosen look and preference pairs. See [docs/picks.md](docs/picks.md). |
 | `photo-ai scene-demo` | Reproducible Scene Director demo over `configs/scene_demo.json`. It writes `runs/<demo id>.md` and labels its runs so they can be scored blind in the Evaluate tab. |
+| `photo-ai scene-eval {validate,fetch,audit,run,pack,import-review,score}` | Held-out Scene Director evaluation (#21). Uses 20 held-out and 6 dev CC0 scenes in two groups (XHS-aligned and ordinary), with criteria declared before any run, an overlap audit against the training pool, and a blind A/B review page for human scoring. See [docs/scene-eval.md](docs/scene-eval.md). |
 | `photo-ai analyze -i a.jpg b.jpg c.jpg -t scene.jpg [--model …] [--strategy …] [--shot-format v2]` | One analysis from the command line. `--repeat N` gives warm timings. `--shot-format v2` (decomposed only) adds body pose, head and chin, gaze, and an optional expression cue. |
 | `photo-ai diagnose --model … [--case …]` | Checks that images reach the model and that it can see the target. See "Diagnostics" below. |
 | `photo-ai bench --models smolvlm2-500m qwen2.5-vl-3b-4bit [--bench-id …]` | Runs every model × case × strategy, plus sampled runs for consistency. It is resumable: rerun with the same `--bench-id` to continue. |
@@ -41,9 +43,11 @@ The first real run downloads weights from Hugging Face into `~/.cache/huggingfac
 | `photo-ai convert smolvlm2-2.2b` | Quantizes a registered model into git-ignored `models/<key>-4bit`. |
 | `photo-ai train-data pool / fetch / assemble [--reserve] / status / qa / export` | Phase 4 training data: Commons search → licence-tracked download with held-out dedup and author split → technique-matched examples → label status and heuristic QA → export **approved** labels as SFT rows (`data/`, git-ignored). |
 | `photo-ai train-data import-tags / import-labels --file …` | Imports AI-drafted tags or answers as provisional drafts. |
+| `photo-ai train-data audit [--json]` | Dataset-freeze coverage audit (read-only): counts **approved** labels by split, mode, style, pose and expression, and lists gaps. See [docs/annotation-xhs-addendum.md](docs/annotation-xhs-addendum.md). |
 | `photo-ai train-data draft --ids …` | Drafts answers with Claude via the API (`uv sync --extra drafting`; paid; drafts stay provisional). |
 | `photo-ai lora smoke --config configs/lora_smoke.json` | LoRA feasibility smoke test (architecture, template parity, masking, gradients, learning, checkpoint reload, adapter inference, memory). |
 | `photo-ai lora train --config configs/lora_pilot.json` | LoRA pilot on approved labels only; adapters in `data/adapters/<run>/`. |
+| `photo-ai monitor serve` | Read-only LoRA training monitor at http://127.0.0.1:7870 (architecture network, layer stats, live metrics, replay, checkpoint compare). `photo-ai ui` also starts it and links it from the **Training monitor** tab. See [`docs/training-monitor.md`](docs/training-monitor.md). |
 | `photo-ai runs` | Lists saved runs. |
 
 A fine-tuned adapter runs anywhere a model name is accepted: `--model "qwen3-vl-2b-4bit+adapter=data/adapters/pilot-v1"`.

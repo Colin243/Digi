@@ -5,6 +5,7 @@
   assemble.py  inspiration sets (3-4 photos sharing a technique) + a different target place
   labels.py    reference answers per example: status draft -> approved/rejected, provenance
   qa.py        heuristic checks shown to reviewers (distinct shots, concrete cues, grounding)
+  audit.py     dataset-freeze coverage audit of approved labels (mode, style, pose, expression, split)
   export.py    approved labels -> SFT rows rendered with the exact inference prompts
   lora.py      LoRA training loop on mlx-vlm (masked cross-entropy on answer tokens only)
 

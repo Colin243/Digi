@@ -80,3 +80,5 @@ Each shot must differ from the other two in at least two of these: camera positi
 5. **Approve** only when you'd use all three shots. **Reject** if the example itself is poor, for example inspiration photos that don't share a technique, or a target that can't be photographed. Add a note saying why.
 
 Approvals are recorded with your name and time. Only approved labels are exported for training.
+
+For XHS style briefs (relaxed candid, dreamy atmospheric, cool editorial, vintage CCD) and the shot-v2 pose, head, gaze and expression fields, also follow [annotation-xhs-addendum.md](annotation-xhs-addendum.md).
