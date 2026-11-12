@@ -95,3 +95,12 @@ def test_append_candidates_backs_up_and_refuses_to_clobber_backup(angle_ds):
     assert len(json.loads((root / "pool.json").read_text())["images"]) == 4
     with pytest.raises(FileExistsError):
         P.append_candidates("t")
+
+
+def test_append_candidates_only_selected_ids_and_appends_at_end(angle_ds):
+    root, _ = angle_ds
+    doc = P.build_angle_candidates("t", log=lambda *_: None, pause_s=0)
+    top = next(i["id"] for i in doc["images"] if i["title"] == "File:Top.jpg")
+    assert P.append_candidates("t", ids=[top])["added"] == 1
+    imgs = json.loads((root / "pool.json").read_text())["images"]
+    assert [i["title"] for i in imgs] == ["File:Old.jpg", "File:Top.jpg"]  # existing images keep their order
