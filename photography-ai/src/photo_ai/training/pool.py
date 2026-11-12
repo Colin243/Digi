@@ -62,12 +62,19 @@ def heldout_image_paths(spec: dict) -> list[Path]:
 
 # The first pool is eye-level-heavy (137 of 163 usable people photos; see docs/phase4-finetuning.md §9).
 # These queries target camera-angle techniques and get a larger search limit and starter-sample cap.
+# Each names a person: generic angle phrases ("worm's eye", "from below", "shot from above") mostly
+# returned architecture and aerial landscapes, and "... portrait" phrasings returned nothing in this
+# category. The angle is only the query's intent; tagging decides the real camera angle.
 ANGLE_QUERIES: dict[str, str] = {
-    "low angle portrait": "low",
-    "worm's eye": "low",
-    "from below": "low",
-    "overhead portrait": "overhead",
-    "shot from above": "high",
+    "man from below": "low",
+    "woman from below": "low",
+    "people from below": "low",
+    "man from above": "high",
+    "woman from above": "high",
+    "people from above": "high",
+    "couple from above": "high",
+    "girl lying": "overhead",
+    "woman lying": "overhead",
 }
 ANGLE_SEARCH_LIMIT = 50  # Commons gsrlimit maximum for non-bot clients
 ANGLE_SAMPLE_CAP = 20
