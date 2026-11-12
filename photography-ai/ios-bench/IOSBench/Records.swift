@@ -78,7 +78,8 @@ struct BenchConfig: Codable {
     var cameraPreset: String
     var reloadTest: Bool
     var cooldownSeconds: Double
-    var maxTokens: [String: Int]
+    var maxTokens: [String: Int]  // effective per-stage caps (compositions includes the override)
+    var compositionsMaxTokensOverride: Int?  // nil = prompts.json value (1600, same as the Mac benchmark)
     var temperature: Double
     var memoryPrecheckBytes: Int
 }
@@ -140,7 +141,14 @@ struct CallRecord: Codable {
     var thermalStart: String
     var thermalEnd: String
     var jsonValid: Bool?
-    var output: String
+    var output: String  // when the cap cut the JSON off: rebuilt from the complete shots
+    // Streamed shot stages (compositions) only:
+    var firstShotSeconds: Double?  // request start -> shot 1's object closed and parsed
+    var shotSeconds: [Double]?  // the same for every shot
+    var shotTokens: [Int]?  // generated tokens when each shot closed (what a cap must allow for N shots)
+    var shotsComplete: Int?
+    var repairedAfterCap: Bool?  // output was truncated by max_tokens and rebuilt from complete shots
+    var rawOutput: String?  // the truncated text, kept only when repaired
 }
 
 struct CameraCheck: Codable {
@@ -178,4 +186,11 @@ struct SummaryRow: Codable {
     var cameraRecoveryMedian: Double?
     var cameraRecoveryMax: Double?
     var jsonValid: String
+    // Streaming (warm trials, compositions call). Optional so older reports still decode.
+    var compositionsTtftMedian: Double?
+    var compositionsFirstShotMedian: Double?  // compositions request start -> shot 1 parsed
+    var compositionsFirstShotMax: Double?
+    var onSiteToFirstShotMedian: Double?  // target_scene e2e + compositions time to shot 1
+    var compositionsTokensMedian: Double?
+    var compositionsShotsCompleteMin: Int?
 }

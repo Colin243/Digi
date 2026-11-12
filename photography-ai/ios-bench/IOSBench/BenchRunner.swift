@@ -57,6 +57,10 @@ final class BenchRunner: ObservableObject {
     /// Refuse to load unless this much is available on top of the weights (Mac peak was
     /// 3.05 GB for 1.8 GB of weights, so ~1.3 GB of activations, KV cache and vision tower).
     static let headroomOverWeights = 1_500_000_000
+    /// Default cap for the compositions stage. Uncapped output was about 965 tokens on the
+    /// iPhone 17 Pro (~37 tok/s, ~26 s). 0 means use prompts.json (1600, same as the Mac).
+    nonisolated static let defaultCompositionsMaxTokens = 600
+    private var compositionsMaxTokens = 0
 
     static var resultsDir: URL {
         let d = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("results")
@@ -94,8 +98,10 @@ final class BenchRunner: ObservableObject {
 
     // MARK: - Controls
 
-    func start(preset: Preset, repeats: Int, cameraPauseResume: Bool, reloadTest: Bool, cooldown: Double) {
+    func start(preset: Preset, repeats: Int, cameraPauseResume: Bool, reloadTest: Bool, cooldown: Double,
+               compositionsMaxTokens: Int = BenchRunner.defaultCompositionsMaxTokens) {
         guard !running else { return }
+        self.compositionsMaxTokens = compositionsMaxTokens
         running = true
         cancelRequested = false
         fallback = nil
@@ -137,7 +143,8 @@ final class BenchRunner: ObservableObject {
         } catch {
             setupError = error.localizedDescription
         }
-        let maxTokens = Dictionary(uniqueKeysWithValues: (pack?.stages ?? [:]).map { ($0.key, $0.value.maxTokens) })
+        var maxTokens = Dictionary(uniqueKeysWithValues: (pack?.stages ?? [:]).map { ($0.key, $0.value.maxTokens) })
+        if compositionsMaxTokens > 0 { maxTokens["compositions"] = compositionsMaxTokens }
         let found = ModelLocator.find()
         let modelInfo = found.map { ModelLocator.info(at: $0.url, location: $0.location) }
         let required = Int(modelInfo?.weightsBytes ?? 0) + Self.headroomOverWeights
@@ -153,7 +160,8 @@ final class BenchRunner: ObservableObject {
                 preset: preset.rawValue, repeats: repeats, sizes: preset.sizes, workloads: preset.workloads,
                 imageCase: manifest?.0.case ?? "?", cameraPauseResume: cameraPauseResume && camera.configured,
                 cameraPreset: CameraProbe.presetName, reloadTest: reloadTest, cooldownSeconds: cooldown,
-                maxTokens: maxTokens, temperature: 0, memoryPrecheckBytes: required))
+                maxTokens: maxTokens, compositionsMaxTokensOverride: compositionsMaxTokens > 0 ? compositionsMaxTokens : nil,
+                temperature: 0, memoryPrecheckBytes: required))
         reportURL = Self.resultsDir.appendingPathComponent("\(id).json")
         save()
         say("\(device.modelName ?? device.machine) · iOS \(device.systemVersion) · \(formatBytes(device.physicalMemory)) RAM · available to app \(formatBytes(device.availableMemoryAtStart))")
@@ -204,6 +212,11 @@ final class BenchRunner: ObservableObject {
             say(String(format: "#%d %@ @%d: %.1f s inference, peak %@, %@%@", i + 1, workload, size, trial.inferenceSeconds,
                        formatBytes(trial.peakFootprint), trial.thermalEnd,
                        trial.camera?.firstFrameSeconds.map { String(format: ", camera back in %.2f s", $0) } ?? ""))
+            if let c = trial.calls.first(where: { $0.stage == "compositions" }) {
+                say(String(format: "   compositions: first token %.2f s, shot 1 %@, %d tok (%@), %d shots%@", c.ttftSeconds,
+                           c.firstShotSeconds.map { String(format: "%.2f s", $0) } ?? "never", c.generatedTokens, c.stopReason,
+                           c.shotsComplete ?? 0, c.repairedAfterCap == true ? ", repaired after cap" : ""))
+            }
             if let e = trial.error {
                 if e.hasPrefix("abort:") { abortReason = String(e.dropFirst(6)); break }
                 say("Trial error: \(e)")
@@ -295,7 +308,7 @@ final class BenchRunner: ObservableObject {
                 t.calls.append(aesthetic)
                 t.calls.append(try await call("compositions", pack: pack,
                                               prompt: try pack.compositionsPrompt(aestheticRaw: aesthetic.output, targetRaw: target.output),
-                                              image: try image("target", 1), json: true))
+                                              image: try image("target", 1), json: true, streamShots: true))
             }
         } catch let a as Abort {
             t.error = "abort:" + a.reason
@@ -322,9 +335,20 @@ final class BenchRunner: ObservableObject {
     }
 
     private func call(_ stage: String, pack: PromptPack, prompt: String, image: (URL, [Int])?, json: Bool,
-                      stageKey: String? = nil) async throws -> CallRecord {
+                      stageKey: String? = nil, streamShots: Bool = false) async throws -> CallRecord {
         if let r = abortCheck() { throw Abort(reason: r) }
-        let maxTokens = try pack.stage(stageKey ?? stage).maxTokens
+        let key = stageKey ?? stage
+        let maxTokens = key == "compositions" && compositionsMaxTokens > 0
+            ? compositionsMaxTokens : try pack.stage(key).maxTokens
+        // Shot 1 is what the product would show first; log it the moment it parses.
+        let label = progress
+        let streaming = streamShots ? ShotStreaming(key: "compositions", onShot: { [weak self] i, shot, secs in
+            let title = (JSONText.object(in: shot)?["title"] as? String).map { " \"\($0)\"" } ?? ""
+            Task { @MainActor in
+                self?.status = "\(label) · \(stage) · shot \(i) ready"
+                self?.say(String(format: "  shot %d ready at %.2f s%@", i, secs, title))
+            }
+        }) : nil
         status = "\(progress) · \(stage)"
         Memory.peakMemory = 0
         let sampler = MemorySampler()
@@ -332,7 +356,8 @@ final class BenchRunner: ObservableObject {
         let th0 = thermalNow
         let r: CallResult
         do {
-            r = try await host.run(template: prompt, marker: pack.imageMarker, image: image?.0, maxTokens: maxTokens)
+            r = try await host.run(template: prompt, marker: pack.imageMarker, image: image?.0, maxTokens: maxTokens,
+                                   shots: streaming)
         } catch {
             _ = sampler.stop()
             throw error
@@ -346,7 +371,9 @@ final class BenchRunner: ObservableObject {
             promptTokensPerSecond: r.promptTPS, generationTokensPerSecond: r.genTPS,
             peakFootprint: peak, minAvailable: minA, mlxPeak: Memory.peakMemory,
             thermalStart: th0, thermalEnd: thermalNow,
-            jsonValid: json ? JSONText.isValid(r.text) : nil, output: r.text)
+            jsonValid: json ? JSONText.isValid(r.text) : nil, output: r.text,
+            firstShotSeconds: r.shotSeconds?.first, shotSeconds: r.shotSeconds, shotTokens: r.shotTokens, shotsComplete: r.shotsComplete,
+            repairedAfterCap: streamShots ? r.rawText != nil : nil, rawOutput: r.rawText)
     }
 
     // MARK: - Resource failures
@@ -462,6 +489,12 @@ final class BenchRunner: ObservableObject {
             let warmCalls = warm.flatMap(\.calls)
             let rec = ts.compactMap { $0.camera?.firstFrameSeconds }
             let jsonCalls = ts.flatMap(\.calls).compactMap(\.jsonValid)
+            let comps = warm.compactMap { $0.calls.first { $0.stage == "compositions" } }
+            let onSite: [Double] = warm.compactMap { t in
+                guard let tgt = t.calls.first(where: { $0.stage == "target_scene" }),
+                      let shot1 = t.calls.first(where: { $0.stage == "compositions" })?.firstShotSeconds else { return nil }
+                return tgt.e2eSeconds + shot1
+            }
             return SummaryRow(
                 workload: w, size: s, n: ts.count,
                 firstE2e: ts.first(where: \.firstAfterLoad)?.inferenceSeconds,
@@ -473,7 +506,13 @@ final class BenchRunner: ObservableObject {
                 peakFootprintMax: ts.map(\.peakFootprint).max() ?? 0,
                 minAvailableMin: ts.map(\.minAvailable).min() ?? 0,
                 cameraRecoveryMedian: median(rec), cameraRecoveryMax: rec.max(),
-                jsonValid: "\(jsonCalls.filter { $0 }.count)/\(jsonCalls.count)")
+                jsonValid: "\(jsonCalls.filter { $0 }.count)/\(jsonCalls.count)",
+                compositionsTtftMedian: median(comps.map(\.ttftSeconds)),
+                compositionsFirstShotMedian: median(comps.compactMap(\.firstShotSeconds)),
+                compositionsFirstShotMax: comps.compactMap(\.firstShotSeconds).max(),
+                onSiteToFirstShotMedian: median(onSite),
+                compositionsTokensMedian: median(comps.map { Double($0.generatedTokens) }),
+                compositionsShotsCompleteMin: comps.compactMap(\.shotsComplete).min())
         }
     }
 }

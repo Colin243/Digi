@@ -64,6 +64,85 @@ enum JSONText {
     static func isValid(_ text: String) -> Bool { object(in: text) != nil }
 }
 
+/// Incremental scanner for the compositions output, `{"compositions": [ {...}, {...}, ... ]}`.
+/// Feed it decoded text as it streams. It reports each shot object as soon as its closing brace
+/// arrives and the object parses, so the app can show shot 1 while shots 2-3 are still decoding.
+/// Text before the first `{` (prose, a ```json fence) is ignored, like JSONText.object(in:).
+struct ShotStream {
+    let key: String
+    /// Raw text of each complete shot object, in order. Each one parses as a JSON object.
+    private(set) var shots: [String] = []
+
+    private var stack: [Unicode.Scalar] = []
+    private var inString = false
+    private var escaped = false
+    private var rootString = ""  // string being read at root level (a candidate key)
+    private var lastRootString = ""
+    private var inShotsArray = false
+    private var shot = ""
+    private var capturing = false
+    private(set) var rootClosed = false
+
+    init(key: String = "compositions") { self.key = key }
+
+    /// Returns the shots completed by this chunk (usually zero or one).
+    mutating func feed(_ chunk: String) -> [String] {
+        var done: [String] = []
+        for c in chunk.unicodeScalars {
+            if rootClosed { break }
+            if stack.isEmpty && c != "{" { continue }
+            if capturing { shot.unicodeScalars.append(c) }
+            if inString {
+                if escaped { escaped = false }
+                else if c == "\\" { escaped = true }
+                else if c == "\"" {
+                    inString = false
+                    if stack.count == 1 { lastRootString = rootString }
+                } else if stack.count == 1 { rootString.unicodeScalars.append(c) }
+                continue
+            }
+            switch c {
+            case "\"":
+                inString = true
+                if stack.count == 1 { rootString = "" }
+            case "{":
+                if inShotsArray && stack.count == 2 && !capturing {
+                    capturing = true
+                    shot = "{"
+                }
+                stack.append(c)
+            case "[":
+                if stack.count == 1 && lastRootString == key { inShotsArray = true }
+                stack.append(c)
+            case "}", "]":
+                guard !stack.isEmpty else { continue }
+                stack.removeLast()
+                if c == "}" && capturing && stack.count == 2 {
+                    capturing = false
+                    if (try? JSONSerialization.jsonObject(with: Data(shot.utf8))) is [String: Any] {
+                        shots.append(shot)
+                        done.append(shot)
+                    }
+                    shot = ""
+                }
+                if c == "]" && stack.count == 1 { inShotsArray = false }
+                if stack.isEmpty { rootClosed = true }
+            default:
+                break
+            }
+        }
+        return done
+    }
+
+    /// When generation stopped before the JSON closed (the max-token cap), rebuild a valid
+    /// document from the shots that did complete: `{"<key>": [shot1, ...]}`. Returns nil if the
+    /// text already parses or no shot completed.
+    static func repaired(_ text: String, shots: [String], key: String = "compositions") -> String? {
+        guard !JSONText.isValid(text), !shots.isEmpty else { return nil }
+        return "{\"\(key)\":[" + shots.joined(separator: ",") + "]}"
+    }
+}
+
 /// BenchImages/manifest.json.
 struct ImageManifest: Decodable {
     struct Variant: Decodable { let file: String; let size: [Int] }

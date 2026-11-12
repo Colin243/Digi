@@ -200,3 +200,61 @@ Then:
 ## 7. Steps on the phone
 
 See [`ios-bench/README.md`](../ios-bench/README.md), sections "Build and install" and "Run". The device runs can't be automated from the Mac: airplane mode, camera permission and tapping Start have to be done on the phone.
+
+## 8. Compositions cap and streaming (mitigations 3 and 4)
+
+The device runs found that compositions decoding dominates the on-site wait: about 965 tokens at about 37 tok/s, roughly 26 s. The harness now has both code mitigations. The prompt is unchanged and still byte-identical to the Python v4 prompt; only generation settings and output handling changed.
+
+**What changed**
+
+- **Max-token cap for compositions.**
+  - Set it with the "Compositions max tokens" stepper in the app (default **600**, step 50). 0 means the 1600 from `prompts.json`, the old behaviour.
+  - In MacSmoke, it is the 4th argument (default 600; 0 = uncapped).
+  - The effective value is recorded in `config.max_tokens.compositions` and `config.compositions_max_tokens_override`.
+- **Valid JSON under the cap.**
+  - If the cap stops generation inside the JSON (`stop_reason: "length"`), the output is rebuilt as `{"compositions": [...]}` from the shots that completed. A half-written shot is dropped.
+  - The truncated text is kept in `raw_output`, and `repaired_after_cap` is true.
+  - If no shot completed, the output stays invalid and counts against `json_valid`.
+- **Streaming.**
+  - The compositions call decodes tokens as they arrive. It scans for each shot object in the `compositions` array and parses it when its closing brace arrives. The app logs "shot N ready at X s" at that moment; the product would show the shot then.
+  - The scan only runs on the compositions call. The saved output is still a full decode at the end.
+- **New fields.**
+  - Per compositions call: `first_shot_seconds` and `shot_seconds` (from request start to each shot parsed), `shots_complete`, `repaired_after_cap` and `raw_output`.
+  - Per summary row (warm trials): `compositions_ttft_median`, `compositions_first_shot_median` / `_max`, `on_site_to_first_shot_median` (target-scene e2e + compositions time to shot 1), `compositions_tokens_median` and `compositions_shots_complete_min`.
+  - `ttft_seconds` is unchanged: request start to the first generated token.
+
+**What MacSmoke shows, and what to expect on the phone (estimates, not device measurements)**
+
+MacSmoke ran on 2026-11-12, M3 Pro, 1024 px, cafe-window-candid. The Mac was busy with other work (20–53 tok/s against the usual 75–98), so its timings are not meaningful. Its token counts are, because decoding is greedy:
+
+- **Uncapped:** 955 tokens, `stop`. Shot objects closed at tokens **322, 637 and 952**, about 318 tokens per shot.
+- **Cap 600:** stopped at 600 (`length`). **One complete shot**, closed at token 307 in the 768 px run. The output was repaired to valid JSON with 1 shot. The half-written shot 2 was dropped.
+- So **600 buys one shot**, about 650 the second, and all three need about 960, which is the uncapped length. If the product needs two shots on screen, use **700**.
+
+Projected onto the device numbers above (compositions prefill 2.7 s at 1024 px / 2.0 s at 768, about 37 tok/s), from the compositions request start:
+
+- shot 1 at about 2.7 + 322 / 37 ≈ **11.5 s** (1024 px), whatever the cap;
+- e2e about 19 s with cap 600 and about 22 s with cap 700, against 28.9 s uncapped.
+
+**First token under 2 s is unlikely at 1024 px.** TTFT is prep + prefill, and the measured compositions prefill alone is 2.7 s. Streaming doesn't change prefill. At 768 px, prefill was 2.0 s, so TTFT will be right at the edge. Getting well under 2 s needs a shorter prompt or prefix caching; it doesn't come from streaming or the cap.
+
+**Steps on the phone (to do)**
+
+1. Build and install the Release app as in [`ios-bench/README.md`](../ios-bench/README.md) ("Build and install"). The model can stay where it is.
+2. Set up the phone as in section 1: airplane mode, battery above 50% and unplugged, cool, other apps closed.
+3. In Digi Bench, select **Standard**, keep the default 3 repeats, and leave **Compositions max tokens** at **600**. Tap Start.
+4. When it finishes, let the phone cool for about 10 minutes. Then run **Standard** again with the cap at **0 (off, 1600)**. This gives a same-day uncapped baseline with the streaming fields.
+5. Let it cool again, then repeat step 3 with the cap at **700**. The 600 cap is expected to leave one shot and 700 two, so this run decides which cap the product uses.
+6. AirDrop the JSON files to the Mac and print the table:
+
+   ```sh
+   python3 photography-ai/ios-bench/scripts/streaming_summary.py ~/Downloads/bench-*.json
+   ```
+
+7. Check:
+   - whether the compositions TTFT median is under 2 s (unlikely at 1024 px, see above);
+   - the shot 1 median, and target + shot 1 (what the user waits for on site);
+   - capped runs keep `json_valid` at 100%;
+   - the minimum shots complete per capped call (`compositions_shots_complete_min`) against the number of shots the product needs.
+
+   Record the numbers in section 2 and update the verdict.

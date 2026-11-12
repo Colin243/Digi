@@ -85,10 +85,45 @@ struct Generated: Sendable {
     let text: String
     let firstToken: Double?
     let info: GenerateCompletionInfo?
+    let shots: [String]
+    let shotTimes: [Double]
+    let shotTokens: [Int]
+}
+
+/// Streaming options for a JSON stage whose output is a list of shots.
+struct ShotStreaming: Sendable {
+    var key = "compositions"
+    /// Called on the inference task (not the main thread) as each shot object closes:
+    /// (shot index from 1, the shot's JSON text, seconds since the request started).
+    var onShot: (@Sendable (Int, String, Double) -> Void)?
+}
+
+/// Cheap incremental detokenizer: decodes only the tokens not yet emitted. Byte-level BPE
+/// (Qwen) decodes token by token except when a multi-byte character spans tokens, which shows
+/// up as U+FFFD; those tokens wait for the next one. Linear in the output, unlike re-decoding
+/// the whole segment each step. Only the shot scanner sees this text; the saved output is a
+/// full decode at the end.
+struct TailDetokenizer {
+    let tokenizer: any MLXLMCommon.Tokenizer
+    private var pending: [Int] = []
+
+    init(tokenizer: any MLXLMCommon.Tokenizer) { self.tokenizer = tokenizer }
+
+    mutating func next(_ token: Int) -> String {
+        pending.append(token)
+        let s = tokenizer.decode(tokenIds: pending, skipSpecialTokens: true)
+        if s.unicodeScalars.last == "\u{FFFD}" && pending.count < 4 { return "" }
+        pending.removeAll()
+        return s
+    }
 }
 
 struct CallResult {
     var text: String
+    var rawText: String?  // the truncated output, when `text` was repaired after the cap
+    var shotSeconds: [Double]?  // request start -> each shot object closed (streamed stages)
+    var shotTokens: [Int]?  // generated tokens so far when each shot closed
+    var shotsComplete: Int?
     var promptTokens: Int
     var generatedTokens: Int
     var stopReason: String
@@ -125,7 +160,12 @@ final class ModelHost {
 
     /// One generation. `template` uses `marker` where the image goes, exactly like the Mac
     /// backend's build_messages(): text before the marker, the image, text after.
-    func run(template: String, marker: String, image: URL?, maxTokens: Int) async throws -> CallResult {
+    ///
+    /// With `shots`, the decoded text is scanned while it streams and each shot object is
+    /// reported as it closes. If the max-token cap cuts the JSON off, the result's `text` is
+    /// rebuilt from the complete shots (valid JSON) and `rawText` keeps what was generated.
+    func run(template: String, marker: String, image: URL?, maxTokens: Int,
+             shots: ShotStreaming? = nil) async throws -> CallResult {
         guard let container else { throw HostError.badPrompt("model not loaded") }
         let t0 = now()
 
@@ -157,19 +197,38 @@ final class ModelHost {
             var tokens: [Int] = []
             var first: Double?
             var info: GenerateCompletionInfo?
+            var detok = TailDetokenizer(tokenizer: context.tokenizer)
+            var scanner = shots.map { ShotStream(key: $0.key) }
+            var shotTimes: [Double] = []
+            var shotTokens: [Int] = []
             for await g in stream {
                 switch g {
                 case .token(let t):
                     if first == nil { first = now() }
                     tokens.append(t)
+                    if scanner != nil {
+                        let closed = scanner!.feed(detok.next(t))
+                        for s in closed {
+                            shotTimes.append(now() - t0)
+                            shotTokens.append(tokens.count)
+                            shots?.onShot?(shotTimes.count, s, shotTimes.last!)
+                        }
+                    }
                 case .info(let i):
                     info = i
                 }
             }
             let text = context.tokenizer.decode(tokenIds: tokens, skipSpecialTokens: true)
-            return Generated(text: text, firstToken: first, info: info)
+            return Generated(text: text, firstToken: first, info: info,
+                             shots: scanner?.shots ?? [], shotTimes: shotTimes, shotTokens: shotTokens)
         }
-        let text = gen.text, first = gen.firstToken, info = gen.info
+        let first = gen.firstToken, info = gen.info
+        var text = gen.text
+        var rawText: String?
+        if let shots, let fixed = ShotStream.repaired(gen.text, shots: gen.shots, key: shots.key) {
+            rawText = gen.text
+            text = fixed
+        }
         let tEnd = now()
         let stop: String
         switch info?.stopReason {
@@ -180,6 +239,10 @@ final class ModelHost {
         }
         return CallResult(
             text: text,
+            rawText: rawText,
+            shotSeconds: shots == nil ? nil : gen.shotTimes,
+            shotTokens: shots == nil ? nil : gen.shotTokens,
+            shotsComplete: shots == nil ? nil : gen.shots.count,
             promptTokens: info?.promptTokenCount ?? 0,
             generatedTokens: info?.generationTokenCount ?? 0,
             stopReason: stop,
