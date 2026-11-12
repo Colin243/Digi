@@ -2,6 +2,8 @@
 
   photo-ai train-data pool      search Commons per datasets/train_v1/spec.json -> data/train_v1/pool.json
   photo-ai train-data fetch     download, hash (sha256 + 64-bit dHash), exclude held-out near-duplicates, split
+  build_angle_candidates()      targeted low/high-angle queries -> data/train_v1/pool.angle-candidates.json
+                                (pool.json is never touched; append_candidates() merges with a pool.before-* backup)
 
 Leakage rules (see docs/phase4-finetuning.md):
   * no image whose Commons title appears in a held-out manifest (portrait_v1)
@@ -58,13 +60,107 @@ def heldout_image_paths(spec: dict) -> list[Path]:
     return paths
 
 
+# The first pool is eye-level-heavy (137 of 163 usable people photos; see docs/phase4-finetuning.md §9).
+# These queries target camera-angle techniques and get a larger search limit and starter-sample cap.
+ANGLE_QUERIES: dict[str, str] = {
+    "low angle portrait": "low",
+    "worm's eye": "low",
+    "from below": "low",
+    "overhead portrait": "overhead",
+    "shot from above": "high",
+}
+ANGLE_SEARCH_LIMIT = 50  # Commons gsrlimit maximum for non-bot clients
+ANGLE_SAMPLE_CAP = 20
+
+
+def angle_queries(spec: dict) -> dict[str, str]:
+    """Angle-targeted query -> intended angle. A spec may override with an `angle_queries` mapping."""
+    return dict(spec.get("angle_queries") or ANGLE_QUERIES)
+
+
+def search_limit(query: str, spec: dict) -> int:
+    """Commons search limit for one query: angle queries get the higher cap, never below `per_query`."""
+    if query in angle_queries(spec):
+        return max(spec.get("angle_per_query", ANGLE_SEARCH_LIMIT), spec["per_query"])
+    return spec["per_query"]
+
+
+def is_cc0(item: dict) -> bool:
+    return (item.get("license") or "").strip().upper().startswith("CC0")
+
+
+def build_angle_candidates(dataset: str = "train_v1", log=print, pause_s: float = 1.0,
+                           out_name: str = "pool.angle-candidates.json") -> dict:
+    """Search the angle queries and write *new* candidates to a separate file (pool.json is only read).
+
+    Same source and category as build_pool. Kept only if CC0, not a held-out title, and not already in
+    pool.json. Near-duplicate and photographer-split checks run later in fetch_pool, after download.
+    """
+    spec = load_spec(dataset)
+    excluded_titles = heldout_titles(spec)
+    root = data_dir(dataset)
+    existing_path = root / "pool.json"
+    existing = {i["id"] for i in json.loads(existing_path.read_text())["images"]} if existing_path.exists() else set()
+    found: dict[str, dict] = {}
+    counts: dict[str, dict] = {}
+    for q, angle in angle_queries(spec).items():
+        items = commons.search(q, search_limit(q, spec), spec["category"])
+        c = {"angle": angle, "results": len(items), "not_cc0": 0, "heldout": 0, "already_in_pool": 0,
+             "dup_of_other_angle_query": 0, "new": 0}
+        for it in items:
+            if not is_cc0(it):
+                c["not_cc0"] += 1
+                continue
+            if it["title"] in excluded_titles:
+                c["heldout"] += 1
+                continue
+            pid = _pid(it["title"])
+            if pid in existing:
+                c["already_in_pool"] += 1
+                continue
+            if pid in found:
+                found[pid]["queries"].append(q)
+                c["dup_of_other_angle_query"] += 1
+                continue
+            found[pid] = {"id": pid, "role_hint": "person", "angle_hint": angle, "queries": [q], **it}
+            c["new"] += 1
+        counts[q] = c
+        log(f"angle  {q!r:22} {c['results']:3} results, {c['new']:3} new "
+            f"({c['already_in_pool']} already in pool, {c['heldout']} held-out, {c['not_cc0']} not CC0)")
+        time.sleep(pause_s)
+    doc = {"dataset": dataset, "built_at": time.strftime("%Y-%m-%dT%H:%M:%S"), "source": spec["source"],
+           "kind": "angle-candidates", "counts": counts,
+           "images": sorted(found.values(), key=lambda x: x["id"])}
+    root.mkdir(parents=True, exist_ok=True)
+    (root / out_name).write_text(json.dumps(doc, indent=1, ensure_ascii=False))
+    return doc
+
+
+def append_candidates(dataset: str = "train_v1", candidates_name: str = "pool.angle-candidates.json",
+                      backup_name: str = "pool.before-angle.json") -> dict:
+    """Merge a candidates file into pool.json, first copying pool.json to `backup_name` (never overwritten)."""
+    root = data_dir(dataset)
+    backup = root / backup_name
+    if backup.exists():
+        raise FileExistsError(f"{backup} already exists; pick another backup_name")
+    pool_text = (root / "pool.json").read_text()
+    backup.write_text(pool_text)
+    pool = json.loads(pool_text)
+    have = {i["id"] for i in pool["images"]}
+    cand = json.loads((root / candidates_name).read_text())
+    added = [i for i in cand["images"] if i["id"] not in have and is_cc0(i)]
+    pool["images"] = sorted(pool["images"] + added, key=lambda x: x["id"])
+    (root / "pool.json").write_text(json.dumps(pool, indent=1, ensure_ascii=False))
+    return {"added": len(added), "backup": str(backup)}
+
+
 def build_pool(dataset: str = "train_v1", log=print, pause_s: float = 1.0) -> dict:
     spec = load_spec(dataset)
     excluded_titles = heldout_titles(spec)
     pool: dict[str, dict] = {}
     for role, key in (("person", "people_queries"), ("place", "place_queries")):
         for q in spec[key]:
-            items = commons.search(q, spec["per_query"], spec["category"])
+            items = commons.search(q, search_limit(q, spec), spec["category"])
             kept = 0
             for it in items:
                 if it["title"] in excluded_titles:
@@ -85,16 +181,23 @@ def build_pool(dataset: str = "train_v1", log=print, pause_s: float = 1.0) -> di
     return doc
 
 
+def sample_cap(query: str, role: str, spec: dict) -> int:
+    """Starter-sample cap per query; angle queries get the higher `angle_per_query` cap."""
+    per = spec.get("fetch_sample", {})
+    if query in angle_queries(spec):
+        return per.get("angle_per_query", ANGLE_SAMPLE_CAP)
+    return {"person": per.get("person_per_query", 12), "place": per.get("place_per_query", 5)}[role]
+
+
 def sample_ids(pool: dict, spec: dict) -> list[str]:
     """Deterministic starter subset: the first N images (Commons relevance order) per query."""
-    per = spec.get("fetch_sample", {})
-    caps = {"person": per.get("person_per_query", 12), "place": per.get("place_per_query", 5)}
     counts: dict[str, int] = {}
     chosen = []
-    order = {q: i for i, q in enumerate(spec["people_queries"] + spec["place_queries"])}
+    queries = spec["people_queries"] + spec["place_queries"] + list(angle_queries(spec))
+    order = {q: i for i, q in enumerate(queries)}
     for it in sorted(pool["images"], key=lambda x: (order.get(x["queries"][0], 999), x["title"])):
         q = it["queries"][0]
-        if counts.get(q, 0) < caps[it["role_hint"]]:
+        if counts.get(q, 0) < sample_cap(q, it["role_hint"], spec):
             counts[q] = counts.get(q, 0) + 1
             chosen.append(it["id"])
     return chosen
