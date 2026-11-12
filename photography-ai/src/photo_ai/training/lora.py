@@ -2,7 +2,9 @@
 
 What happens to the network (details and diagrams: docs/phase4-finetuning.md):
   * The base weights stay frozen: the 4-bit language model, the vision tower and the
-    projector are never updated (the vision tower is not even given adapters).
+    projector are never updated. By default only the language model gets adapters;
+    `vision_targets` (e.g. ["qkv", "proj", "linear_fc1", "linear_fc2"]) also adds them to the
+    vision blocks and the patch/DeepStack mergers, so the model can adapt how it reads the image.
   * Each targeted Linear layer W in the language model gets a low-rank side path:
         y = W x  +  scale * B (A x)        A: r x d_in,  B: d_out x r,  r = rank (e.g. 8)
     B starts at zero, so training starts exactly from the base model's behaviour.
@@ -39,6 +41,12 @@ class LoraConfig:
     output_root: str = "data/adapters"
     targets: list[str] = field(default_factory=lambda: ["q_proj", "k_proj", "v_proj", "o_proj",
                                                          "gate_proj", "up_proj", "down_proj"])
+    # Linear suffixes inside vision_tower that also get adapters ([] = vision tower untouched).
+    # "qkv"/"proj" = vision attention, "linear_fc1"/"linear_fc2" = vision MLP and the mergers.
+    vision_targets: list[str] = field(default_factory=list)
+    # Vision blocks below this index keep no adapters, so backprop stops there (mergers always get them).
+    # Measured: all 24 blocks peaked at 18.1 GB on the 18 GB Mac vs 11.3 GB language-only.
+    vision_first_block: int = 0
     rank: int = 8
     alpha: float = 16.0
     dropout: float = 0.05
@@ -135,13 +143,36 @@ def load_for_training(cfg: LoraConfig):
     from mlx_vlm.trainer.peft import get_peft_model
 
     model, processor = load(cfg.base_model)
-    model = get_peft_model(model, linear_layers=cfg.targets, rank=cfg.rank, alpha=cfg.alpha,
-                           dropout=cfg.dropout, freeze=True, verbose=False)
+    model = get_peft_model(model, linear_layers=list(cfg.targets) + vision_lora_names(model, cfg.vision_targets, cfg.vision_first_block),
+                           rank=cfg.rank, alpha=cfg.alpha, dropout=cfg.dropout, freeze=True, verbose=False)
     if cfg.grad_checkpoint:
         from mlx_vlm.trainer.common.utils import enable_model_gradient_checkpointing
 
         enable_model_gradient_checkpointing(model.language_model)
+        if cfg.vision_targets:
+            enable_model_gradient_checkpointing(model.vision_tower)
     return model, processor
+
+
+def vision_lora_names(model, suffixes: list[str], first_block: int = 0) -> list[str]:
+    """Fully qualified vision-tower Linear names ending in one of `suffixes` (mergers included),
+    skipping vision blocks numbered below `first_block`."""
+    import re
+
+    import mlx.nn as nn
+
+    if not suffixes:
+        return []
+    def block_ok(name: str) -> bool:
+        m = re.search(r"\.blocks\.(\d+)\.", name)
+        return m is None or int(m.group(1)) >= first_block  # mergers have no block index
+
+    names = [n for n, m in model.named_modules()
+             if n.startswith("vision_tower.") and isinstance(m, (nn.Linear, nn.QuantizedLinear))
+             and n.split(".")[-1] in set(suffixes) and block_ok(n)]
+    if not names:
+        raise ValueError(f"no vision_tower Linear layers end in {suffixes}")
+    return names
 
 
 def parameter_report(model) -> dict:

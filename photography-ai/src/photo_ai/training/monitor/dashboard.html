@@ -274,10 +274,10 @@ body.network-display { overflow:hidden; background:#080a0f; }
       <div id="netTools" class="net-tools"><span id="netHelp">Drag to orbit · scroll to zoom · Shift-drag to pan · click to inspect</span><div role="group" aria-label="3D camera controls"><button id="netZoomOut" aria-label="Zoom out">−</button><button id="netZoomIn" aria-label="Zoom in">+</button><button id="netReset">Reset view</button><button id="netDisplay">Display mode ↗</button></div></div>
       <div class="netwrap" id="netwrap"><canvas id="net" tabindex="0" aria-label="Interactive 3D architecture. Arrow keys rotate, plus and minus zoom, zero resets." aria-describedby="netHelp"></canvas><div class="tip" id="netTip"></div>
         <div class="nettitle" id="netTitle"></div>
-        <div class="netleg"><span><i style="background:#3fb7e8"></i>vision encoder (frozen)</span><span><i style="background:#f4c542"></i>connector (frozen)</span>
-        <span><i style="background:linear-gradient(90deg,#ff8a3d,#ff4f7b,#8f6bff)"></i>language model layers 0→27</span><span><i style="background:#555;border:1px solid #888"></i>frozen, no gradient</span>
+        <div class="netleg"><span><i style="background:linear-gradient(90deg,#60d6f0,#5680ff)"></i>vision blocks 0→23</span><span><i style="background:#ecc468"></i>mergers (connector)</span>
+        <span><i style="background:linear-gradient(90deg,#ff8a3d,#ff4f7b,#8f6bff)"></i>language model layers 0→27</span><span><i style="background:#666;opacity:.6"></i>small dim dot = frozen unit (norm, embedding, frozen Linear)</span>
         <span><i style="border:1.5px solid #ccc;background:transparent"></i>LoRA module not sampled yet (unavailable)</span>
-        <span>schematic layout · adapter glow &amp; size = selected metric · frozen halos fixed · lines = data flow</span></div></div>
+        <span>every unit is a node · bright lines = forward path · faint lines = residual skips · glow = selected metric, scaled within each group · schematic layout</span></div></div>
       <div class="flow" id="flow" style="display:none"></div>
     </div>
     <div class="detail" id="detail"><div class="empty">Click a block or a LoRA cell.</div></div>
@@ -568,7 +568,7 @@ function renderArchShell() {
     ${tile("Total parameters", big(t.total_params), "logical (4-bit weights unpacked)")}
     ${tile("Trainable", big(t.trainable_params), `${(100 * t.trainable_params / t.total_params).toFixed(2)}% · ${t.trainable_tensors} tensors`)}
     ${tile("LoRA modules", String(t.lora_units), `${t.instrumented_units} instrumented`)}
-    ${tile("Vision tower trainable tensors", String(t.vision_trainable_tensors), t.vision_trainable_tensors ? "" : "vision encoder + connector frozen")}
+    ${tile("Vision tower trainable tensors", String(t.vision_trainable_tensors), t.vision_trainable_tensors ? `${big((a.groups.vision_encoder?.trainable_params || 0) + (a.groups.connector?.trainable_params || 0))} weights in ${(a.groups.vision_encoder?.lora_units || 0) + (a.groups.connector?.lora_units || 0)} vision/merger adapters` : "vision encoder + connector frozen")}
     ${tile("LM head", "", esc(a.lm_head))}
   </div>`;
   const sel = `<label>Colour LoRA cells by <select id="metricSel">${METRICS.map(([k, d]) => `<option value="${k}" ${k === S.metric ? "selected" : ""}>${d}</option>`).join("")}</select></label>`;
@@ -594,12 +594,26 @@ function renderArch() {
   const lb = blocks("language_model");
   const vG = a.groups.vision_encoder || {}, cG = a.groups.connector || {}, lG = a.groups.language_model || {};
   const blockCell = (g, b, label) => `<div class="cell frozen wide ${S.selected === `block:${g}:${b}` ? "sel" : ""}" data-sel="block:${g}:${b}" title="${esc(label)} · frozen">${esc(label)}</div>`;
-  let html = `<div class="grp"><h4>Vision encoder <span class="badge frozen">frozen</span></h4><div class="sub">${big(vG.total_params)} params · ${vG.blocks} blocks · ${vG.trainable_params ? big(vG.trainable_params) + " trainable" : "0 trainable, no adapters"}</div>
+  // Vision / connector adapters (when a run gives them adapters) get their own grid and colour scale.
+  const visLora = unitsBy((u) => (u.group === "vision_encoder" || u.group === "connector") && u.lora);
+  const vr = architectureRange(visLora);
+  const vcolor = (v) => { if (v == null || !isFinite(v)) return null; const t = vr.hi > vr.lo ? (v - vr.lo) / (vr.hi - vr.lo) : 0.5; return `var(--seq${Math.min(6, Math.floor(t * 6.999))})`; };
+  const loraCell = (n, colorFn) => { if (!n) return `<div class="cell frozen" title="no adapter"></div>`; const s = lastSampleFor(n), v = s ? s.v[S.metric] : null, col = colorFn(v);
+    return `<div class="cell ${col ? "" : "na"} ${S.selected === n ? "sel" : ""}" data-sel="${n}" style="${col ? `background:${col}` : ""}" title="${n}\n${S.metric}: ${v == null ? "unavailable" : shortNum(v)}${s ? ` (step ${s.step})` : ""}"></div>`; };
+  const visNames = new Set(visLora.map((u) => u.name));
+  const VCOLS = [["attn.qkv", "qkv"], ["attn.proj", "pr"], ["mlp.linear_fc1", "f1"], ["mlp.linear_fc2", "f2"]];
+  const visGrid = visLora.length ? `<div class="sub" style="margin-top:8px">LoRA on vision blocks · own colour scale ${vr.count ? `${shortNum(vr.lo)} → ${shortNum(vr.hi)}` : "(no samples yet)"}</div>
+    <div class="cells" style="grid-template-columns:auto repeat(4, 18px)"><div></div>${VCOLS.map(([, l]) => `<div class="collab">${l}</div>`).join("")}
+    ${vb.filter((b) => VCOLS.some(([c]) => visNames.has(`vision_tower.blocks.${b}.${c}`))).map((b) => `<div class="rowlab" data-sel="block:vision_encoder:${b}" style="cursor:pointer">V${b}</div>${VCOLS.map(([c]) => loraCell(visNames.has(`vision_tower.blocks.${b}.${c}`) ? `vision_tower.blocks.${b}.${c}` : null, vcolor)).join("")}`).join("")}</div>` : "";
+  const conGrid = visLora.some((u) => u.group === "connector") ? `<div class="cells" style="grid-template-columns:auto repeat(2, 18px);margin-top:6px"><div></div><div class="collab">f1</div><div class="collab">f2</div>
+    ${conGroups.map((g) => `<div class="rowlab" data-sel="block:connector:${g}" style="cursor:pointer">${esc(g.replace("vision_tower.", "").replace("deepstack_merger_list.", "deepstack "))}</div>${["linear_fc1", "linear_fc2"].map((c) => loraCell(visNames.has(`${g}.${c}`) ? `${g}.${c}` : null, vcolor)).join("")}`).join("")}</div>` : "";
+  const badge = (G) => G.trainable_params ? `<span class="badge trainable">LoRA trainable</span>` : `<span class="badge frozen">frozen</span>`;
+  let html = `<div class="grp"><h4>Vision encoder ${badge(vG)}</h4><div class="sub">${big(vG.total_params)} params · ${vG.blocks} blocks · ${vG.trainable_params ? `${big(vG.trainable_params)} trainable in ${vG.lora_units} LoRA modules` : "0 trainable, no adapters"}</div>
     <div class="cells" style="grid-template-columns:repeat(4, auto)">${[...unitsBy((u) => u.group === "vision_encoder" && u.block == null).map((u) => blockCell("vision_encoder", u.name, u.name.replace("vision_tower.", "")))].join("")}</div>
-    <div class="cells" style="grid-template-columns:repeat(4, auto);margin-top:4px">${vb.map((b) => blockCell("vision_encoder", b, "block " + b)).join("")}</div></div>
+    ${visGrid || `<div class="cells" style="grid-template-columns:repeat(4, auto);margin-top:4px">${vb.map((b) => blockCell("vision_encoder", b, "block " + b)).join("")}</div>`}</div>
     <div class="arrow">→</div>
-    <div class="grp"><h4>Connector / projector <span class="badge frozen">frozen</span></h4><div class="sub">${big(cG.total_params)} params · patch merger + DeepStack mergers</div>
-    <div class="cells">${conGroups.map((n) => blockCell("connector", n, n.replace("vision_tower.", ""))).join("")}</div></div>
+    <div class="grp"><h4>Connector / projector ${badge(cG)}</h4><div class="sub">${big(cG.total_params)} params · patch merger + DeepStack mergers${cG.trainable_params ? ` · ${big(cG.trainable_params)} trainable` : ""}</div>
+    ${conGrid || `<div class="cells">${conGroups.map((n) => blockCell("connector", n, n.replace("vision_tower.", ""))).join("")}</div>`}</div>
     <div class="arrow">→</div>
     <div class="grp"><h4>Language model <span class="badge trainable">LoRA trainable</span></h4><div class="sub">${big(lG.total_params)} params (base frozen, 4-bit) · ${big(lG.trainable_params)} trainable in ${lG.lora_units} LoRA modules</div>
     <div class="cells" style="grid-template-columns:auto repeat(${LORA_COLS.length}, 18px)"><div></div>${LORA_COLS.map((c) => `<div class="collab" title="${c}">${c[0]}${c.includes("_") ? c.split("_")[0].slice(-1) : ""}</div>`).join("")}`;
@@ -710,45 +724,76 @@ const Network3D = (() => {
 })();
 // END NETWORK3D MATH
 
+// Colour along depth inside each group: vision cyan->blue, connector gold, language orange->pink->violet.
+const NET_STOPS={vision_encoder:[[96,214,240],[86,128,255]],connector:[[236,196,104],[224,160,72]],language_model:[[255,138,61],[255,79,123],[143,107,255]]};
+function rampAt(stops,t){t=Math.max(0,Math.min(1,t));const seg=(stops.length-1)*t,k=Math.min(stops.length-2,Math.floor(seg)),u=seg-k;return stops[k].map((v,j)=>Math.round(v+(stops[k+1][j]-v)*u));}
+function rgba(c,a=1){return `rgba(${c[0]},${c[1]},${c[2]},${a})`;}
+// Real sub-units of one block, in forward order, with the real paths between them.
+const VISION_PARTS=["norm1","attn.qkv","attn.proj","norm2","mlp.linear_fc1","mlp.linear_fc2"];
+const LM_PARTS=["input_layernorm","self_attn.q_proj","self_attn.k_proj","self_attn.v_proj","self_attn.q_norm","self_attn.k_norm","self_attn.o_proj","post_attention_layernorm","mlp.gate_proj","mlp.up_proj","mlp.down_proj"];
+function partLabel(name){return name.replace("language_model.model.","").replace("vision_tower.","");}
 function buildNet(W, H) {
+  // Every node is a real unit of the loaded model (architecture.json), except block hubs, which mark the
+  // residual stream entering a block. Every edge is a real data path of the forward pass.
   const a=S.run.architecture,nodes=[],edges=[],byKey={};
+  const unit=Object.fromEntries(a.units.map(u=>[u.name,u]));
   const add=n=>{nodes.push(n);byKey[n.key]=n;return n;};
-  const blocks=g=>[...new Set(a.units.filter(u=>u.group===g&&u.block!=null).map(u=>u.block))].sort((a,b)=>a-b);
+  const link=(x,y,c,w=.65)=>{if(x&&y)edges.push([x,y,c,w]);};
+  const blocks=g=>[...new Set(a.units.filter(u=>u.group===g&&u.block!=null).map(u=>u.block))].sort((p,q)=>p-q);
   const vb=blocks("vision_encoder"),lb=blocks("language_model");
-  let prev=add({key:"block:vision_encoder:vision_tower.patch_embed.proj",x:-385,y:175,z:0,r:4,kind:"frozen",col:"#58b9ea",label:"patch embedding (frozen)"});
-  // Vision blocks occupy a layered volume; no decorative units or connections are invented.
+  const kindOf=name=>unit[name]?.lora?"lora":"frozen";
+  const nodeFor=(name,x,y,z,rgb,group,depth)=>unit[name]?add({key:name,x,y,z,r:kindOf(name)==="lora"?2.5:1.7,kind:kindOf(name),rgb,group,depth,
+    label:`${partLabel(name)} · ${unit[name].lora?`LoRA r=${unit[name].lora.rank}`:"frozen"}`}):null;
+  const ring=(n,i,radius,tilt)=>{const up=1-2*(i+.5)/n,ac=Math.sqrt(1-up*up),ang=i*Math.PI*(3-Math.sqrt(5))+tilt;return [Math.cos(ang)*ac*radius,up*radius,Math.sin(ang)*ac*radius];};
+  // --- vision tower: a rising helix of blocks, each with its six units around the block hub
+  const vc=t=>rampAt(NET_STOPS.vision_encoder,t);
+  const patch=nodeFor("vision_tower.patch_embed.proj",-440,275,-20,vc(0),"vision_encoder",0);
+  const pos=nodeFor("vision_tower.pos_embed",-395,275,25,vc(0),"vision_encoder",0);
+  let prevHub=null,prevOut=null;const vOut={};
   vb.forEach((b,i)=>{
-    const x=(i%3-1)*65,y=(Math.floor(i/3)%4-1.5)*65,z=(Math.floor(i/12)-.5)*125;
-    const n=add({key:`block:vision_encoder:${b}`,x:-370+x,y,z,r:3.6,kind:"frozen",col:"#67b7e5",label:`vision block ${b} (frozen)`});
-    edges.push([prev,n,"rgba(111,187,234,.55)"]);prev=n;
+    const t=i/Math.max(vb.length-1,1),th=i*.62,hx=-420+80*Math.cos(th),hy=230-i*20,hz=80*Math.sin(th),col=vc(t);
+    const hub=add({key:`block:vision_encoder:${b}`,x:hx,y:hy,z:hz,r:2.6,kind:"hub",rgb:col,group:"vision_encoder",depth:t,label:`vision block ${b} · residual stream in`});
+    if(i===0){link(patch,hub,rgba(col,.6),1);link(pos,hub,rgba(col,.45));}
+    else{link(prevOut,hub,rgba(col,.55),1);link(prevHub,hub,"rgba(210,225,255,.22)",.5);}
+    const parts=VISION_PARTS.map((p,j)=>{const [dx,dy,dz]=ring(VISION_PARTS.length,j,27,i*.5);return nodeFor(`vision_tower.blocks.${b}.${p}`,hx+dx,hy+dy,hz+dz,col,"vision_encoder",t);});
+    const [n1,qkv,proj,n2,f1,f2]=parts,c=rgba(col,.38);
+    link(hub,n1,c);link(n1,qkv,c);link(qkv,proj,c);link(proj,n2,c);link(hub,n2,"rgba(210,225,255,.18)",.45);link(n2,f1,c);link(f1,f2,c);
+    prevHub=hub;prevOut=f2||hub;vOut[b]=prevOut;
   });
-  const merger=add({key:"block:connector:vision_tower.merger",x:-155,y:15,z:0,r:6,kind:"frozen",col:"#dfbc71",label:"patch merger (frozen)"});
-  edges.push([prev,merger,"rgba(221,188,116,.6)"]);
+  // --- connector: patch merger and DeepStack mergers, each norm -> fc1 -> fc2
+  const cc=t=>rampAt(NET_STOPS.connector,t);
+  const merger=(base,x,y,z,t,label)=>{
+    const hub=add({key:`block:connector:${base}`,x,y,z,r:4,kind:"hub",rgb:cc(t),group:"connector",depth:t,label});
+    const ps=["norm","linear_fc1","linear_fc2"].map((p,j)=>nodeFor(`${base}.${p}`,x+18+j*20,y+(j-1)*9,z+(j%2?12:-12),cc(t),"connector",t));
+    link(hub,ps[0],rgba(cc(t),.5));link(ps[0],ps[1],rgba(cc(t),.5));link(ps[1],ps[2],rgba(cc(t),.5));
+    return {hub,out:ps[2]||hub};
+  };
+  const main=merger("vision_tower.merger",-235,20,0,0,"patch merger: last vision block → image tokens");
+  link(prevOut,main.hub,"rgba(221,188,116,.6)",1);
   const ds=(a.dataflow?.deepstack_visual_indexes||[]).map((vi,j)=>{
-    const n=add({key:`block:connector:vision_tower.deepstack_merger_list.${j}`,x:-200+j*23,y:-100+j*83,z:-65+j*65,r:4.5,kind:"frozen",col:"#dfbc71",label:`DeepStack merger ${j} (frozen): vision block ${vi} → LM layer ${j}`});
-    const source=byKey[`block:vision_encoder:${vi}`];if(source)edges.push([source,n,"rgba(221,188,116,.4)"]);return n;
+    const m=merger(`vision_tower.deepstack_merger_list.${j}`,-280+j*12,-150+j*70,-110+j*110,(j+1)/3,`DeepStack merger ${j}: vision block ${vi} → LM layer ${j}`);
+    link(vOut[vi],m.hub,"rgba(221,188,116,.45)",.8);return m;
   });
-  const emb=add({key:"block:language_model:language_model.model.embed_tokens",x:-75,y:82,z:0,r:4.5,kind:"frozen",col:"#8793aa",label:"token embedding (frozen; tied LM head)"});
-  edges.push([merger,emb,"rgba(221,188,116,.55)"]);prev=emb;
-  const loraUnits=Object.fromEntries(a.units.filter(u=>u.lora).map(u=>[u.name,u]));
-  // Low-discrepancy placement fills an ellipsoidal volume, rather than a single spiral or shell.
+  // --- language model: decoder layers fill an ellipsoid, each with its eleven units around the hub
+  const emb=add({key:"block:language_model:language_model.model.embed_tokens",x:-120,y:80,z:0,r:4.5,kind:"frozen",rgb:[135,147,170],group:"language_model",depth:0,label:"token embedding (frozen; tied LM head) · text + image tokens enter here"});
+  link(main.out,emb,"rgba(221,188,116,.55)",1);
+  prevHub=null;prevOut=emb;
   lb.forEach((b,i)=>{
-    const t=i/Math.max(lb.length-1,1),angle=i*Math.PI*(3-Math.sqrt(5)),vertical=1-2*(i+.5)/lb.length,ring=Math.sqrt(1-vertical*vertical),shell=.48+.52*((i*.61803398875)%1);
-    const hx=210+230*shell*ring*Math.cos(angle),hy=185*shell*vertical,hz=205*shell*ring*Math.sin(angle);
-    const hub=add({key:`block:language_model:${b}`,x:hx,y:hy,z:hz,r:3,kind:"hub",col:lmColor(i,lb.length),label:`decoder layer ${b} (base frozen)`});
-    edges.push([prev,hub,lmColor(i,lb.length,.52)]);if(i<ds.length)edges.push([ds[i],hub,"rgba(221,188,116,.4)"]);
-    const mods=LORA_COLS.map((c,j)=>{
-      const sub=["gate_proj","up_proj","down_proj"].includes(c)?"mlp":"self_attn",name=`language_model.model.layers.${b}.${sub}.${c}`;
-      if(!loraUnits[name])return null;
-      const orbit=j*Math.PI*(3-Math.sqrt(5))+i*.35,up=1-2*(j+.5)/LORA_COLS.length,radius=34,across=Math.sqrt(1-up*up);
-      return add({key:name,x:hx+Math.cos(orbit)*across*radius,y:hy+up*radius,z:hz+Math.sin(orbit)*across*radius,r:2.5,kind:"lora",col:lmColor(i,lb.length),layer:i,label:`${name.replace("language_model.model.","")} · LoRA r=${loraUnits[name].lora.rank}`});
-    });
-    const [q,k,v,o,g,u,d]=mods;
-    for(const m of [q,k,v])if(m){edges.push([hub,m,lmColor(i,lb.length,.32)]);if(o)edges.push([m,o,lmColor(i,lb.length,.32)]);}
-    for(const m of [g,u])if(m&&o)edges.push([o,m,lmColor(i,lb.length,.32)]);
-    for(const m of [g,u])if(m&&d)edges.push([m,d,lmColor(i,lb.length,.32)]);
-    prev=d||hub;
+    const t=i/Math.max(lb.length-1,1),angle=i*Math.PI*(3-Math.sqrt(5)),vertical=1-2*(i+.5)/lb.length,rr=Math.sqrt(1-vertical*vertical),shell=.5+.5*((i*.61803398875)%1);
+    const hx=200+240*shell*rr*Math.cos(angle),hy=195*shell*vertical,hz=215*shell*rr*Math.sin(angle),col=rampAt(NET_STOPS.language_model,t);
+    const hub=add({key:`block:language_model:${b}`,x:hx,y:hy,z:hz,r:3,kind:"hub",rgb:col,group:"language_model",depth:t,label:`decoder layer ${b} · residual stream in`});
+    link(prevOut,hub,rgba(col,.5),1);if(prevHub)link(prevHub,hub,"rgba(255,235,225,.16)",.45);
+    if(ds[i])link(ds[i].out,hub,"rgba(221,188,116,.45)",.8);
+    const P=Object.fromEntries(LM_PARTS.map((p,j)=>{const [dx,dy,dz]=ring(LM_PARTS.length,j,38,i*.35);return [p,nodeFor(`language_model.model.layers.${b}.${p}`,hx+dx,hy+dy,hz+dz,col,"language_model",t)];}));
+    const c=rgba(col,.32),q=P["self_attn.q_proj"],k=P["self_attn.k_proj"],v=P["self_attn.v_proj"],qn=P["self_attn.q_norm"],kn=P["self_attn.k_norm"],o=P["self_attn.o_proj"],n1=P.input_layernorm,n2=P.post_attention_layernorm,g=P["mlp.gate_proj"],u=P["mlp.up_proj"],d=P["mlp.down_proj"];
+    link(hub,n1,c);for(const m of [q,k,v])link(n1,m,c);link(q,qn,c);link(k,kn,c);for(const m of [qn||q,kn||k,v])link(m,o,c);
+    link(o,n2,c);link(hub,n2,"rgba(255,235,225,.14)",.4);link(n2,g,c);link(n2,u,c);link(g,d,c);link(u,d,c);
+    prevHub=hub;prevOut=d||hub;
   });
+  const fn=nodeFor("language_model.model.norm",500,-10,0,[190,170,255],"language_model",1);
+  link(prevOut,fn,"rgba(170,150,255,.55)",1);
+  const head=add({key:"language_model.model.embed_tokens",x:545,y:-10,z:0,r:4.5,kind:"frozen",rgb:[135,147,170],group:"language_model",depth:1,label:"LM head = token embedding (tied weights) → next-token logits"});
+  link(fn,head,"rgba(170,150,255,.55)",1);
   for(const axis of ["x","y","z"]){const values=nodes.map(n=>n[axis]),center=(Math.min(...values)+Math.max(...values))/2;for(const n of nodes)n[axis]-=center;}
   return {nodes,edges};
 }
@@ -763,11 +808,13 @@ function drawNet(lo, hi) {
   ctx.fillStyle="#080b12";ctx.fillRect(0,0,W,H);
   const backdrop=ctx.createRadialGradient(W*.5,H*.44,0,W*.5,H*.44,Math.max(W,H)*.7);
   backdrop.addColorStop(0,"#111722");backdrop.addColorStop(1,"#07090e");ctx.fillStyle=backdrop;ctx.fillRect(0,0,W,H);
-  const amount=n=>hi>lo?Math.max(0,Math.min(1,(n.v-lo)/(hi-lo))):0.5;
+  // Glow is scaled within each group (vision / connector / language): their weight shapes differ.
+  for(const n of S.net.nodes){const sample=n.kind==="lora"?lastSampleFor(n.key):null;n.v=sample?sample.v[S.metric]:null;}
+  const ranges={};for(const n of S.net.nodes)if(n.kind==="lora"&&Number.isFinite(n.v)){const r=ranges[n.group]||(ranges[n.group]={lo:Infinity,hi:-Infinity});r.lo=Math.min(r.lo,n.v);r.hi=Math.max(r.hi,n.v);}
+  const amount=n=>{const r=ranges[n.group];return r&&r.hi>r.lo?Math.max(0,Math.min(1,(n.v-r.lo)/(r.hi-r.lo))):0.5;};
   for(const n of S.net.nodes){
     const p=Network3D.project(n,camera,W,H);n.px=p.x;n.py=p.y;n.depth=p.depth;n.scale=p.scale;
-    const sample=n.kind==="lora"?lastSampleFor(n.key):null;n.v=sample?sample.v[S.metric]:null;
-    n.screenR=Math.max(2,(n.kind==="lora"&&Number.isFinite(n.v)?2+3*Math.sqrt(amount(n)):n.r)*p.scale);
+    n.screenR=Math.max(n.kind==="frozen"?1.2:2,(n.kind==="lora"&&Number.isFinite(n.v)?2+3*Math.sqrt(amount(n)):n.r)*p.scale);
   }
   // Painter's order applies to edges and nodes together, so nearer geometry covers farther geometry.
   const items=S.net.edges.map(edge=>({edge,depth:(edge[0].depth+edge[1].depth)/2}));
@@ -775,7 +822,7 @@ function drawNet(lo, hi) {
   items.sort((a,b)=>b.depth-a.depth);
   for(const item of items){
     if(item.edge){
-      const [a,b,color]=item.edge;ctx.globalAlpha=Math.max(.3,Math.min(.9,.7-item.depth/900));ctx.strokeStyle=color;ctx.lineWidth=a.kind!=="lora"&&b.kind!=="lora"?1.2:.65;
+      const [a,b,color,width]=item.edge;ctx.globalAlpha=Math.max(.3,Math.min(.9,.7-item.depth/900));ctx.strokeStyle=color;ctx.lineWidth=width||.65;
       ctx.beginPath();ctx.moveTo(a.px,a.py);ctx.lineTo(b.px,b.py);ctx.stroke();ctx.globalAlpha=1;continue;
     }
     const n=item.node, measured=n.kind==="lora"&&n.v!=null&&Number.isFinite(n.v);
@@ -783,17 +830,18 @@ function drawNet(lo, hi) {
     if(measured){
       const t=amount(n),R=n.screenR*(3+2*Math.sqrt(t));
       const glow=ctx.createRadialGradient(n.px,n.py,0,n.px,n.py,R);
-      glow.addColorStop(0,lmColor(n.layer,28,.65+.25*t));
-      glow.addColorStop(.3,lmColor(n.layer,28,.35+.25*t));
-      glow.addColorStop(.65,lmColor(n.layer,28,.08+.12*t));
-      glow.addColorStop(1,lmColor(n.layer,28,0));
+      glow.addColorStop(0,rgba(n.rgb,.65+.25*t));
+      glow.addColorStop(.3,rgba(n.rgb,.35+.25*t));
+      glow.addColorStop(.65,rgba(n.rgb,.08+.12*t));
+      glow.addColorStop(1,rgba(n.rgb,0));
       ctx.fillStyle=glow;ctx.beginPath();ctx.arc(n.px,n.py,R,0,Math.PI*2);ctx.fill();
     }
     ctx.globalAlpha=fade;ctx.beginPath();ctx.arc(n.px,n.py,n.screenR,0,Math.PI*2);
     if(n.kind==="lora"&&!measured){ctx.strokeStyle="#c9c7c0";ctx.lineWidth=1;ctx.stroke();}
     else {
-      ctx.shadowColor=measured?lmColor(n.layer,28):n.col;ctx.shadowBlur=measured?8:5;
-      ctx.fillStyle=measured?lmColor(n.layer,28):n.col;ctx.fill();ctx.shadowBlur=0;
+      const fill=n.kind==="frozen"?rgba(n.rgb,.5):rgba(n.rgb);
+      ctx.shadowColor=fill;ctx.shadowBlur=measured?8:n.kind==="frozen"?0:5;
+      ctx.fillStyle=fill;ctx.fill();ctx.shadowBlur=0;
       if(measured){ctx.fillStyle=`rgba(255,255,255,${.25+.65*amount(n)})`;ctx.beginPath();ctx.arc(n.px,n.py,n.screenR*.6,0,Math.PI*2);ctx.fill();}
     }
     ctx.globalAlpha=1;
@@ -808,7 +856,8 @@ function drawNet(lo, hi) {
   }
   }
   const sampled=S.net.nodes.filter(n=>n.kind==="lora"&&n.v!=null).length,total=S.net.nodes.filter(n=>n.kind==="lora").length;
-  const caption=`3D · ${(METRICS.find(m=>m[0]===S.metric)||[,S.metric])[1]} · step ≤ ${S.cursor} · ${sampled}/${total} sampled · ${camera.zoom.toFixed(1)}×`;
+  const units=(S.run.architecture.units||[]).length;
+  const caption=`3D · ${units} units · ${S.net.edges.length} connections · ${(METRICS.find(m=>m[0]===S.metric)||[,S.metric])[1]} · step ≤ ${S.cursor} · ${sampled}/${total} LoRA sampled · ${camera.zoom.toFixed(1)}×`;
   if($("#netTitle").textContent!==caption)$("#netTitle").textContent=caption;
 }
 (() => {
