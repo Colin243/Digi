@@ -208,8 +208,8 @@ The device runs found that compositions decoding dominates the on-site wait: abo
 **What changed**
 
 - **Max-token cap for compositions.**
-  - Set it with the "Compositions max tokens" stepper in the app (default **600**, step 50). 0 means the 1600 from `prompts.json`, the old behaviour.
-  - In MacSmoke, it is the 4th argument (default 600; 0 = uncapped).
+  - Set it with the "Compositions max tokens" stepper in the app (default **700**, step 50). 700 leaves room for two complete shots (see below). 0 means the 1600 from `prompts.json`, the old behaviour.
+  - In MacSmoke, it is the 4th argument (default 700; 0 = uncapped).
   - The effective value is recorded in `config.max_tokens.compositions` and `config.compositions_max_tokens_override`.
 - **Valid JSON under the cap.**
   - If the cap stops generation inside the JSON (`stop_reason: "length"`), the output is rebuilt as `{"compositions": [...]}` from the shots that completed. A half-written shot is dropped.
@@ -229,7 +229,8 @@ MacSmoke ran on 2026-11-12, M3 Pro, 1024 px, cafe-window-candid. The Mac was bus
 
 - **Uncapped:** 955 tokens, `stop`. Shot objects closed at tokens **322, 637 and 952**, about 318 tokens per shot.
 - **Cap 600:** stopped at 600 (`length`). **One complete shot**, closed at token 307 in the 768 px run. The output was repaired to valid JSON with 1 shot. The half-written shot 2 was dropped.
-- So **600 buys one shot**, about 650 the second, and all three need about 960, which is the uncapped length. If the product needs two shots on screen, use **700**.
+- **Cap 700 (default):** stopped at 700 (`length`). **Two complete shots**, closed at tokens 322 and 637 (1024 px). The output was repaired to valid JSON with 2 shots.
+- So **600 buys one shot**, about 650 the second, and all three need about 960, which is the uncapped length. The default is therefore **700**, which keeps two shots.
 
 Projected onto the device numbers above (compositions prefill 2.7 s at 1024 px / 2.0 s at 768, about 37 tok/s), from the compositions request start:
 
@@ -242,9 +243,9 @@ Projected onto the device numbers above (compositions prefill 2.7 s at 1024 px /
 
 1. Build and install the Release app as in [`ios-bench/README.md`](../ios-bench/README.md) ("Build and install"). The model can stay where it is.
 2. Set up the phone as in section 1: airplane mode, battery above 50% and unplugged, cool, other apps closed.
-3. In Digi Bench, select **Standard**, keep the default 3 repeats, and leave **Compositions max tokens** at **600**. Tap Start.
+3. In Digi Bench, select **Standard**, keep the default 3 repeats, and leave **Compositions max tokens** at the default **700**. Tap Start.
 4. When it finishes, let the phone cool for about 10 minutes. Then run **Standard** again with the cap at **0 (off, 1600)**. This gives a same-day uncapped baseline with the streaming fields.
-5. Let it cool again, then repeat step 3 with the cap at **700**. The 600 cap is expected to leave one shot and 700 two, so this run decides which cap the product uses.
+5. Optional: let it cool again, then repeat step 3 with the cap at **600**. This checks whether one shot at about 3 s less decode is worth it. 700 is expected to leave two shots and 600 one.
 6. AirDrop the JSON files to the Mac and print the table:
 
    ```sh

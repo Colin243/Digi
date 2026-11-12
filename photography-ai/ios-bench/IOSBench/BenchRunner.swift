@@ -58,8 +58,8 @@ final class BenchRunner: ObservableObject {
     /// 3.05 GB for 1.8 GB of weights, so ~1.3 GB of activations, KV cache and vision tower).
     static let headroomOverWeights = 1_500_000_000
     /// Default cap for the compositions stage. Uncapped output was about 965 tokens on the
-    /// iPhone 17 Pro (~37 tok/s, ~26 s). 0 means use prompts.json (1600, same as the Mac).
-    nonisolated static let defaultCompositionsMaxTokens = 600
+    /// iPhone 17 Pro (~37 tok/s, ~26 s). 700 keeps two complete shots (~318 tokens each). 0 means use prompts.json (1600, same as the Mac).
+    nonisolated static let defaultCompositionsMaxTokens = 700
     private var compositionsMaxTokens = 0
 
     static var resultsDir: URL {

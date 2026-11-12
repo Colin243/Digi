@@ -2,7 +2,7 @@ import Foundation
 import MLX
 
 // One decomposed analysis with the same prompts, images and code path as the phone app.
-//   MacSmoke <ios-bench/Resources> [size=1024] [repeats=1] [compositions_max_tokens=600, 0 = prompts.json]
+//   MacSmoke <ios-bench/Resources> [size=1024] [repeats=1] [compositions_max_tokens=700, 0 = prompts.json]
 
 func now() -> Double { CFAbsoluteTimeGetCurrent() }
 
@@ -14,7 +14,7 @@ guard args.count >= 2 else {
 let res = URL(fileURLWithPath: args[1])
 let size = args.count > 2 ? Int(args[2]) ?? 1024 : 1024
 let repeats = args.count > 3 ? Int(args[3]) ?? 1 : 1
-let compsCap = args.count > 4 ? Int(args[4]) ?? 600 : 600
+let compsCap = args.count > 4 ? Int(args[4]) ?? 700 : 700
 
 let pack = try PromptPack.load(url: res.appendingPathComponent("prompts.json"))
 let (manifest, imgDir) = try ImageManifest.load(dir: res.appendingPathComponent("BenchImages"))
