@@ -20,7 +20,8 @@ Modes (RunConfig.mode):
                (2-4) scene image + scene JSON + style brief + one look plan (wide / medium / close)
                      + the earlier looks -> one shot-v2 look per call.
 Both modes share the versioned shot format (schema.SHOT_FORMATS). Scene mode always uses shot-v2;
-inspiration mode uses shot-v1 unless asked (shot-v2 is supported with the decomposed strategy).
+inspiration mode uses shot-v1 unless asked (shot-v2 and shot-v3, which reasons before it instructs, are
+supported with the decomposed strategy).
 """
 
 from __future__ import annotations
@@ -184,7 +185,7 @@ def _decomposed(backend, run_dir, insp, tgt, cfg):
         backend, run_dir, "compositions",
         prompts.compositions_from_parts(aesthetic, target, cfg.subject, cfg.shot_format),
         [tgt], schema.shot_set(cfg.shot_format), cfg,
-        max(cfg.max_tokens, SHOT_V2_TOKENS) if cfg.shot_format == "v2" else None,
+        {"v2": max(cfg.max_tokens, SHOT_V2_TOKENS), "v3": max(cfg.max_tokens, SHOT_V3_TOKENS)}.get(cfg.shot_format),
     )
     stages.append(st)
     result = {"aesthetic": aesthetic, "target_scene": target, **comps} if comps else None
@@ -192,6 +193,7 @@ def _decomposed(backend, run_dir, insp, tgt, cfg):
 
 
 SHOT_V2_TOKENS = 2200  # three shot-v2 looks run ~1.3-1.8K tokens; leave headroom so JSON isn't cut off
+SHOT_V3_TOKENS = 2600  # shot-v1 (~1K tokens for 3 looks) plus ~150-250 tokens of reasoning per look
 LOOK_TOKENS = 900  # one shot-v2 look runs ~450-650 tokens
 
 
@@ -235,8 +237,8 @@ def _normalize_config(cfg: RunConfig) -> RunConfig:
         return cfg
     if cfg.strategy not in STRATEGIES:
         raise InputError(f"strategy must be one of {STRATEGIES}")
-    if cfg.shot_format == "v2" and cfg.strategy != "decomposed":
-        raise InputError("shot-v2 in inspiration mode needs the decomposed strategy")
+    if cfg.shot_format in ("v2", "v3") and cfg.strategy != "decomposed":
+        raise InputError(f"shot-{cfg.shot_format} in inspiration mode needs the decomposed strategy")
     return cfg
 
 

@@ -35,8 +35,8 @@ GUIDE = PROJECT_ROOT / "docs" / "annotation-guide.md"
 ANSWER_INSTRUCTIONS = """Write the reference answer for this example as ONE JSON object with exactly these keys:
 - "inspiration_notes": list of strings, one per inspiration photo in order (2-3 sentences: what it shows and how it was shot - camera height/angle, framing, placement, pose, light).
 - "target_scene": {"description", "key_elements" (3-6, only visible things), "constraints" (1-3)}
-- "aesthetic": {"per_image", "summary", "principles" (2-4 transferable techniques written as instructions), "color_palette", "lighting", "mood", "composition_patterns", "subject_treatment"}
-- "compositions": exactly 3 objects with keys "title", "uses_principle", "camera_position", "camera_height", "camera_angle", "subject_position", "distance_and_framing", "orientation", "zoom_or_lens", "lighting_tip", "visible_evidence" (list), "needs_on_site_check" (list), "steps" (list of 2-4).
+- "aesthetic": {"per_image" (one line per photo, in order, starting with who and where - "Woman walking along a beach" - then the camera recipe; about 12-20 words), "summary", "principles" (2-4 transferable techniques written as instructions), "color_palette", "lighting", "mood", "composition_patterns", "subject_treatment"}
+- "compositions": exactly 3 objects with keys, in this order, "scene_reading", "setup_choice" (starts with half body, full body, seated, close-up, scenery or creative), "why_each_choice" (exactly 3, each under 12 words), "fix_if_wrong" (exactly 1, "if ..., then ..."), "title", "uses_principle", "camera_position", "camera_height", "camera_angle", "subject_position", "distance_and_framing", "orientation", "zoom_or_lens", "lighting_tip", "visible_evidence" (list), "needs_on_site_check" (list of 1-2, under 8 words each), "steps" (exactly 2, under 8 words each). Keep uses_principle under 12 words, camera_position under 14, subject_position under 20, lighting_tip under 16, and visible_evidence to 2-3 items of a few words.
 Follow the annotation guide exactly. Reply with the JSON object only."""
 
 

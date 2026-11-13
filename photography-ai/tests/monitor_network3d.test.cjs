@@ -43,28 +43,49 @@ test('idle orbit waits 20 seconds and only runs in a visible display view',()=>{
  assert.equal(m.shouldOrbit({...state,lastInteraction:21999},22000),false);
 });
 const cols=['q_proj','k_proj','v_proj','o_proj','gate_proj','up_proj','down_proj'];
-const units=[...Array.from({length:24},(_,block)=>({group:'vision_encoder',block})),...Array.from({length:28},(_,block)=>cols.map(c=>({group:'language_model',block,name:`language_model.model.layers.${block}.${['gate_proj','up_proj','down_proj'].includes(c)?'mlp':'self_attn'}.${c}`,lora:{rank:8}}))).flat()];
-const topologyContext={S:{run:{architecture:{units,dataflow:{deepstack_visual_indexes:[5,11,17]}}}},LORA_COLS:cols,lmColor:()=> '#fff'};
+const VP=['norm1','attn.qkv','attn.proj','norm2','mlp.linear_fc1','mlp.linear_fc2'];
+const LP=['input_layernorm','self_attn.q_proj','self_attn.k_proj','self_attn.v_proj','self_attn.q_norm','self_attn.k_norm','self_attn.o_proj','post_attention_layernorm','mlp.gate_proj','mlp.up_proj','mlp.down_proj'];
+const merger=base=>['norm','linear_fc1','linear_fc2'].map(p=>({group:'connector',block:null,name:`${base}.${p}`,lora:p==='norm'?null:{rank:16}}));
+const units=[{group:'vision_encoder',block:null,name:'vision_tower.patch_embed.proj'},{group:'vision_encoder',block:null,name:'vision_tower.pos_embed'},
+ ...Array.from({length:24},(_,block)=>VP.map(p=>({group:'vision_encoder',block,name:`vision_tower.blocks.${block}.${p}`,lora:block>=12&&!p.startsWith('norm')?{rank:16}:null}))).flat(),
+ ...merger('vision_tower.merger'),...[0,1,2].flatMap(j=>merger(`vision_tower.deepstack_merger_list.${j}`)),
+ {group:'language_model',block:null,name:'language_model.model.embed_tokens'},
+ ...Array.from({length:28},(_,block)=>LP.map(p=>({group:'language_model',block,name:`language_model.model.layers.${block}.${p}`,lora:cols.includes(p.split('.').pop())?{rank:16}:null}))).flat(),
+ {group:'language_model',block:null,name:'language_model.model.norm'}];
+const topologyContext={S:{run:{architecture:{units,dataflow:{deepstack_visual_indexes:[5,11,17]}}}}};
 vm.createContext(topologyContext);
-const buildSource=html.match(/function buildNet\(W, H\) \{[\s\S]*?\n}\n(?=function drawNet)/);
+const buildSource=html.match(/\/\/ Colour along depth[\s\S]*?\nfunction buildNet\(W, H\) \{[\s\S]*?\n}\n(?=function drawNet)/);
 assert.ok(buildSource,'world geometry must be testable independently of rendering');
 vm.runInContext(buildSource[0]+';globalThis.graph=buildNet(1000,600);',topologyContext);
 const graph=topologyContext.graph;
-test('the sculptural layout contains exactly the real units and unique finite XYZ positions',()=>{
- assert.equal(graph.nodes.length,254);assert.equal(new Set(graph.nodes.map(n=>n.key)).size,254);
- for(const u of units.filter(u=>u.lora))assert.ok(graph.nodes.some(n=>n.key===u.name));
+test('every real unit is a node, plus one residual-stream hub per block, with finite unique XYZ',()=>{
+ assert.equal(units.length,468);
+ const hubs=graph.nodes.filter(n=>n.kind==='hub');assert.equal(hubs.length,24+4+28);
+ for(const u of units)assert.ok(graph.nodes.some(n=>n.key===u.name||n.key===`block:${u.group}:${u.name}`),u.name);
+ assert.equal(graph.nodes.length,468+56+1,'the tied token embedding appears as input and as LM head');
+ assert.equal(new Set(graph.nodes.map(n=>n.key)).size,graph.nodes.length);
  assert.ok(graph.nodes.every(n=>[n.x,n.y,n.z].every(Number.isFinite)));
  assert.ok(graph.edges.every(([a,b])=>graph.nodes.includes(a)&&graph.nodes.includes(b)));
+ assert.equal(graph.nodes.filter(n=>n.kind==='lora').length,units.filter(u=>u.lora).length);
 });
 test('DeepStack connections retain their configured source blocks and destination layers',()=>{
  for(const [i,source] of [5,11,17].entries()){
   const key=`block:connector:vision_tower.deepstack_merger_list.${i}`;
-  assert.ok(graph.edges.some(([a,b])=>a.key===`block:vision_encoder:${source}`&&b.key===key));
-  assert.ok(graph.edges.some(([a,b])=>a.key===key&&b.key===`block:language_model:${i}`));
+  assert.ok(graph.edges.some(([a,b])=>a.key===`vision_tower.blocks.${source}.mlp.linear_fc2`&&b.key===key));
+  assert.ok(graph.edges.some(([a,b])=>a.key===`vision_tower.deepstack_merger_list.${i}.linear_fc2`&&b.key===`block:language_model:${i}`));
  }
 });
+test('decoder layers wire attention, q/k norms, MLP and residual skips in forward order',()=>{
+ const has=(x,y)=>graph.edges.some(([a,b])=>a.key===x&&b.key===y),L=(b,p)=>`language_model.model.layers.${b}.${p}`;
+ for(const [x,y] of [['input_layernorm','self_attn.q_proj'],['self_attn.q_proj','self_attn.q_norm'],['self_attn.k_norm','self_attn.o_proj'],
+   ['self_attn.v_proj','self_attn.o_proj'],['self_attn.o_proj','post_attention_layernorm'],['mlp.gate_proj','mlp.down_proj'],['mlp.up_proj','mlp.down_proj']])assert.ok(has(L(3,x),L(3,y)),`${x}->${y}`);
+ assert.ok(has('block:language_model:3','block:language_model:4'),'residual skip');
+ assert.ok(has(L(3,'mlp.down_proj'),'block:language_model:4'));
+ assert.ok(has(L(27,'mlp.down_proj'),'language_model.model.norm')&&has('language_model.model.norm','language_model.model.embed_tokens'));
+ assert.ok(has('vision_tower.merger.linear_fc2','block:language_model:language_model.model.embed_tokens'));
+});
 test('decoder clusters occupy a three-dimensional volume instead of a flat spiral',()=>{
- const hubs=graph.nodes.filter(n=>n.kind==='hub');
+ const hubs=graph.nodes.filter(n=>n.kind==='hub'&&n.group==='language_model');
  for(const [axis,min] of [['x',250],['y',200],['z',230]]){
   const values=hubs.map(n=>n[axis]);assert.ok(Math.max(...values)-Math.min(...values)>min,`${axis} must have substantial depth/spread`);
  }

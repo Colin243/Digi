@@ -63,6 +63,56 @@ Each shot must differ from the other two in at least two of these: camera positi
 | `needs_on_site_check` | what a still photo can't tell you: what's behind the camera, real distances, whether a spot is reachable or allowed, how the light changes, foot traffic |
 | `steps` | 2–4 short actions in order |
 
+### Phone setups for subject photos
+
+When a shot frames a person, use the setup that matches its framing. Write the numbers into `camera_height`, `camera_angle` and `distance_and_framing`, adjusted to what the target place allows. The single source is `src/photo_ai/framing.py`; the Scene Director prompts and the scene-eval setup check read the same definitions.
+
+| framing | camera height | angle | distance | in the frame |
+|---|---|---|---|---|
+| **Half body** (waist up) | just above the top of the subject's head | tilt down about 10° | about 1.2 m | face in the centre column; one grid row of space above the head |
+| **Full body** (standing) | low: crouch so the phone is around the subject's waist or below | tilt up about 10°, toward the eyes | about 2 m | feet touch the bottom edge; head on or just above the top grid line |
+| **Seated**, full body | about the subject's stomach height (bend over) | tilt down about 10°, aimed at the stomach | about 1.5 m | whole body along the frame's diagonal; legs crossed and extended toward the subject's better side |
+
+All three use the **1x main lens**. The 0.5x ultra-wide stretches faces and bodies near the frame edges.
+
+- **Why these work:** a camera just above the head keeps the face in proportion; a low camera tilted up lengthens the legs, and feet on the bottom edge stop them looking cut short; the diagonal is the longest line in the frame.
+- **Contradictions to fix:** "full body" with "tilt down", or "half body" with "tilt up from below". The scene-eval setup check counts these.
+- **Not a template:** close-ups, environmental shots and deliberate style choices (a dramatic worm's-eye shot, a top-down shot) are fine; say why in `uses_principle`.
+- **Keep it short.** State each number once. Concise compositions train a model that generates fewer tokens, and on the phone, generated tokens are most of the wait (docs/iphone-benchmark.md, §2).
+- **Body language stays neutral.** Say what the setup does ("lengthens the legs"), never judge the subject's body.
+
+### Reasoning fields (shot-v3)
+
+Shot-v3 (prompt v10, `--shot-format v3`) teaches the model to **think before it instructs**. Each composition starts with four reasoning fields; the camera fields that follow must agree with them. A label without these fields still trains shot-v1, but `train-data export --shot-format v3` skips it.
+
+| field | must contain | good | bad |
+|---|---|---|---|
+| `scene_reading` | 1 sentence: the **visible** part of the target this look is built around | "The dock runs straight into flat water, a ready-made leading line." | "This is a beautiful lake scene." |
+| `setup_choice` | starts with the framing: half body, full body, seated, **close-up** (head and shoulders), **scenery** (subject small in a wide view) or **creative** (a deliberate angle or crop outside the three setups), then a few words on **why it fits this spot** | "Full body: the long empty dock leaves room to step back 2 m." / "Close-up: head and shoulders against the dark hall." | "Full body because it looks good." / "None." |
+| `why_each_choice` | exactly 3 reasons, under 12 words each: height, tilt, and distance or lens, each naming **the effect on the subject** | "Waist-height camera lengthens the legs." | "Low angle is good." |
+| `fix_if_wrong` | exactly 1 "if …, then …" correction the photographer can make on the spot | "If the horizon cuts the head, then crouch lower." | "Make sure it looks right." |
+
+- **Order matters.** Write the reasoning first, then make the camera fields follow from it. If `setup_choice` says full body, `camera_angle` must tilt up. The export writes these keys first so the model learns to reason first.
+- **Name the framing first.** Prompt v8 allowed a bare "None"; it became the first word of almost every look the trained model wrote, even full-body ones. Close-up, scenery and creative say what the shot is, and the setup check still treats them as "no setup".
+- **No new facts in the reasoning.** Reasons may only use what `visible_evidence` lists or what `needs_on_site_check` flags as a guess.
+- **Keep it short: about 35–45 words of reasoning per look.** Every generated token costs phone time (about 37 tokens/s for this stage). Prompt v7 allowed ~90 words and pushed the projected iPhone analysis to 67–70 s against a 60 s budget, so depth must come from specific reasons, not from more words.
+
+#### Instruction word limits (shot-v3)
+
+The reasoning adds about 190 generated tokens per analysis, so in shot-v3 labels the instruction fields make room for it (prompt v10). v9 labels ran about 270 words per look and projected 67 s on the iPhone against a 60 s budget.
+
+| field | limit |
+|---|---|
+| `uses_principle` | under 12 words |
+| `camera_position` | under 14 words, still naming a landmark |
+| `subject_position` | under 20 words: spot, pose, place in the frame |
+| `lighting_tip` | under 16 words |
+| `visible_evidence` | 2–3 items of a few words |
+| `needs_on_site_check` | 1–2 items under 8 words |
+| `steps` | exactly 2, under 8 words each; don't repeat the camera numbers |
+
+Shot-v1 labels keep the longer rules in the table above.
+
 ### Avoid
 
 - Generic phrases: "take a wide shot", "use good lighting", "center the subject", "capture the moment".

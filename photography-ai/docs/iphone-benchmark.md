@@ -1,6 +1,6 @@
 # iPhone 17 Pro benchmark: offline Qwen3-VL-2B (issue #7)
 
-**Status (2026-11-10): the harness is built and signed, but no device numbers exist yet.** Every iPhone cell below is empty until the app runs on the phone. The Mac numbers come from the same Swift code (`ios-bench/MacSmoke`) and are given only as a reference point.
+**Status (2026-11-12): first device runs are in, and the result is a CONDITIONAL GO (section 2, verdict).** On an iPhone 17 Pro, every hard budget passes with wide margins: memory, camera recovery, stability and JSON validity. Latency misses its soft budgets by less than 2×. The Mac numbers come from the same Swift code (`ios-bench/MacSmoke`) and are given only as a reference point.
 
 - **Runtime check: supported, so no stand-in model.**
   - `mlx-swift-lm` 3.32.3 (released 2026-09-30) registers `qwen3_vl` in `VLMModelFactory` and ships `Libraries/MLXVLM/Models/Qwen3VL.swift`.
@@ -66,55 +66,86 @@
 
 ## 2. Results: iPhone 17 Pro
 
-Fill these in with `python3 ios-bench/scripts/summarize.py <json files>`. Leave a cell empty until a real device produces it.
+Measured on 2026-11-11 across three runs: `bench-20261111-164459-quick`, `-164636-standard` and `-165538-soak`. The runs went back to back with no cooldown, so Soak started at `fair`. Tables come from `python3 ios-bench/scripts/summarize.py <json files>`; GB means GiB, as in the script.
 
 **Run context**
 
 | | value |
 |---|---|
-| Device / iOS version (build) | |
-| RAM / memory available to the app at start | |
-| Entitlement `increased-memory-limit` active (compare the available memory with and without it) | |
+| Device / iOS version (build) | iPhone 17 Pro (`iPhone18,1`), iOS 27.0.1 (24A446), GPU `applegpu_g18p`, Release build |
+| RAM / memory available to the app at start | 11.4 GB / 5.92–5.96 GB |
+| Entitlement `increased-memory-limit` active (compare the available memory with and without it) | Signed with it; not yet compared against a build without it |
 | Runtime (mlx-swift-lm / mlx-swift / swift-transformers) | 3.32.3 / 0.32.3 / 1.4.0 (pinned) |
-| Model | `mlx-community/Qwen3-VL-2B-Instruct-4bit` @ `9c4f5209e57b` |
-| Airplane mode confirmed (network status `unsatisfied`) | |
-| Battery / Low Power Mode / thermal at start | |
+| Model | `mlx-community/Qwen3-VL-2B-Instruct-4bit` @ `9c4f5209e57b`, loaded from the bundle |
+| Airplane mode confirmed (network status `unsatisfied`) | Yes, all three runs |
+| Battery / Low Power Mode / thermal at start | 75% unplugged (65% for Soak) / off / `nominal` (Soak: `fair`) |
 
 **Load**
 
 | | iPhone 17 Pro | Mac M3 Pro (Swift, reference) |
 |---|---|---|
-| Cold load, after reboot (s) | | — |
-| Load, warm file cache (s) | | 1.35–1.70 |
-| Reload after unload (s) | | — |
-| Footprint after load (GB) | | — |
+| Cold load, after reboot (s) | not measured: uptime was about 14.7 days | — |
+| Load, warm file cache (s) | 1.28, 1.28, 0.17 | 1.35–1.70 |
+| Reload after unload (s) | 0.33, 1.22, 0.23 | — |
+| Footprint after load (GB) | 1.78–1.79 | — |
 
 **Single calls (Quick)**
 
 | call | px | TTFT median (s) | e2e median (s) | gen tok/s | prompt tok/s | peak footprint (GB) | camera recovery median / max (s) |
 |---|---|---|---|---|---|---|---|
-| image notes | 768 | | | | | | |
-| image notes | 1024 | | | | | | |
-| target scene | 768 | | | | | | |
-| target scene | 1024 | | | | | | |
+| image notes | 768 | 0.68 | 2.9 | 55.9 | 657 | 2.38 | 0.27 / 0.28 |
+| image notes | 1024 | 1.23 | 4.2 | 54.2 | 601 | 2.53 | 0.27 / 0.28 |
+| target scene | 768 | 0.75 | 3.2 | 55.0 | 757 | 2.38 | 0.26 / 0.27 |
+| target scene | 1024 | 1.39 | 4.2 | 53.5 | 617 | 2.50 | 0.27 / 0.27 |
 
 **Full analysis (Standard)**
 
 | px | first run (s) | warm median (s) | warm max (s) | inspiration prep median (s) | on-site median / max (s) | gen tok/s | peak footprint (GB) | min available (GB) | camera recovery median / max (s) | JSON valid |
 |---|---|---|---|---|---|---|---|---|---|---|
-| 768 | | | | | | | | | | |
-| 1024 | | | | | | | | | | |
+| 768 | 59.7 | 65.2 | 66.6 | 35.0 | 30.2 / 30.7 | 46.1 | 2.45 | 3.55 | 0.28 / 0.28 | 9/9 |
+| 1024 | — | 70.6 | 72.7 | 36.6 | 34.0 / 34.8 | 45.8 | 2.61 | 3.39 | 0.28 / 0.30 | 9/9 |
+
+The first trial after load was at 768 px, so 1024 px has no first-run number. Warm 768 px has n = 2.
 
 "Inspiration prep" = 4 notes + aesthetic. These don't depend on the target, so the product can run them before the user reaches the location. "On site" = target scene + compositions, which is what the user waits for.
+
+**Where the time goes (Standard, warm, medians)**
+
+| stage | px | e2e (s) | prefill (s) | decode (s) | generated tokens | gen tok/s |
+|---|---|---|---|---|---|---|
+| each image note | 1024 | 4.5–5.2 | 1.5–2.1 | 2.7–3.7 | 127–164 | 45–48 |
+| aesthetic (text only) | 1024 | 16.9 | 1.1 | 15.8 | 649 | 41.1 |
+| target scene | 1024 | 5.1 | 1.9 | 3.2 | 149 | 46.8 |
+| compositions | 1024 | 28.9 | 2.7 | 26.2 | 965 | 36.9 |
+| compositions | 768 | 26.1 | 2.0 | 24.1 | 927 | 38.5 |
+
+Decoding dominates. The phone generates at roughly half the Mac's rate: 37–56 tok/s against 75–98. Prefill is 1–3 s per call, so 768 px saves only about 4 s on site.
 
 **Thermal soak (Soak, 10 × 1024 px)**
 
 | | value |
 |---|---|
-| Analysis 1 → 10 inference time (s) | |
-| Gen tok/s, first warm → last | |
-| Thermal states reached, and after which analysis | |
-| Memory warnings / camera recovery failures / terminated runs | |
+| Analysis 1 → 10 inference time (s) | 55.7 (first), 77.6, 80.2, 78.7, 77.3, 77.3, 75.5, 74.8, 74.7, 74.8. Warm median 77.3, max 80.2. On site: median 36.8, max 38.7 |
+| Gen tok/s, first warm → last | 46.1 → 44.8 (97%; lowest 39.8 in analysis 3) |
+| Thermal states reached, and after which analysis | `fair` at start; `serious` 82 s in, during analysis 2, held to the end; never `critical` |
+| Memory warnings / camera recovery failures / terminated runs | 0 / 0 / 0. Peak footprint 2.63 GB, at least 3.37 GB available, JSON 30/30 |
+
+**Budget results**
+
+| budget | kind | result |
+|---|---|---|
+| Peak footprint ≤ 4.0 GB | hard | pass: 2.63 GB max |
+| Min available ≥ 1.0 GB | hard | pass: 3.37 GB min |
+| No terminated runs, crashes or memory warnings | hard | pass: 0 across 36 trials |
+| Camera recovery median ≤ 0.5 s, max ≤ 1.0 s, 0 failures | hard | pass: 0.24–0.30 s, 0 failures |
+| On-site median ≤ 30 s, max ≤ 45 s | soft | **miss**: 30.2 s at 768, 34.0 s at 1024 (36.8 s while `serious`); max pass |
+| Full analysis warm median ≤ 60 s, max ≤ 90 s | soft | **miss** on median: 65.2 s at 768, 70.6 s at 1024 (77.3 s soak); max pass |
+| TTFT ≤ 3 s | soft | pass: 0.68–1.83 s |
+| Sustained speed ≥ 70%, never `critical` | soft | pass: 97%, `serious` at worst |
+| Cold load ≤ 8 s | soft | pass for warm cache (≤ 1.3 s); true cold load not measured |
+| JSON parse rate ≥ 90% | soft | pass: 100% |
+
+**Verdict: CONDITIONAL GO** (section 6). All hard budgets hold at both sizes, and latency misses by well under 2×. The most effective mitigation is shorter compositions output: about 965 tokens at about 37 tok/s takes 26 s, and a cap near 600 tokens would save about 10 s on site. Next come streaming shot 1 (first token in under 2 s) and caching inspiration prep. 768 px helps only a little. Still to measure: a true cold load after a reboot, the entitlement comparison, and a Standard run that starts `nominal` after a cooldown.
 
 **Mac reference (measured 2026-11-10, same Swift code, M3 Pro 18 GB, macOS 26.6.2, warm)**
 
