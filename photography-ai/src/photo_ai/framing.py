@@ -155,3 +155,68 @@ def summarize_fit(looks: list[dict]) -> dict:
         "setup_conflicts": sum(f["conflict"] for f in applied),
         "by_setup": {k: sum(f["setup"] == k for f in applied) for k in SETUPS},
     }
+
+
+# --- contradiction check (shot-v3 labels) ------------------------------------------------------
+# A shot-v3 look states its framing in `setup_choice`; the camera fields after it must follow. These are
+# reviewer warnings, not a gate: a deliberate departure is fine when the look says why.
+
+_CLOSE = re.compile(r"close[- ]?up|head[- ]and[- ]shoulders|head to (the )?(chest|mid-chest|shoulders)|"
+                    r"forehead|face only|chest[- ]up")
+_FULL_STRICT = re.compile(r"full[- ]?(body|length)|head[- ]to[- ](toe|feet)|whole body|entire body")
+_HIGH_FOR_FULL = re.compile(r"eye[- ]level|chest|shoulder|head height|face height|above (the )?(subject's |their |her |his )?"
+                            r"(head|eye)|overhead|standing height")
+_NEGATED = re.compile(r"\b(do not|don't|never|without|avoid)\s+(tilt|angl|point|aim)\w*[^.;,]*")
+_LEVEL = re.compile(r"\blevel\b|straight on|no tilt|don't tilt|do not tilt")
+_SMALL = re.compile(r"\b(small|tiny|distant)\b")
+
+
+def stated_choice(look: dict) -> str | None:
+    """The framing word a shot-v3 look opens setup_choice with: half_body, full_body, seated, close_up,
+    scenery, creative, none; None when the look has no setup_choice."""
+    s = str(look.get("setup_choice") or "").strip().lower()
+    for prefix, name in (("half", "half_body"), ("full", "full_body"), ("seated", "seated"), ("close", "close_up"),
+                         ("scenery", "scenery"), ("creative", "creative"), ("none", "none")):
+        if s.startswith(prefix):
+            return name
+    return None
+
+
+def setup_contradictions(look: dict) -> list[str]:
+    """Where a shot-v3 look's camera fields disagree with its own setup_choice. Empty for shot-v1 looks."""
+    choice = stated_choice(look)
+    if choice is None:
+        return []
+    height = _text(look, ("camera_height",))
+    angle = _NEGATED.sub("", _text(look, ("camera_angle",)))
+    framing = _text(look, ("distance_and_framing",))
+    choice_text = _text(look, ("setup_choice",))
+    label = choice.replace("_", " ")
+    out = []
+    if choice in _CONFLICT and _CONFLICT[choice].search(angle):
+        want = "up" if choice == "full_body" else "down"
+        out.append(f"setup says {label} but camera_angle tilts the other way (the setup tilts {want} about 10°)")
+    elif choice == "full_body" and _LEVEL.search(angle) and not (_TILT_UP.search(angle) or re.search(r"\bup\b", angle)):
+        out.append("setup says full body but camera_angle is level (the setup tilts up about 10°)")
+    if choice == "full_body" and _HIGH_FOR_FULL.search(height) and not _LOW.search(height):
+        out.append(f"setup says full body but camera_height is '{look.get('camera_height')}' "
+                   "(the setup puts the phone at the waist or below)")
+    if choice == "half_body" and _LOW.search(height) and not _ABOVE_HEAD.search(height):
+        out.append(f"setup says half body but camera_height is '{look.get('camera_height')}' "
+                   "(the setup puts the phone just above the head)")
+    if choice == "seated" and _ABOVE_HEAD.search(height):
+        out.append(f"setup says seated but camera_height is '{look.get('camera_height')}' "
+                   "(the setup puts the phone at stomach height)")
+    if choice == "full_body" and not _FULL_STRICT.search(framing) and (_HALF.search(framing) or _CLOSE.search(framing)):
+        out.append("setup says full body but distance_and_framing crops the body")
+    if choice in ("half_body", "close_up") and _FULL_STRICT.search(framing):
+        out.append(f"setup says {label} but distance_and_framing shows the full body")
+    if choice == "scenery" and _CLOSE.search(framing):
+        out.append("setup says scenery but distance_and_framing is a close crop")
+    if choice in ("half_body", "full_body", "seated") and _SMALL.search(choice_text):
+        out.append(f"setup_choice says {label} but describes a small subject (that is a scenery shot)")
+    reasons = _text(look, ("why_each_choice",))
+    if (_TILT_UP.search(reasons) and _TILT_DOWN.search(angle) and not _TILT_DOWN.search(reasons)) or \
+       (_TILT_DOWN.search(reasons) and _TILT_UP.search(angle) and not _TILT_UP.search(reasons)):
+        out.append("why_each_choice and camera_angle tilt in opposite directions")
+    return out

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 
-from .. import metrics
+from .. import framing, metrics
 from .assemble import load_examples
 from .tags import load_tags
 
@@ -38,6 +38,7 @@ def check_answer(answer: dict, example: dict | None = None, target_elements: lis
             issues.append(f"shot {i}: no visible_evidence")
         if not c.get("needs_on_site_check"):
             issues.append(f"shot {i}: no needs_on_site_check")
+        issues += [f"shot {i}: {m}" for m in framing.setup_contradictions(c)]
         if target_elements and c.get("visible_evidence"):
             grounded = [e for e in c["visible_evidence"] if metrics.mentions(e, target_elements)]
             if not grounded:

@@ -323,7 +323,7 @@ def _label_tab(demo: gr.Blocks, dataset: str = "train_v1") -> None:
         return
     with gr.Row():
         reviewer = gr.Textbox(label="Your name (reviewer)", value="colin")
-        status_filter = gr.Dropdown(["all", "draft", "approved", "rejected", "unlabeled"], value="draft",
+        status_filter = gr.Dropdown(["all", "draft", "approved", "rejected", "unlabeled", "setup conflicts"], value="draft",
                                     label="Show")
         pick = gr.Dropdown([], label="Example")
         refresh = gr.Button("Refresh", scale=0)
@@ -351,11 +351,18 @@ def _label_tab(demo: gr.Blocks, dataset: str = "train_v1") -> None:
         return lambda pid: str(REPO_ROOT / pool[pid]["file"])
 
     def listing(filt):
+        from . import framing
+
         labels = {lab["example_id"]: lab for lab in L.load_labels(dataset)}
         out = []
         for e in load_examples(dataset):
-            st = labels[e["example_id"]]["status"] if e["example_id"] in labels else "unlabeled"
-            if filt in ("all", st):
+            lab = labels.get(e["example_id"])
+            st = lab["status"] if lab else "unlabeled"
+            if filt == "setup conflicts":  # drafts whose camera fields disagree with their own setup_choice
+                n = sum(len(framing.setup_contradictions(c)) for c in lab["answer"].get("compositions", [])) if lab else 0
+                if st == "draft" and n:
+                    out.append((f"{e['example_id']} · {n} setup conflict(s) · {e['technique']['description']}", e["example_id"]))
+            elif filt in ("all", st):
                 out.append((f"{e['example_id']} · {e['split']} · {st} · {e['technique']['description']}", e["example_id"]))
         s = L.status_summary(dataset)
         text = (f"**{s['examples']} examples** · labels {s['labels']} · approved by a human: **{s['approved_human']}** · "

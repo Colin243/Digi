@@ -86,3 +86,26 @@ def test_v3_instruction_fields_are_word_limited_and_v1_is_not():
     assert list(prompts.COMPOSITION_FIELDS_V3)[4:] == list(prompts.COMPOSITION_FIELDS)
     assert "exactly 2" in prompts.COMPOSITION_FIELDS_V3["steps[]"]
     assert prompts.COMPOSITION_FIELDS["steps[]"] == "2-4 short actionable steps"
+
+
+def test_setup_contradictions_flag_camera_fields_that_disagree_with_setup_choice():
+    ok = {"setup_choice": "Full body: long dock", "camera_height": "Crouch to waist height",
+          "camera_angle": "Tilt up about 10°", "distance_and_framing": "About 2 m; full body, feet on the bottom edge"}
+    assert framing.setup_contradictions(ok) == []
+    bad = {**ok, "camera_height": "Chest height", "camera_angle": "Level",
+           "setup_choice": "Full body: the subject stays small", "distance_and_framing": "About 2 m; waist up"}
+    msgs = " | ".join(framing.setup_contradictions(bad))
+    for part in ("camera_angle is level", "camera_height", "crops the body", "small subject"):
+        assert part in msgs
+    assert framing.setup_contradictions({**ok, "camera_angle": "Level; do not tilt up.",
+                                         "setup_choice": "Half body: steps"})[:1] != [
+        "setup says half body but camera_angle tilts the other way (the setup tilts down about 10°)"]
+    assert framing.setup_contradictions({"title": "v1 look", "camera_angle": "tilt down"}) == []
+
+
+def test_label_qa_shows_setup_contradictions():
+    from photo_ai.training import qa
+    look = {"setup_choice": "Seated: steps", "camera_height": "Just above the subject's head",
+            "camera_angle": "Tilt up 10°", "distance_and_framing": "About 1.5 m; seated body on the diagonal"}
+    issues = qa.check_answer({"compositions": [look]})
+    assert any(i.startswith("shot 1: setup says seated") for i in issues)
