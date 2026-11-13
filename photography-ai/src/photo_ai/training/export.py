@@ -46,7 +46,7 @@ def _j(obj) -> str:
 
 
 def example_rows(example: dict, answer: dict, image_path, json_format: str = "keys",
-                 stages=STAGES) -> list[dict]:
+                 stages=STAGES, shot_format: str = "v1") -> list[dict]:
     meta = {"example_id": example["example_id"], "split": example["split"]}
     rows = []
     with prompts.json_format(json_format):
@@ -60,13 +60,32 @@ def example_rows(example: dict, answer: dict, image_path, json_format: str = "ke
             rows.append(_row(prompts.aesthetic_from_notes(answer["inspiration_notes"]), [], _j(answer["aesthetic"]),
                              {**meta, "stage": "aesthetic"}))
         if "compositions" in stages:
-            p = prompts.compositions_from_parts(answer["aesthetic"], answer["target_scene"], example.get("subject", prompts.DEFAULT_SUBJECT))
-            rows.append(_row(p, [tgt], _j({"compositions": answer["compositions"]}), {**meta, "stage": "compositions"}))
+            p = prompts.compositions_from_parts(answer["aesthetic"], answer["target_scene"],
+                                                example.get("subject", prompts.DEFAULT_SUBJECT), shot_format)
+            comps = [_ordered(c, shot_format) for c in answer["compositions"]]
+            rows.append(_row(p, [tgt], _j({"compositions": comps}),
+                             {**meta, "stage": "compositions", "shot_format": shot_format}))
     return rows
 
 
+def _ordered(comp: dict, shot_format: str) -> dict:
+    """shot-v3 targets put the reasoning keys first, in prompt order, so the model learns to reason first."""
+    if shot_format != "v3":
+        return comp
+    first = [k.removesuffix("[]") for k in prompts.REASONING_FIELDS]
+    return {**{k: comp[k] for k in first if k in comp}, **{k: v for k, v in comp.items() if k not in first}}
+
+
+def has_reasoning(answer: dict) -> bool:
+    """Every composition carries the four shot-v3 reasoning fields, non-empty."""
+    keys = [k.removesuffix("[]") for k in prompts.REASONING_FIELDS]
+    return all(all(c.get(k) for k in keys) for c in answer.get("compositions") or [])
+
+
 def export_sft(dataset: str = "train_v1", out_dir: Path | None = None, json_format: str = "keys",
-               include_unapproved: bool = False, example_ids: list[str] | None = None) -> dict:
+               include_unapproved: bool = False, example_ids: list[str] | None = None,
+               shot_format: str = "v1") -> dict:
+    """shot_format "v3": the compositions rows use the reasoning prompt; labels without reasoning are skipped."""
     pool = {i["id"]: i for i in load_pool(dataset)["images"]}
     examples = {e["example_id"]: e for e in load_examples(dataset)}
     labels = load_labels(dataset)
@@ -74,6 +93,10 @@ def export_sft(dataset: str = "train_v1", out_dir: Path | None = None, json_form
         labels = [lab for lab in labels if lab["example_id"] in example_ids]
     chosen = [lab for lab in labels if lab["status"] == "approved" or
               (include_unapproved and lab["status"] == "draft" and not lab.get("schema_errors"))]
+    skipped = []
+    if shot_format == "v3":
+        skipped = [lab["example_id"] for lab in chosen if not has_reasoning(lab["answer"])]
+        chosen = [lab for lab in chosen if lab["example_id"] not in skipped]
     out_dir = Path(out_dir or data_dir(dataset) / ("sft-UNREVIEWED-smoke" if include_unapproved else "sft"))
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -83,7 +106,7 @@ def export_sft(dataset: str = "train_v1", out_dir: Path | None = None, json_form
     rows = {"train": [], "valid": []}
     for lab in chosen:
         ex = examples[lab["example_id"]]
-        for r in example_rows(ex, lab["answer"], image_path, json_format):
+        for r in example_rows(ex, lab["answer"], image_path, json_format, shot_format=shot_format):
             r["meta"]["label_status"] = lab["status"]
             r["meta"]["approved_by"] = lab["provenance"]["approved_by"]
             rows[ex["split"]].append(r)
@@ -92,7 +115,9 @@ def export_sft(dataset: str = "train_v1", out_dir: Path | None = None, json_form
     info = {
         "out_dir": str(out_dir),
         "json_format": json_format,
-        "prompt_version": prompts.PROMPT_VERSION,
+        "prompt_version": prompts.version_for("inspiration", shot_format),
+        "shot_format": shot_format,
+        "skipped_without_reasoning": skipped,
         "examples": dict(Counter(examples[lab["example_id"]]["split"] for lab in chosen)),
         "rows": {k: len(v) for k, v in rows.items()},
         "rows_by_stage": dict(Counter(r["meta"]["stage"] for v in rows.values() for r in v)),

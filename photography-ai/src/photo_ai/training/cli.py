@@ -112,7 +112,8 @@ def run_train_data(a) -> int:
     if a.action == "export":
         from .export import export_sft
 
-        info = export_sft(a.dataset, include_unapproved=a.include_unapproved)
+        info = export_sft(a.dataset, include_unapproved=a.include_unapproved,
+                          shot_format=getattr(a, "shot_format", "v1"))
         print(json.dumps(info, indent=1))
         return 0
     print(f"unknown action {a.action}", file=sys.stderr)

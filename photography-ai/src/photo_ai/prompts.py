@@ -26,6 +26,11 @@ History
      so the Phase 3 benchmark, the iPhone harness and LoRA training templates are unchanged. The
      setups reach the v4 pipeline through training labels instead (docs/annotation-guide.md).
      Scene-eval runs on v5 are not comparable with v6 runs.
+  v7 (2026-11-12.7) shot-v3: each look reasons before it instructs. Four reasoning fields come FIRST in the
+     JSON (scene_reading, setup_choice, why_each_choice, fix_if_wrong) ahead of the shot-v1 fields, so the camera
+     fields are written after, and follow from, the reasoning; the three phone setups (framing.playbook) and a tilt-consistency rule are
+     in the prompt. Only shot_format="v3" prompts are new: v4 (shot-v1) and v6 (shot-v2 / Scene Director)
+     prompts stay byte-identical. Runs with shot_format "v3" record PROMPT_VERSION_V7.
 """
 
 from __future__ import annotations
@@ -38,9 +43,12 @@ from .backends import IMAGE_MARKER
 
 PROMPT_VERSION = "2026-11-09.4"
 PROMPT_VERSION_V5 = "2026-11-12.6"  # name kept: the scene-mode / shot-v2 prompt version
+PROMPT_VERSION_V7 = "2026-11-12.7"  # shot-v3: reasoning fields before the instructions
 
 
 def version_for(mode: str = "inspiration", shot_format: str = "v1") -> str:
+    if shot_format == "v3":
+        return PROMPT_VERSION_V7
     return PROMPT_VERSION if (mode == "inspiration" and shot_format == "v1") else PROMPT_VERSION_V5
 
 DEFAULT_SUBJECT = "a person (the photographer's friend) posing in the scene"
@@ -87,6 +95,14 @@ DIRECTION_FIELDS = {
     "expression_cue": "optional: one small expression the subject may choose, such as a soft closed-mouth smile; leave empty if it adds little",
 }
 COMPOSITION_FIELDS_V2 = {**COMPOSITION_FIELDS, **DIRECTION_FIELDS}
+# shot-v3: reasoning first. Key order is generation order, so the camera fields come after the reasons.
+REASONING_FIELDS = {
+    "scene_reading": "2 sentences: which visible part of the TARGET photo this look is built around and why that spot suits the style",
+    "setup_choice": "the phone setup this look uses (half body, full body, seated, or none for a close-up or a wide scenery shot) and why it suits this spot and this subject",
+    "why_each_choice[]": "3-4 short reasons, one each for camera height, tilt, distance or lens, and light: what that choice does to the subject in the final photo",
+    "fix_if_wrong[]": "1-3 things that often go wrong with this look and the exact correction, each as 'if ..., then ...'",
+}
+COMPOSITION_FIELDS_V3 = {**REASONING_FIELDS, **COMPOSITION_FIELDS}  # shot-v1 + reasoning (matches the labels)
 SCENE_SHOT_FIELDS = {
     **COMPOSITION_FIELDS_V2,
     "title": "a short name for this look",
@@ -99,7 +115,7 @@ DIRECTOR_TARGET_FIELDS = {
 
 ALL_FIELD_DESCRIPTIONS = {
     d for f in (AESTHETIC_FIELDS, TARGET_FIELDS, COMPOSITION_FIELDS, DIRECTION_FIELDS, SCENE_SHOT_FIELDS,
-                DIRECTOR_TARGET_FIELDS) for d in f.values()
+                DIRECTOR_TARGET_FIELDS, REASONING_FIELDS) for d in f.values()
 }
 
 # Starter style briefs (XHS / 小红书 portrait vocabulary). Each brief steers camera, light, pose,
@@ -192,6 +208,16 @@ Bad (too generic, never write these): {", ".join(f'"{b}"' for b in BAD_EXAMPLES)
 Only use things that are visible in the TARGET photo. Do not bring objects or backgrounds from the inspiration photos into the target scene; transfer the technique, not the scenery.
 Separate what you can see from what you are assuming: put visible facts in visible_evidence, and put anything the still photo cannot show (what is behind the camera, true distances, light at another time, whether a spot is reachable) in needs_on_site_check.
 Write new instructions for THIS scene; do not reuse the example sentences above."""
+
+REASONING_RULES = (
+    "Think like a photographer before giving instructions. Fill scene_reading, setup_choice, why_each_choice and "
+    "fix_if_wrong first; the camera and framing fields after them must follow from that reasoning.\n"
+    "For a person framed half body, full body or seated, use the matching phone setup:\n"
+    f"{framing.playbook()}\n"
+    "Keep the tilt consistent with the setup: half body and seated tilt the phone DOWN, full body tilts it UP. "
+    "Every reason must name a visible thing in the TARGET photo or a visible effect on the subject (longer legs, "
+    "face in proportion, background kept clean); never write generic praise such as \"looks great\"."
+)
 
 _RULES = (
     "Answer with ONLY one JSON object, no markdown, no commentary. "
@@ -331,11 +357,12 @@ def aesthetic_from_notes(notes: list[str]) -> str:
 
 def compositions_from_parts(aesthetic: dict, target: dict, subject: str = DEFAULT_SUBJECT,
                             shot_format: str = "v1") -> str:
-    """shot_format "v1" returns exactly the v4 prompt (benchmark and training-template parity)."""
+    """shot_format "v1" returns exactly the v4 prompt (benchmark and training-template parity); "v3" adds
+    reasoning fields first plus REASONING_RULES."""
     style = {k: v for k, v in aesthetic.items() if k != "per_image"}
-    fields = COMPOSITION_FIELDS_V2 if shot_format == "v2" else COMPOSITION_FIELDS
+    fields = {"v2": COMPOSITION_FIELDS_V2, "v3": COMPOSITION_FIELDS_V3}.get(shot_format, COMPOSITION_FIELDS)
     shape = {"compositions": [_blank(fields)] * 3}
-    direction = f"\n{DIRECTION_RULES}" if shot_format == "v2" else ""
+    direction = {"v2": f"\n{DIRECTION_RULES}", "v3": f"\n{REASONING_RULES}"}.get(shot_format, "")
     return (
         TARGET_LABEL + "\n"
         f"You are a photography director. The TARGET scene photo is described as:\n{_shape(target)}\n\n"

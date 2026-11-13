@@ -101,7 +101,7 @@ _CONFLICT = {"half_body": _TILT_UP, "full_body": _TILT_DOWN, "seated": _TILT_UP}
 _FRAMING_FIELDS = ("distance_and_framing", "title")
 _POSE_FIELDS = ("body_pose", "subject_position")
 _SETUP_FIELDS = ("camera_position", "camera_height", "camera_angle", "subject_position", "distance_and_framing",
-                 "zoom_or_lens", "steps")
+                 "zoom_or_lens", "steps", "setup_choice", "why_each_choice")  # last two: shot-v3 reasoning
 
 
 def _text(look: dict, fields) -> str:
@@ -113,7 +113,13 @@ def _text(look: dict, fields) -> str:
 
 
 def classify(look: dict) -> str | None:
-    """Which setup a look's own framing calls for, or None (close-ups, environmental shots)."""
+    """Which setup a look's own framing calls for, or None (close-ups, environmental shots).
+
+    A shot-v3 look states its setup in `setup_choice` ("Full body: ...", "None: ..."); that wins."""
+    stated = str(look.get("setup_choice") or "").strip().lower()
+    for prefix, setup in (("none", None), ("half", "half_body"), ("full", "full_body"), ("seated", "seated")):
+        if stated.startswith(prefix):
+            return setup
     if _SEATED.search(_text(look, _POSE_FIELDS)):
         return "seated"
     framing = _text(look, _FRAMING_FIELDS)

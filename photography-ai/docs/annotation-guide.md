@@ -81,6 +81,21 @@ All three use the **1x main lens**. The 0.5x ultra-wide stretches faces and bodi
 - **Keep it short.** State each number once. Concise compositions train a model that generates fewer tokens, and on the phone, generated tokens are most of the wait (docs/iphone-benchmark.md, §2).
 - **Body language stays neutral.** Say what the setup does ("lengthens the legs"), never judge the subject's body.
 
+### Reasoning fields (shot-v3)
+
+Shot-v3 (prompt v7, `--shot-format v3`) teaches the model to **think before it instructs**. Each composition starts with four reasoning fields; the camera fields that follow must agree with them. A label without these fields still trains shot-v1, but `train-data export --shot-format v3` skips it.
+
+| field | must contain | good | bad |
+|---|---|---|---|
+| `scene_reading` | 2 sentences: which **visible** part of the target this look is built around, and why that spot suits the style | "The dock runs straight out into flat water, a ready-made leading line to the subject. The mountains behind are far enough away to stay soft at 1x." | "This is a beautiful lake scene." |
+| `setup_choice` | the phone setup (half body, full body, seated, or none) and **why it fits this spot and subject** | "Full body: the dock is long and empty, so there is room to step back 2 m and keep the feet on the bottom edge." | "Full body because it looks good." |
+| `why_each_choice` | 3–4 reasons, one each for height, tilt, distance or lens, and light, each naming **the effect on the photo** | "Crouching to waist height and tilting up lengthens the legs against the dock planks." | "Low angle is good." |
+| `fix_if_wrong` | 1–3 "if …, then …" corrections the photographer can make on the spot | "If the horizon cuts through the head, then crouch a little lower until it sits at the shoulders." | "Make sure it looks right." |
+
+- **Order matters.** Write the reasoning first, then make the camera fields follow from it. If `setup_choice` says full body, `camera_angle` must tilt up. The export writes these keys first so the model learns to reason first.
+- **No new facts in the reasoning.** Reasons may only use what `visible_evidence` lists or what `needs_on_site_check` flags as a guess.
+- **Keep it tight.** About 60–90 words of reasoning per look. Every generated token costs phone time (about 37 tokens/s for this stage), so depth must come from specific reasons, not from more words.
+
 ### Avoid
 
 - Generic phrases: "take a wide shot", "use good lighting", "center the subject", "capture the moment".
