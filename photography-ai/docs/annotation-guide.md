@@ -83,18 +83,35 @@ All three use the **1x main lens**. The 0.5x ultra-wide stretches faces and bodi
 
 ### Reasoning fields (shot-v3)
 
-Shot-v3 (prompt v7, `--shot-format v3`) teaches the model to **think before it instructs**. Each composition starts with four reasoning fields; the camera fields that follow must agree with them. A label without these fields still trains shot-v1, but `train-data export --shot-format v3` skips it.
+Shot-v3 (prompt v10, `--shot-format v3`) teaches the model to **think before it instructs**. Each composition starts with four reasoning fields; the camera fields that follow must agree with them. A label without these fields still trains shot-v1, but `train-data export --shot-format v3` skips it.
 
 | field | must contain | good | bad |
 |---|---|---|---|
-| `scene_reading` | 2 sentences: which **visible** part of the target this look is built around, and why that spot suits the style | "The dock runs straight out into flat water, a ready-made leading line to the subject. The mountains behind are far enough away to stay soft at 1x." | "This is a beautiful lake scene." |
-| `setup_choice` | the phone setup (half body, full body, seated, or none) and **why it fits this spot and subject** | "Full body: the dock is long and empty, so there is room to step back 2 m and keep the feet on the bottom edge." | "Full body because it looks good." |
-| `why_each_choice` | 3–4 reasons, one each for height, tilt, distance or lens, and light, each naming **the effect on the photo** | "Crouching to waist height and tilting up lengthens the legs against the dock planks." | "Low angle is good." |
-| `fix_if_wrong` | 1–3 "if …, then …" corrections the photographer can make on the spot | "If the horizon cuts through the head, then crouch a little lower until it sits at the shoulders." | "Make sure it looks right." |
+| `scene_reading` | 1 sentence: the **visible** part of the target this look is built around | "The dock runs straight into flat water, a ready-made leading line." | "This is a beautiful lake scene." |
+| `setup_choice` | starts with the framing: half body, full body, seated, **close-up** (head and shoulders), **scenery** (subject small in a wide view) or **creative** (a deliberate angle or crop outside the three setups), then a few words on **why it fits this spot** | "Full body: the long empty dock leaves room to step back 2 m." / "Close-up: head and shoulders against the dark hall." | "Full body because it looks good." / "None." |
+| `why_each_choice` | exactly 3 reasons, under 12 words each: height, tilt, and distance or lens, each naming **the effect on the subject** | "Waist-height camera lengthens the legs." | "Low angle is good." |
+| `fix_if_wrong` | exactly 1 "if …, then …" correction the photographer can make on the spot | "If the horizon cuts the head, then crouch lower." | "Make sure it looks right." |
 
 - **Order matters.** Write the reasoning first, then make the camera fields follow from it. If `setup_choice` says full body, `camera_angle` must tilt up. The export writes these keys first so the model learns to reason first.
+- **Name the framing first.** Prompt v8 allowed a bare "None"; it became the first word of almost every look the trained model wrote, even full-body ones. Close-up, scenery and creative say what the shot is, and the setup check still treats them as "no setup".
 - **No new facts in the reasoning.** Reasons may only use what `visible_evidence` lists or what `needs_on_site_check` flags as a guess.
-- **Keep it tight.** About 60–90 words of reasoning per look. Every generated token costs phone time (about 37 tokens/s for this stage), so depth must come from specific reasons, not from more words.
+- **Keep it short: about 35–45 words of reasoning per look.** Every generated token costs phone time (about 37 tokens/s for this stage). Prompt v7 allowed ~90 words and pushed the projected iPhone analysis to 67–70 s against a 60 s budget, so depth must come from specific reasons, not from more words.
+
+#### Instruction word limits (shot-v3)
+
+The reasoning adds about 190 generated tokens per analysis, so in shot-v3 labels the instruction fields make room for it (prompt v10). v9 labels ran about 270 words per look and projected 67 s on the iPhone against a 60 s budget.
+
+| field | limit |
+|---|---|
+| `uses_principle` | under 12 words |
+| `camera_position` | under 14 words, still naming a landmark |
+| `subject_position` | under 20 words: spot, pose, place in the frame |
+| `lighting_tip` | under 16 words |
+| `visible_evidence` | 2–3 items of a few words |
+| `needs_on_site_check` | 1–2 items under 8 words |
+| `steps` | exactly 2, under 8 words each; don't repeat the camera numbers |
+
+Shot-v1 labels keep the longer rules in the table above.
 
 ### Avoid
 

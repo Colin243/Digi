@@ -29,7 +29,7 @@ def test_v1_and_v2_prompts_unchanged_and_v3_is_new():
     assert framing.playbook() in v3 and "full body tilts it UP" in v3
     assert v3.index('"scene_reading"') < v3.index('"title"')  # reasoning is generated first
     assert prompts.PROMPT_VERSION == "2026-11-09.4"
-    assert prompts.version_for("inspiration", "v3") == prompts.PROMPT_VERSION_V7
+    assert prompts.version_for("inspiration", "v3") == prompts.PROMPT_VERSION_V10
     assert prompts.version_for("inspiration", "v1") == prompts.PROMPT_VERSION
 
 
@@ -73,3 +73,16 @@ def test_stated_setup_choice_wins_over_framing_words():
                   "distance_and_framing": "waist up", "camera_angle": "tilt up about 20 degrees on purpose"}
     assert framing.classify(deliberate) is None and not framing.setup_fit(deliberate)["conflict"]
     assert framing.classify({"setup_choice": "Seated: the steps", "distance_and_framing": "full body"}) == "seated"
+
+
+def test_no_setup_choices_name_the_framing():
+    for choice in ("Close-up: head and shoulders", "Scenery: tiny figure at 30 m", "Creative: deliberate low angle"):
+        assert framing.classify({"setup_choice": choice, "distance_and_framing": "full body"}) is None
+    desc = prompts.COMPOSITION_FIELDS_V3["setup_choice"]
+    assert all(w in desc for w in ("close-up", "scenery", "creative")) and "none" not in desc
+
+
+def test_v3_instruction_fields_are_word_limited_and_v1_is_not():
+    assert list(prompts.COMPOSITION_FIELDS_V3)[4:] == list(prompts.COMPOSITION_FIELDS)
+    assert "exactly 2" in prompts.COMPOSITION_FIELDS_V3["steps[]"]
+    assert prompts.COMPOSITION_FIELDS["steps[]"] == "2-4 short actionable steps"

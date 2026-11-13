@@ -31,6 +31,18 @@ History
      fields are written after, and follow from, the reasoning; the three phone setups (framing.playbook) and a tilt-consistency rule are
      in the prompt. Only shot_format="v3" prompts are new: v4 (shot-v1) and v6 (shot-v2 / Scene Director)
      prompts stay byte-identical. Runs with shot_format "v3" record PROMPT_VERSION_V7.
+  v8 (2026-11-12.8) shot-v3 reasoning made short for the phone budget: scene_reading 1 sentence, exactly 3
+     reasons under 12 words, exactly 1 fix; "none" only for close-ups and scenery shots with a small subject.
+     v7 reasoning ran ~90 words per look and pushed the projected iPhone analysis to 67-70 s (budget 60).
+     v3 runs now record PROMPT_VERSION_V8; v7 and v8 runs are not comparable.
+  v9 (2026-11-13.9) setup_choice names the framing first: half body, full body, seated, close-up, scenery or
+     creative. v8's single "none" became the first word of almost every look (the trained model wrote
+     "None: a full-body shot ..."), so the no-setup case is now split into what the shot actually is.
+     v3 runs now record PROMPT_VERSION_V9.
+  v10 (2026-11-13.10) shot-v3 instruction fields get word limits (SHORT_FIELDS_V3): exactly 2 steps, 1-2 on-site
+     checks, 2-3 short evidence items, one-line position, pose and light. The reasoning added ~190 generated tokens
+     per analysis and v9 projected 67 s on the iPhone (budget 60), so the instructions make room for it.
+     v3 runs now record PROMPT_VERSION_V10.
 """
 
 from __future__ import annotations
@@ -43,12 +55,15 @@ from .backends import IMAGE_MARKER
 
 PROMPT_VERSION = "2026-11-09.4"
 PROMPT_VERSION_V5 = "2026-11-12.6"  # name kept: the scene-mode / shot-v2 prompt version
-PROMPT_VERSION_V7 = "2026-11-12.7"  # shot-v3: reasoning fields before the instructions
+PROMPT_VERSION_V7 = "2026-11-12.7"  # shot-v3 as first released (runs reason-*-v3-20261112)
+PROMPT_VERSION_V8 = "2026-11-12.8"  # shot-v3 with short reasoning (run reason-short-r16-v3-20261112)
+PROMPT_VERSION_V9 = "2026-11-13.9"  # shot-v3, setup_choice names the framing (run reason-choices-r16-v3-20261113)
+PROMPT_VERSION_V10 = "2026-11-13.10"  # shot-v3 with word-limited instruction fields; what version_for returns for v3
 
 
 def version_for(mode: str = "inspiration", shot_format: str = "v1") -> str:
     if shot_format == "v3":
-        return PROMPT_VERSION_V7
+        return PROMPT_VERSION_V10
     return PROMPT_VERSION if (mode == "inspiration" and shot_format == "v1") else PROMPT_VERSION_V5
 
 DEFAULT_SUBJECT = "a person (the photographer's friend) posing in the scene"
@@ -97,12 +112,22 @@ DIRECTION_FIELDS = {
 COMPOSITION_FIELDS_V2 = {**COMPOSITION_FIELDS, **DIRECTION_FIELDS}
 # shot-v3: reasoning first. Key order is generation order, so the camera fields come after the reasons.
 REASONING_FIELDS = {
-    "scene_reading": "2 sentences: which visible part of the TARGET photo this look is built around and why that spot suits the style",
-    "setup_choice": "the phone setup this look uses (half body, full body, seated, or none for a close-up or a wide scenery shot) and why it suits this spot and this subject",
-    "why_each_choice[]": "3-4 short reasons, one each for camera height, tilt, distance or lens, and light: what that choice does to the subject in the final photo",
-    "fix_if_wrong[]": "1-3 things that often go wrong with this look and the exact correction, each as 'if ..., then ...'",
+    "scene_reading": "1 sentence: the visible part of the TARGET photo this look is built around",
+    "setup_choice": "half body, full body, seated, close-up, scenery or creative, then a few words on why; close-up for a head-and-shoulders crop, scenery when the subject is small in a wide view, creative only for a deliberate angle or crop outside the three setups",
+    "why_each_choice[]": "exactly 3 reasons under 12 words each, for camera height, tilt, and distance or lens: the effect on the subject",
+    "fix_if_wrong[]": "exactly 1 on-the-spot correction written as 'if ..., then ...'",
 }
-COMPOSITION_FIELDS_V3 = {**REASONING_FIELDS, **COMPOSITION_FIELDS}  # shot-v1 + reasoning (matches the labels)
+# shot-v3 only: word limits that make room for the reasoning within the phone budget (v1 text is unchanged).
+SHORT_FIELDS_V3 = {
+    "uses_principle": "which inspiration principle this shot transfers, under 12 words",
+    "camera_position": "where to stand, relative to named things in the target photo, under 14 words",
+    "subject_position": "where the subject stands, their pose and where they sit in the frame, under 20 words",
+    "lighting_tip": "how to use the light visible in the target photo, under 16 words",
+    "visible_evidence[]": "2-3 things you can actually see in the target photo that this shot depends on, a few words each",
+    "needs_on_site_check[]": "1-2 things the still photo cannot tell you, under 8 words each",
+    "steps[]": "exactly 2 short actionable steps, under 8 words each",
+}
+COMPOSITION_FIELDS_V3 = {**REASONING_FIELDS, **COMPOSITION_FIELDS, **SHORT_FIELDS_V3}  # shot-v1 order + reasoning
 SCENE_SHOT_FIELDS = {
     **COMPOSITION_FIELDS_V2,
     "title": "a short name for this look",

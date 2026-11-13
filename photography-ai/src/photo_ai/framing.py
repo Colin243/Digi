@@ -115,9 +115,11 @@ def _text(look: dict, fields) -> str:
 def classify(look: dict) -> str | None:
     """Which setup a look's own framing calls for, or None (close-ups, environmental shots).
 
-    A shot-v3 look states its setup in `setup_choice` ("Full body: ...", "None: ..."); that wins."""
+    A shot-v3 look states its setup in `setup_choice` ("Full body: ...", "Close-up: ..."); that wins.
+    close-up, scenery and creative (and v8's "none") are the no-setup choices."""
     stated = str(look.get("setup_choice") or "").strip().lower()
-    for prefix, setup in (("none", None), ("half", "half_body"), ("full", "full_body"), ("seated", "seated")):
+    for prefix, setup in (("none", None), ("close", None), ("scenery", None), ("creative", None),
+                          ("half", "half_body"), ("full", "full_body"), ("seated", "seated")):
         if stated.startswith(prefix):
             return setup
     if _SEATED.search(_text(look, _POSE_FIELDS)):
