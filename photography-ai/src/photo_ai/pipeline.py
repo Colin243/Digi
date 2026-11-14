@@ -26,6 +26,7 @@ supported with the decomposed strategy).
 
 from __future__ import annotations
 
+import contextvars
 import platform
 import time
 from dataclasses import asdict, dataclass
@@ -189,6 +190,8 @@ def _decomposed(backend, run_dir, insp, tgt, cfg):
     )
     stages.append(st)
     result = {"aesthetic": aesthetic, "target_scene": target, **comps} if comps else None
+    for comp in (comps or {}).get("compositions", []):
+        _emit({"type": "shot", "shot": comp})
     return result, partial, stages
 
 
@@ -197,11 +200,21 @@ SHOT_V3_TOKENS = 2600  # shot-v1 (~1K tokens for 3 looks) plus ~150-250 tokens o
 LOOK_TOKENS = 900  # one shot-v2 look runs ~450-650 tokens
 
 
+def set_event_sink(sink):
+    """Install a progress callback for the current context; returns the token for reset_event_sink."""
+    return _EVENT_SINK.set(sink)
+
+
+def reset_event_sink(token) -> None:
+    _EVENT_SINK.reset(token)
+
+
 def _scene_director(backend, run_dir, insp, tgt, cfg):
     # cfg.max_tokens caps every scene-mode call (it is recorded with the run, so it must be honored)
     scene, st = _run_stage(backend, run_dir, "scene", prompts.director_scene(), [tgt], schema.TargetScene, cfg,
                            min(600, cfg.max_tokens))
     stages = [st]
+    _emit({"type": "stage", "stage": "readingScene"})
     style = {"key": cfg.style, "label": prompts.style_label(cfg.style), "brief": cfg.brief}
     partial = {"mode": "scene", "style": style, "target_scene": scene, "compositions": []}
     if scene is None:
@@ -216,6 +229,7 @@ def _scene_director(backend, run_dir, insp, tgt, cfg):
         if look is None:
             return None, partial, stages
         partial["compositions"].append(look)
+        _emit({"type": "shot", "shot": look})
     return partial, None, stages
 
 

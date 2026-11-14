@@ -203,6 +203,14 @@ def main(argv: list[str] | None = None) -> int:
     mo.add_argument("--warmup", type=int, default=3)
     mo.add_argument("--out", type=Path)
 
+    sv = sub.add_parser("server", help="local Director API for the phone's online engine (see photo_ai/server.py)")
+    sv.add_argument("action", choices=["serve", "keygen", "keys"])
+    sv.add_argument("--host", default="127.0.0.1", help="serve: use 0.0.0.0 so a phone on the same Wi-Fi can reach it")
+    sv.add_argument("--port", type=int, default=8787)
+    sv.add_argument("--model", default="qwen3-vl-2b-4bit", help='serve: model key, e.g. "qwen3-vl-2b-4bit+adapter=data/adapters/<run>"')
+    sv.add_argument("--per-hour", type=int, default=30, help="serve: requests per key per hour")
+    sv.add_argument("--label", default="device", help="keygen: a name for this client key")
+
     pk = sub.add_parser("picks", help="tap-to-pick review: generate looks, build the page, import picks, export training data")
     pk.add_argument("action", choices=["generate", "site", "import", "pull", "delete", "export", "status"])
     pk.add_argument("--slot", help="delete: the submission slot to remove (shown by pull)")
@@ -427,6 +435,27 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(PK.export(cfg), indent=1))
         else:
             print(json.dumps(PK.status(cfg), indent=1))
+        return 0
+
+    if a.cmd == "server":
+        from . import server as SV
+
+        if a.action == "keygen":
+            print(f"Key for {a.label} (shown once; only its hash is stored in {SV.DEFAULT_KEYS_FILE}):\n{SV.create_key(a.label)}")
+            return 0
+        if a.action == "keys":
+            for info in SV.load_keys().values():
+                print(f"{info['label']}\t{info['created']}")
+            return 0
+        import uvicorn
+
+        keys = SV.load_keys()
+        if not keys:
+            print("No API keys yet. Run: photo-ai server keygen --label <name>", file=sys.stderr)
+            return 2
+        backend = make_backend(a.model)
+        backend.load()  # keep the model warm so the first request is not slow
+        uvicorn.run(SV.create_app(backend, keys, a.model, a.per_hour), host=a.host, port=a.port, log_level="warning")
         return 0
 
     if a.cmd == "monitor":
