@@ -20,7 +20,7 @@ from .backends import make_backend
 from .cases import Case, load_case
 from .comparison import load_preferences, summarize_preferences
 from .evaluation import CATEGORY_KEYS, CORE_KEYS, MAX_CORE, load_scores, rater_kind
-from .metrics import composition_text, evaluate_result, pairwise_similarity
+from .metrics import composition_text, evaluate_result, notes_from_stages, pairwise_similarity
 from .pipeline import STRATEGIES, RunConfig, analyze
 from .storage import DEFAULT_RUNS_DIR
 
@@ -119,7 +119,8 @@ def summarize(manifest: dict, runs_dir: Path | None = None) -> dict:
         rec = _load_run(runs_dir, r["run_id"])
         rec["_scores"] = scores.get(r["run_id"], [])
         # recompute so metric fixes apply to old runs; result-less runs keep partial output
-        rec["auto_metrics"] = evaluate_result(rec["result"] or rec.get("partial_result"), case_for(r["case"]))
+        rec["auto_metrics"] = evaluate_result(rec["result"] or rec.get("partial_result"), case_for(r["case"]),
+                                              notes_from_stages(rec.get("stages"), runs_dir / r["run_id"]))
         if r["kind"] == "greedy":
             cells.setdefault((r["model"], r["strategy"]), []).append(rec)
         else:
@@ -144,6 +145,9 @@ def summarize(manifest: dict, runs_dir: Path | None = None) -> dict:
             },
             "auto": {  # keyword checks against hand annotations; not quality judgments
                 "inspiration_identified": _mean([1.0 if h else 0.0 for h in insp_hits]),
+                "inspiration_source": "/".join(sorted({a["inspiration_source"] for a in am if a.get("inspiration_source")})) or None,
+                "inspiration_object_recall": _mean([a.get("inspiration_object_recall") for a in am]),
+                "per_image_names_subject": _mean([1.0 if h else 0.0 for a in am for h in a.get("per_image_primary_hits", [])]),
                 "style_recall": _mean([a.get("style_recall") for a in am]),
                 "target_identified": _mean([1.0 if t.get("primary_hit") else 0.0 for t in tr if t]),
                 "target_object_recall": _mean([t.get("object_recall") for t in tr if t]),
@@ -221,14 +225,19 @@ def report_markdown(summary: dict) -> str:
                    f"{_cell(m['inference_s_mean'])} / {_cell(m['inference_s_max'])} | {m['peak_memory_gb']:.2f} | "
                    f"{_cell(m['model_calls'])} | {_cell(m['generation_tokens'])} |")
     out += ["", "### Automatic checks (keyword matching against hand annotations; measured, but not quality)", "",
-            "| model | strategy | inspiration identified | style recall | target identified | target object recall | "
+            "_Inspiration identified / content: scored on each photo's notes stage when the strategy has one, "
+            "otherwise on aesthetic.per_image (source in brackets). Summary names subject: how often the one-line "
+            "per_image summary still says who is in each photo._", "",
+            "| model | strategy | inspiration identified | inspiration content | summary names subject | style recall | target identified | target object recall | "
             "invented objects in target (runs) | leaked inspiration objects | evidence grounded | concrete cue types / shot | "
             "generic or copied | diversity: fields / text |",
             "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for r in summary["rows"]:
         a = r["auto"]
+        src = f" ({a['inspiration_source']})" if a.get("inspiration_source") else ""
         out.append(
-            f"| {r['model']} | {r['strategy']} | {_cell(a['inspiration_identified'], True)} | {_cell(a['style_recall'])} | "
+            f"| {r['model']} | {r['strategy']} | {_cell(a['inspiration_identified'], True)}{src} | "
+            f"{_cell(a.get('inspiration_object_recall'))} | {_cell(a.get('per_image_names_subject'), True)} | {_cell(a['style_recall'])} | "
             f"{_cell(a['target_identified'], True)} | {_cell(a['target_object_recall'])} | "
             f"{a['hallucinated_in_target']} ({a['runs_with_hallucination']}) | {a['leaked_inspiration_objects']} | "
             f"{_cell(a['evidence_grounded_rate'])} | {_cell(a['specific_cue_types'])} | "

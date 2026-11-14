@@ -37,7 +37,7 @@ from . import prompts, schema
 from .backends import GenerationParams, VLMBackend
 from .cases import Case
 from .images import PreparedImage, prepare
-from .metrics import evaluate_result
+from .metrics import evaluate_result, notes_from_stages
 from .parsing import extract_json
 from .storage import DEFAULT_RUNS_DIR, new_run_dir, save_run, write_raw
 
@@ -328,7 +328,7 @@ def analyze(
         "result": result,
         "partial_result": None if result else partial,
         "validation": {"ok": result is not None, "errors": errors},
-        "auto_metrics": evaluate_result(result or partial, case),
+        "auto_metrics": evaluate_result(result or partial, case, notes_from_stages(stages, run_dir)),
         "stages": stages,
         "environment": {
             "python": platform.python_version(),

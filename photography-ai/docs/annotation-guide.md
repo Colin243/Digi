@@ -39,7 +39,7 @@ Never list something that isn't in the photo. This is where Phase 3 models hallu
 
 ### aesthetic
 
-- **per_image:** short one-line versions of the notes.
+- **per_image:** one line per photo, in order: **who and where first, then the camera recipe**. "Woman walking away along a beach · back three-quarters · seated shoulder height · wide landscape · soft flat light." Not just the recipe ("Back three-quarters, barefoot, chest height, wide landscape"): a model trained on recipe-only lines stops saying what each photo shows. About 12–20 words.
 - **summary:** the style the photos share.
 - **principles:** 2–4 **transferable techniques** written as instructions ("camera at knee height looking up so the subject towers over the frame"). Bare category names such as "camera height" or "lighting" don't count.
 - **color_palette, lighting, mood, composition_patterns, subject_treatment.**

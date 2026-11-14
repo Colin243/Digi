@@ -37,7 +37,7 @@ def _answer(n=3, comps=None):
     return {
         "inspiration_notes": [f"Shot from a low angle at knee height, full body, subject on the left third. #{i}" for i in range(n)],
         "target_scene": {"description": "A covered staircase with red railings.", "key_elements": ["red railing", "concrete steps"], "constraints": ["narrow"]},
-        "aesthetic": {"summary": "Low-angle full-body portraits.", "principles": ["camera at knee height looking up"], "per_image": ["a", "b", "c"]},
+        "aesthetic": {"summary": "Low-angle full-body portraits.", "principles": ["camera at knee height looking up"], "per_image": ["Woman on steps, low angle", "Man by a wall, low angle", "Woman on a railing, low angle"]},
         "compositions": comps or [
             GOOD_COMP,
             {**GOOD_COMP, "title": "Seated on the landing", "camera_position": "at the top landing beside the right railing",
