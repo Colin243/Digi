@@ -72,8 +72,10 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
         // Process each available frame. A 1/24 threshold on a 30 fps stream
         // discards every other frame (15 fps), rather than producing 24 fps.
-        guard renderEnabled,
-              let pixel = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        guard let pixel = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        // Live shot guidance: in-memory person detection, throttled, never stored (no-op without a pinned shot).
+        LiveGuidance.shared.consider(pixel)
+        guard renderEnabled else { return }
         guard previewSlot.wait(timeout: .now()) == .success else { return }
         autoreleasepool {
             guard let frame = renderer?.render(CIImage(cvPixelBuffer: pixel), maxDimension: 960) else { previewSlot.signal(); return }
@@ -617,6 +619,7 @@ struct CameraView: View {
     @State private var cameraPicker = false
     @State private var directorOpen = false
     @ObservedObject private var pinnedShot = PinnedShotStore.shared
+    @AppStorage("digi.guidanceDebug") private var guidanceDebug = false
     @State private var options = false
     @State private var review = false
     @State private var showStatus = true
@@ -711,6 +714,10 @@ struct CameraView: View {
                                     }
                                     .position(x: point.x * area.size.width, y: point.y * area.size.height)
                             }.allowsHitTesting(false).accessibilityLabel("Selected focus point")
+                        }
+                        if pinnedShot.shot != nil {
+                            SubjectOverlay(live: LiveGuidance.shared, debug: guidanceDebug)
+                            LevelIndicator(live: LiveGuidance.shared)
                         }
                         VStack { PinnedShotCard(store: pinnedShot); Spacer() }
                         if showStatus && !camera.status.isEmpty {
@@ -886,11 +893,15 @@ struct CameraView: View {
         }
         .preferredColorScheme(.dark)
         .statusBarHidden()
-        .onAppear { camera.start() }
+        .onAppear { camera.start(); updateGuidance() }
         .onChange(of: phase) { _, newPhase in
             if newPhase == .active { camera.start() }
             else { cancelCountdown(); camera.stop() }
+            updateGuidance()
         }
+        .onChange(of: pinnedShot.shot) { _, _ in updateGuidance() }
+        .onChange(of: directorOpen) { _, _ in updateGuidance() }
+        .onChange(of: previewOrientation) { _, o in LiveGuidance.shared.setInterfaceOrientation(o) }
         .onChange(of: camera.ready) { _, ready in if !ready { cancelCountdown() } }
         .onChange(of: options) { _, visible in if visible { cancelCountdown() } }
         .onChange(of: review) { _, visible in if visible { cancelCountdown() } }
@@ -921,6 +932,15 @@ struct CameraView: View {
                     return
                 }
             }
+        }
+    }
+    /// Live guidance runs only while a shot is pinned and the viewfinder is in front.
+    private func updateGuidance() {
+        if let shot = pinnedShot.shot, phase == .active, !directorOpen {
+            LiveGuidance.shared.setInterfaceOrientation(previewOrientation)
+            LiveGuidance.shared.start(shot: shot)
+        } else {
+            LiveGuidance.shared.stop()
         }
     }
     private func cancelCountdown() {
