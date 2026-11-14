@@ -19,7 +19,7 @@
   "warmup_steps": 10,
   "iters": 120,
   "grad_accum": 4,
-  "max_side": 768,
+  "max_side": 640,
   "max_seq_length": 4096,
   "eval_every": 15,
   "save_every": 30,
