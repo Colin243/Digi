@@ -56,3 +56,15 @@ uv run photo-ai server serve --host 0.0.0.0 --port 8787 [--model "qwen3-vl-2b-4b
 Test on the Mac with `curl -N -H "Authorization: Bearer <key>" -F mode=scene -F style=relaxed_candid -F target=@photo.jpg localhost:8787/v1/plan`. A phone on the same Wi-Fi reaches it at `http://<Mac IP>:8787`; for anything beyond that, put it behind a tunnel with HTTPS (Tailscale or Cloudflare Tunnel) rather than opening a router port.
 
 **Honest speed note.** A real scene request took about 59 s end to end on this busy Mac (earlier demo runs: 28-35 s). The Mac runs the 2B model only about 1.6x faster than the phone, so this server proves the plumbing, not the "online is fast" target. That target needs a larger model on a cloud GPU.
+
+## After the LoRA training finishes (2026-11-14)
+The 4B reasoning run (`bootstrap-r16-reasoning-4B-UNREVIEWED`) was at step 79 of 120 and needs about 2 more hours. Its queue then runs a portrait_v1 benchmark and a `bootstrap_eval` on its own (`bench exit` in `data/adapters/chain-rerun-then-4B.log` marks the end). Do these in order, once the Mac is free:
+
+1. **Read the 4B result.** Check validation loss, then compare it with the 2B adapters on the same benchmark and held-out scenes. All of these adapters are `UNREVIEWED`, so this says whether a bigger model helps, not whether the output is good.
+2. **Decide where the 4B belongs.** It will not meet the phone budgets (2B already misses latency at 1.8 GB). If it is clearly better, it becomes the Mac/cloud model for the online engine, and the 2B stays the offline model. Measure its Mac speed before deciding.
+3. **Real-model smoke test.** Start `photo-ai server serve --host 0.0.0.0 --model <best adapter>`, run the DirectorKit live test against it, then try one request from the phone on the same Wi-Fi. Record time to first shot, total time, and whether the fallback fires when the Mac is unreachable.
+4. **Blind comparison (#21/#6).** Score base, best 2B adapter and the 4B (online) on the 20 held-out scenes.
+5. **Fuse and re-quantize the chosen 2B adapter** and re-measure speed, since the unfused adapter runs at about 55% of base speed.
+6. **Build the on-device `OfflineEngine`** (Phase 3) with the fused 2B, replacing the stub in the app.
+
+Still the real blocker for quality claims: human-approved labels (#2/#4). Nothing above changes that.
