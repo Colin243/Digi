@@ -616,6 +616,7 @@ struct CameraView: View {
     @AppStorage("digit.haptics") private var haptics = true
     @State private var cameraPicker = false
     @State private var directorOpen = false
+    @ObservedObject private var pinnedShot = PinnedShotStore.shared
     @State private var options = false
     @State private var review = false
     @State private var showStatus = true
@@ -711,6 +712,7 @@ struct CameraView: View {
                                     .position(x: point.x * area.size.width, y: point.y * area.size.height)
                             }.allowsHitTesting(false).accessibilityLabel("Selected focus point")
                         }
+                        VStack { PinnedShotCard(store: pinnedShot); Spacer() }
                         if showStatus && !camera.status.isEmpty {
                             VStack {
                                 Spacer()

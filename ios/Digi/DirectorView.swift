@@ -103,7 +103,9 @@ struct DirectorView: View {
         }
         if !model.shots.isEmpty {
             Section {
-                ForEach(Array(model.shots.enumerated()), id: \.offset) { i, shot in ShotCard(index: i + 1, shot: shot) }
+                ForEach(Array(model.shots.enumerated()), id: \.offset) { i, shot in
+                    ShotCard(index: i + 1, shot: shot) { PinnedShotStore.shared.pin(shot); model.cancel(); dismiss() }
+                }
             } header: {
                 Text(model.engineUsed == .online ? "Shots · online" : model.engineUsed == .offline ? "Shots · on this phone" : "Shots")
             }
@@ -123,6 +125,7 @@ struct DirectorView: View {
 private struct ShotCard: View {
     let index: Int
     let shot: Shot
+    let onUse: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -132,6 +135,8 @@ private struct ShotCard: View {
             row("Subject", shot.subjectPosition); row("Framing", shot.distanceAndFraming); row("Light", shot.lightingTip)
             row("Pose", shot.bodyPose); row("Head", shot.headDirection); row("Gaze", shot.gaze); row("Expression", shot.expressionCue)
             if !shot.needsOnSiteCheck.isEmpty { row("Check on site", shot.needsOnSiteCheck.joined(separator: "; ")) }
+            Button("Use this shot on the camera", action: onUse)
+                .buttonStyle(.borderedProminent).padding(.top, 4).accessibilityIdentifier("director-use-shot-\(index)")
         }.padding(.vertical, 4)
     }
 
