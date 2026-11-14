@@ -42,6 +42,18 @@ from .parsing import extract_json
 from .storage import DEFAULT_RUNS_DIR, new_run_dir, save_run, write_raw
 
 MIN_INSPIRATION, MAX_INSPIRATION = 3, 5
+
+# Optional progress sink for servers: called with {"type": "stage", "stage": ...} or {"type": "shot", "shot": {...}}
+# as work finishes. A contextvar (not RunConfig) so it never lands in the saved run record.
+_EVENT_SINK: contextvars.ContextVar = contextvars.ContextVar("photo_ai_event_sink", default=None)
+
+
+def _emit(event: dict) -> None:
+    sink = _EVENT_SINK.get()
+    if sink is not None:
+        sink(event)
+
+
 STRATEGIES = ("two_stage", "single_pass", "decomposed")
 MODES = ("inspiration", "scene")
 SCENE_STRATEGY = "scene_director"
