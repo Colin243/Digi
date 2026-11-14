@@ -615,6 +615,7 @@ struct CameraView: View {
     @AppStorage("digit.grid") private var grid = false
     @AppStorage("digit.haptics") private var haptics = true
     @State private var cameraPicker = false
+    @State private var directorOpen = false
     @State private var options = false
     @State private var review = false
     @State private var showStatus = true
@@ -648,6 +649,15 @@ struct CameraView: View {
                         }.buttonStyle(.plain)
                             .accessibilityLabel("Choose camera, G12")
                             .accessibilityIdentifier("camera-picker")
+                        Button {
+                            options = false
+                            directorOpen = true
+                        } label: {
+                            Image(systemName: "wand.and.stars").font(.system(size: 18))
+                                .frame(minWidth: 44, minHeight: 44)
+                        }.buttonStyle(.plain)
+                            .accessibilityLabel("Photography director")
+                            .accessibilityIdentifier("director-open")
                         if !portrait { Rectangle().fill(CameraStyle.accent).frame(width: 22, height: 2).padding(.top, 5) }
                         Spacer()
                         if camera.captureStudyEnabled {
@@ -672,7 +682,7 @@ struct CameraView: View {
                                       orientationChanged: { previewOrientation = $0 },
                                       focusRequested: { camera.focus(at: $0, lock: $1) },
                                       focusPositionChanged: { focusDisplayPoint = $0 },
-                                      hardwareCaptureEnabled: canShoot && countdown.remaining == nil && !options && !review && !cameraPicker && phase == .active,
+                                      hardwareCaptureEnabled: canShoot && countdown.remaining == nil && !options && !review && !cameraPicker && !directorOpen && phase == .active,
                                       captureRequested: takePhoto)
                         if camera.lookEnabled, let frame = camera.renderedPreview {
                             Image(uiImage: UIImage(cgImage: frame, scale: 1, orientation: previewOrientation == .portrait ? .right : previewOrientation == .landscapeLeft ? .down : .up))
@@ -863,6 +873,9 @@ struct CameraView: View {
                     }.padding(.horizontal, 24).padding(.vertical, 10)
                 }
             }.foregroundStyle(CameraStyle.silver).tint(CameraStyle.accent)
+        }
+        .sheet(isPresented: $directorOpen) {
+            DirectorView()
         }
         .sheet(isPresented: $cameraPicker) {
             CameraPickerView()

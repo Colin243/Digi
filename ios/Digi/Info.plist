@@ -13,4 +13,6 @@
 <key>UISupportedInterfaceOrientations</key><array><string>UIInterfaceOrientationPortrait</string><string>UIInterfaceOrientationLandscapeLeft</string><string>UIInterfaceOrientationLandscapeRight</string></array>
 <key>NSCameraUsageDescription</key><string>Digi uses the rear camera to take your photos.</string>
 <key>NSPhotoLibraryAddUsageDescription</key><string>Digi saves the photos you take to your photo library.</string>
+<key>NSLocalNetworkUsageDescription</key><string>Digi connects to your own Director server on your local network to plan shots.</string>
+<key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>
 </dict></plist>
