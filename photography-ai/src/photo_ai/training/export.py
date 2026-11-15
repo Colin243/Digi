@@ -22,7 +22,7 @@ import json
 from collections import Counter
 from pathlib import Path
 
-from .. import prompts
+from .. import framing, prompts
 from ..backends.mlx_backend import build_messages
 from ..cases import REPO_ROOT
 from .assemble import load_examples
@@ -70,7 +70,7 @@ def example_rows(example: dict, answer: dict, image_path, json_format: str = "ke
 
 def _ordered(comp: dict, shot_format: str) -> dict:
     """shot-v3 targets put the reasoning keys first, in prompt order, so the model learns to reason first."""
-    if shot_format != "v3":
+    if shot_format not in ("v3", "v4"):
         return comp
     first = [k.removesuffix("[]") for k in prompts.REASONING_FIELDS]
     return {**{k: comp[k] for k in first if k in comp}, **{k: v for k, v in comp.items() if k not in first}}
@@ -82,10 +82,17 @@ def has_reasoning(answer: dict) -> bool:
     return all(all(c.get(k) for k in keys) for c in answer.get("compositions") or [])
 
 
+def has_zoom(answer: dict) -> bool:
+    """Every composition states one zoom amount within 1-2x and gives a reason (shot-v4)."""
+    fits = [framing.zoom_fit(c) for c in answer.get("compositions") or []]
+    return bool(fits) and all(f["in_range"] and f["reason"] for f in fits)
+
+
 def export_sft(dataset: str = "train_v1", out_dir: Path | None = None, json_format: str = "keys",
                include_unapproved: bool = False, example_ids: list[str] | None = None,
                shot_format: str = "v1") -> dict:
-    """shot_format "v3": the compositions rows use the reasoning prompt; labels without reasoning are skipped."""
+    """shot_format "v3": the compositions rows use the reasoning prompt; labels without reasoning are skipped.
+    "v4": the zoom prompt (v11); labels also need every look's zoom_or_lens in 1-2x with a reason."""
     pool = {i["id"]: i for i in load_pool(dataset)["images"]}
     examples = {e["example_id"]: e for e in load_examples(dataset)}
     labels = load_labels(dataset)
@@ -93,10 +100,13 @@ def export_sft(dataset: str = "train_v1", out_dir: Path | None = None, json_form
         labels = [lab for lab in labels if lab["example_id"] in example_ids]
     chosen = [lab for lab in labels if lab["status"] == "approved" or
               (include_unapproved and lab["status"] == "draft" and not lab.get("schema_errors"))]
-    skipped = []
-    if shot_format == "v3":
+    skipped, skipped_zoom = [], []
+    if shot_format in ("v3", "v4"):
         skipped = [lab["example_id"] for lab in chosen if not has_reasoning(lab["answer"])]
         chosen = [lab for lab in chosen if lab["example_id"] not in skipped]
+    if shot_format == "v4":
+        skipped_zoom = [lab["example_id"] for lab in chosen if not has_zoom(lab["answer"])]
+        chosen = [lab for lab in chosen if lab["example_id"] not in skipped_zoom]
     out_dir = Path(out_dir or data_dir(dataset) / ("sft-UNREVIEWED-smoke" if include_unapproved else "sft"))
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -118,6 +128,7 @@ def export_sft(dataset: str = "train_v1", out_dir: Path | None = None, json_form
         "prompt_version": prompts.version_for("inspiration", shot_format),
         "shot_format": shot_format,
         "skipped_without_reasoning": skipped,
+        "skipped_without_zoom": skipped_zoom,
         "examples": dict(Counter(examples[lab["example_id"]]["split"] for lab in chosen)),
         "rows": {k: len(v) for k, v in rows.items()},
         "rows_by_stage": dict(Counter(r["meta"]["stage"] for v in rows.values() for r in v)),

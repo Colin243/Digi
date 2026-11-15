@@ -200,7 +200,8 @@ def build(runs_dir: Path, monitor_port: int = 7870) -> gr.Blocks:
                         strategy = gr.Radio(list(STRATEGIES), value=d.strategy, label="Strategy")
                         shot_format = gr.Radio([("shot-v1 (benchmark format)", "v1"),
                                                 ("shot-v2 (+ pose, head, gaze, expression; decomposed only)", "v2"),
-                                                ("shot-v3 (+ reasoning before instructions; decomposed only)", "v3")],
+                                                ("shot-v3 (+ reasoning before instructions; decomposed only)", "v3"),
+                                                ("shot-v4 (shot-v3 + 1-2x zoom with a reason; decomposed only)", "v4")],
                                                value="v1", label="Shot format")
                         with gr.Accordion("Generation settings", open=False):
                             max_side = gr.Slider(384, 2048, value=d.max_side, step=64, label="Max image side (px)")

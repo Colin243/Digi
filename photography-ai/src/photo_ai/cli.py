@@ -52,9 +52,9 @@ def main(argv: list[str] | None = None) -> int:
     an.add_argument("--label", help="free-text tag saved with the run")
     an.add_argument("--repeat", type=int, default=1, help="run N times with the model kept loaded (warm timings)")
     an.add_argument("--json", action="store_true", help="print the full run record as JSON")
-    an.add_argument("--shot-format", choices=["v1", "v2", "v3"], default="v1",
+    an.add_argument("--shot-format", choices=["v1", "v2", "v3", "v4"], default="v1",
                     help="v2 adds body pose, head/chin, gaze and an optional expression cue; v3 adds reasoning "
-                         "before the instructions (both decomposed strategy)")
+                         "before the instructions; v4 is v3 plus a 1-2x zoom amount with a reason (all decomposed)")
     _add_run_args(an)
 
     sn = sub.add_parser("scene", help="Scene Director (experimental): one scene photo + a style brief -> 3 portrait looks")
@@ -114,8 +114,8 @@ def main(argv: list[str] | None = None) -> int:
     bn.add_argument("--bench-id", help="reuse an id to resume or extend a benchmark")
     bn.add_argument("--json-format", choices=["shape", "keys"], default="shape",
                     help="describe the expected JSON as a blank shape (default) or as a list of keys")
-    bn.add_argument("--shot-format", choices=["v1", "v2", "v3"], default="v1",
-                    help="v1 = Phase 3 format; v2/v3 need --strategies decomposed")
+    bn.add_argument("--shot-format", choices=["v1", "v2", "v3", "v4"], default="v1",
+                    help="v1 = Phase 3 format; v2/v3/v4 need --strategies decomposed")
     bn.add_argument("--runs-dir", type=Path, default=DEFAULT_RUNS_DIR)
 
     rp = sub.add_parser("report", help="side-by-side comparison for a benchmark")
@@ -179,8 +179,9 @@ def main(argv: list[str] | None = None) -> int:
     td.add_argument("--json", action="store_true", help="audit: print the report as JSON")
     td.add_argument("--include-unapproved", action="store_true",
                     help="export drafts too (ONLY for pipeline smoke tests; never for real training)")
-    td.add_argument("--shot-format", choices=["v1", "v3"], default="v1",
-                    help="export: v3 trains the reasoning-first compositions prompt (labels need the reasoning fields)")
+    td.add_argument("--shot-format", choices=["v1", "v3", "v4"], default="v1",
+                    help="export: v3 trains the reasoning-first compositions prompt (labels need the reasoning fields); "
+                         "v4 adds the 1-2x zoom (labels also need an in-range zoom_or_lens with a reason)")
 
     lr = sub.add_parser("lora", help="Phase 4 LoRA: smoke test or training run")
     lr.add_argument("action", choices=["smoke", "train"])
