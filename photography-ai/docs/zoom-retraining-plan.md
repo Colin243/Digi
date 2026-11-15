@@ -159,3 +159,24 @@ This adapter is format-only evidence, like all runs before #2.
 ## Phone side (not in this PR)
 
 DirectorKit currently shows `zoomOrLens` as text. Once v11 ships, the guidance can read the leading `"<amount>x"` and turn it into a cue ("zoom to 2x, then step back to about 2.4 m"). This needs coordinating with the session building the zoom control.
+
+### Second zoom run: contrast batch (`bootstrap-r16-zoom2-UNREVIEWED`, bench `zoom2-r16-v4-20261115`, 2026-11-15)
+
+**What changed in the data.** Only 5 unused pool photos were left, so `assemble --reserve --batch 3` added 5 examples instead of 13 (3 valid, 2 train). Three drafting passes flipped 9 existing looks to 2x (5 full body, 4 seated) where the photo shows room to step back and a background shape worth enlarging; many candidates were skipped as too narrow. Labels: 49 drafts, 72 of 147 looks at 2x (from 28 of 138), all unreviewed. Backups: `examples.before-zoom-contrast.json`, `labels.before-zoom-contrast`. Same config as the first run apart from the name and data (`configs/lora_bootstrap_r16_zoom2.json`): 120 iterations, 73 min, validation loss 2.16 to 1.483 on a different validation set (3 new validation examples), so it is not comparable with the first run's 1.48.
+
+| measure | trim (v10) | zoom run 1 | **zoom run 2** | gate |
+|---|---|---|---|---|
+| runs schema-valid | 14/14 | 14/14 | 14/14 | |
+| amount within 1-2x | 42/42 | 42/42 | 42/42 | pass |
+| zoom reason matches the amount (keyword check) | 3/42 | 42/42 | 40/42 | pass |
+| amounts used (1x / 2x) | | 39 / 3 | **16 / 26** | pass (zoomed share 62%, needs 25-75%) |
+| zoomed but kept the 1x distance | 0/0 | 1/3 | **7/26 (27%)** | **fail** (needs 10% or less) |
+| one zoom line on all 3 looks | | 10/14 | **4/14** | **fail by 1** (needs 3 or fewer) |
+| setup contradictions | 4 | 1 | **0** | pass |
+| compositions tokens, median | 982.5 | 978.5 | 974.0 | pass |
+| projected iPhone full / on-site s | 59.9 / 36.2 | 60.1 / 36.7 | 59.9 / 36.8 | full pass, on-site +0.6 s over |
+| looks framing a person with a setup | 27 | 26 | **18** (full 5, seated 6) | not gated, see below |
+
+**Reading it.** The collapse to 1x is fixed: the adapter now uses both amounts, and the lines name things in the photo ("step back so the dock and shore blur"). Two gates still fail: 7 of the 26 zoomed looks keep the 1x distance, so the photo would crop the subject, and 4 of 14 cases still repeat one line (the phrase "more of the place, background smaller" appears 6 times). The share of looks framing a person with a setup fell from 26 to 18 (full body 12 to 5, seated 11 to 6), so the adapter now writes fewer full-body and seated looks and more creative ones. Check this by eye before any further training: it may be the cost of teaching 2x. Like every adapter before human review, this is format evidence only.
+
+**Next.** Fix `distance_not_scaled` with a second contrast pass on the 7 failing looks' pattern (2x looks that state a 1x distance), add distance-scaling pairs, and vary the repeated line. Getting to 10-15 new examples needs more pool photos (a `pool fetch`, which downloads licensed images and needs the user's go-ahead).
