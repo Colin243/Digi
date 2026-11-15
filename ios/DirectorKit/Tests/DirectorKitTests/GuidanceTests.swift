@@ -206,10 +206,46 @@ final class SubjectSelectorTests: XCTestCase {
         // They leave the frame: no subject, even though someone else is visible.
         let gone = s.choose(people: [right], faces: [rightFace], now: 0.6)
         XCTAssertNil(gone.person); XCTAssertNil(gone.face)
-        XCTAssertTrue(s.isLocked)
-        // After the timeout it falls back to whoever is largest.
-        XCTAssertEqual(s.choose(people: [right], faces: [rightFace], now: 4).person, right)
-        XCTAssertFalse(s.isLocked)
+        XCTAssertTrue(s.isLocked); XCTAssertFalse(s.isLost)
+    }
+
+    func testLostSubjectNeverSwitchesToSomeoneElse() {
+        var s = SubjectSelector()
+        XCTAssertTrue(s.lock(atX: 0.15, y: 0.5, people: [left, right], faces: [leftFace, rightFace], now: 0))
+        // Long after the chosen person left, the other person is still not picked.
+        for t in stride(from: 0.2, through: 10, by: 0.2) {
+            let out = s.choose(people: [right], faces: [rightFace], now: t)
+            XCTAssertNil(out.person); XCTAssertNil(out.face)
+        }
+        XCTAssertTrue(s.isLocked); XCTAssertTrue(s.isLost)
+        // The chosen person comes back where they were: picked up again, no longer lost.
+        XCTAssertEqual(s.choose(people: [left, right], faces: [leftFace, rightFace], now: 10.2).person, left)
+        XCTAssertFalse(s.isLost)
+        // Clearing goes back to automatic.
+        s.clear()
+        XCTAssertFalse(s.isLocked); XCTAssertFalse(s.isLost)
+        XCTAssertEqual(s.choose(people: [left, right], faces: [], now: 10.4).person, right)
+    }
+
+    func testNotLostWithinTimeout() {
+        var s = SubjectSelector()
+        XCTAssertTrue(s.lock(atX: 0.15, y: 0.5, people: [left], faces: [], now: 0))
+        _ = s.choose(people: [], faces: [], now: 2.9)
+        XCTAssertFalse(s.isLost)
+        _ = s.choose(people: [], faces: [], now: 3.1)
+        XCTAssertTrue(s.isLost)
+    }
+
+    func testAutoKeepsFollowingTheSamePersonWhenSizesSwap() {
+        var s = SubjectSelector()
+        let a = NormalizedBox(x: 0.05, y: 0.2, width: 0.3, height: 0.7)
+        let b = NormalizedBox(x: 0.6, y: 0.2, width: 0.28, height: 0.68)
+        XCTAssertEqual(s.choose(people: [a, b], faces: [], now: 0).person, a)
+        // b now reads slightly larger (detector jitter): auto stays on a.
+        let bBigger = NormalizedBox(x: 0.6, y: 0.2, width: 0.31, height: 0.71)
+        XCTAssertEqual(s.choose(people: [a, bBigger], faces: [], now: 0.2).person, a)
+        // a leaves: auto moves to whoever is there.
+        XCTAssertEqual(s.choose(people: [bBigger], faces: [], now: 0.4).person, bBigger)
     }
 
     func testTapAwayFromEveryoneDoesNotLock() {

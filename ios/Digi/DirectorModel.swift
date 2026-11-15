@@ -222,7 +222,7 @@ struct PinnedShotCard: View {
         }
     }
 
-    /// Camera / Subject switch, plus choosing who to direct.
+    /// Camera / Subject switch. Choosing who to direct is a tap on the person in the viewfinder.
     private var controls: some View {
         HStack(spacing: 8) {
             Picker("Guide", selection: $store.directing) {
@@ -233,18 +233,6 @@ struct PinnedShotCard: View {
             .onChange(of: store.directing) { _, on in if on { store.expanded = true } }
             .accessibilityIdentifier("pinned-shot-mode")
             Spacer()
-            if live.detections.locked {
-                Button { live.clearSubject() } label: {
-                    Label("Subject", systemImage: "xmark.circle.fill").font(.caption.weight(.semibold))
-                }.tint(.green).accessibilityLabel("Stop following the chosen subject")
-                    .accessibilityIdentifier("subject-clear")
-            } else {
-                Button { live.choosingSubject.toggle() } label: {
-                    Label(live.choosingSubject ? "Cancel" : "Choose", systemImage: "person.crop.rectangle").font(.caption.weight(.semibold))
-                }.tint(accent).disabled(!live.running)
-                    .accessibilityLabel(live.choosingSubject ? "Cancel choosing a subject" : "Choose who to direct")
-                    .accessibilityIdentifier("subject-choose")
-            }
         }
     }
 
