@@ -29,8 +29,6 @@ final class LiveGuidance: ObservableObject, @unchecked Sendable {
     @Published private(set) var targets: ShotTargets?
     @Published private(set) var running = false
     @Published private(set) var detections = Detections()
-    /// True while the user is picking who to direct: the next tap on the viewfinder chooses them.
-    @Published var choosingSubject = false
     /// Experimental: live head-turn and chin cues for the subject, from Vision's face pose.
     @Published var subjectCuesEnabled = UserDefaults.standard.bool(forKey: LiveGuidance.subjectCuesKey) {
         didSet {
@@ -89,7 +87,7 @@ final class LiveGuidance: ObservableObject, @unchecked Sendable {
         motion.stopDeviceMotionUpdates()
         lock.lock(); tracker = nil; selector.clear(); lastPeople = []; lastFaces = []; lock.unlock()
         guidance = .idle; targetPitch = nil; targets = nil; running = false
-        detections = Detections(); choosingSubject = false
+        detections = Detections()
     }
 
     /// Chooses the person under a tap on the viewfinder (normalized, top-left origin). Main thread.
@@ -99,7 +97,7 @@ final class LiveGuidance: ObservableObject, @unchecked Sendable {
         let ok = selector.lock(atX: x, y: y, people: lastPeople, faces: lastFaces, now: CACurrentMediaTime())
         if ok { tracker?.subjectChosen = true }
         lock.unlock()
-        if ok { choosingSubject = false; detections.locked = true; detections.lost = false }
+        if ok { detections.locked = true; detections.lost = false }
         return ok
     }
 
@@ -253,8 +251,9 @@ struct LevelIndicator: View {
     }
 }
 
-/// Over the viewfinder: brackets on the subject being directed, the boxes Vision found (debug), and
-/// the tap target while the user is choosing who to direct.
+/// Over the viewfinder: the box on the subject being directed, the boxes Vision found (debug), and
+/// tap targets on every detected person. Guidance follows the largest person automatically; tapping
+/// a person chooses them, and "Auto" goes back. Taps anywhere else fall through to tap-to-focus.
 struct SubjectOverlay: View {
     @ObservedObject var live: LiveGuidance
     let debug: Bool
@@ -264,44 +263,70 @@ struct SubjectOverlay: View {
             let d = live.detections
             let w = area.size.width, h = area.size.height
             let rect = { (b: NormalizedBox) in CGRect(x: b.x * w, y: b.y * h, width: b.width * w, height: b.height * h) }
+            let targets = d.people.isEmpty ? d.faces : d.people
             ZStack(alignment: .topLeading) {
-                if debug || live.choosingSubject {
+                if debug || d.lost {
                     ForEach(Array(d.people.enumerated()), id: \.offset) { _, b in
                         let r = rect(b)
-                        Rectangle().stroke(.white.opacity(0.75), style: StrokeStyle(lineWidth: 1, dash: live.choosingSubject ? [6, 4] : []))
+                        Rectangle().stroke(.white.opacity(0.75), style: StrokeStyle(lineWidth: 1, dash: d.lost ? [6, 4] : []))
                             .frame(width: r.width, height: r.height).position(x: r.midX, y: r.midY)
-                    }
+                    }.allowsHitTesting(false)
                 }
                 if debug {
                     ForEach(Array(d.faces.enumerated()), id: \.offset) { _, b in
                         let r = rect(b)
                         Rectangle().stroke(.cyan, lineWidth: 1).frame(width: r.width, height: r.height).position(x: r.midX, y: r.midY)
-                    }
+                    }.allowsHitTesting(false)
                 }
-                if let s = d.subject, d.locked || debug {
+                if let s = d.subject {
                     let r = rect(s)
-                    RoundedRectangle(cornerRadius: 4).stroke(.green, lineWidth: 2)
+                    let color: Color = d.locked ? .green : .white
+                    RoundedRectangle(cornerRadius: 4).stroke(color.opacity(d.locked ? 1 : 0.7), lineWidth: d.locked ? 2 : 1)
                         .frame(width: r.width, height: r.height).position(x: r.midX, y: r.midY)
-                    Text(d.locked ? "Subject" : "Subject (auto)").font(.caption2.weight(.semibold))
-                        .padding(.horizontal, 4).background(.green, in: RoundedRectangle(cornerRadius: 3)).foregroundStyle(.black)
+                        .allowsHitTesting(false)
+                    Text(d.locked ? "Subject" : "Auto").font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 4).background(color.opacity(d.locked ? 1 : 0.8), in: RoundedRectangle(cornerRadius: 3)).foregroundStyle(.black)
                         // The shot card covers roughly the top quarter: label the box from below there.
                         .position(x: min(max(r.minX + 40, 40), w - 40), y: r.minY < h * 0.28 ? min(r.maxY + 9, h - 9) : r.minY - 8)
+                        .allowsHitTesting(false)
                 }
-                if debug { debugReadout(d).position(x: w / 2, y: h - 46) }
-                if live.choosingSubject {
-                    Color.black.opacity(0.001)
-                        .contentShape(Rectangle())
-                        .onTapGesture(coordinateSpace: .local) { p in live.selectSubject(atX: p.x / w, y: p.y / h) }
-                        .accessibilityLabel("Tap the person you want to direct")
-                        .accessibilityIdentifier("subject-chooser")
-                    Text(d.people.isEmpty && d.faces.isEmpty ? "Looking for people…" : "Tap the person you want to direct")
-                        .font(.subheadline.weight(.semibold)).padding(.horizontal, 12).padding(.vertical, 8)
-                        .background(.black.opacity(0.75), in: Capsule()).foregroundStyle(.white)
-                        .position(x: w / 2, y: h - 30).allowsHitTesting(false)
+                if live.running {
+                    // Tap a person to direct them. Only the boxes take taps.
+                    ForEach(Array(targets.enumerated()), id: \.offset) { _, b in
+                        let r = rect(b)
+                        Color.clear.contentShape(Rectangle())
+                            .frame(width: r.width, height: r.height).position(x: r.midX, y: r.midY)
+                            .onTapGesture(coordinateSpace: .named("subjectOverlay")) { p in live.selectSubject(atX: p.x / w, y: p.y / h) }
+                            .accessibilityLabel("Direct this person")
+                            .accessibilityAddTraits(.isButton)
+                    }
                 }
+                if debug { debugReadout(d).position(x: w / 2, y: h - (d.locked ? 92 : 46)).allowsHitTesting(false) }
+                if d.locked { subjectChip(lost: d.lost).position(x: w / 2, y: h - 30) }
             }
+            .coordinateSpace(name: "subjectOverlay")
         }
-        .allowsHitTesting(live.choosingSubject)
+    }
+
+    /// Shown while a chosen person is being directed: their state, and the way back to automatic.
+    private func subjectChip(lost: Bool) -> some View {
+        HStack(spacing: 10) {
+            Label(lost ? "Lost: tap them to choose again" : "Directing the person you chose",
+                  systemImage: lost ? "person.crop.rectangle.badge.questionmark" : "person.crop.rectangle")
+                .foregroundStyle(lost ? .orange : .green)
+                .accessibilityIdentifier(lost ? "subject-lost" : "subject-locked")
+            Button { live.clearSubject() } label: {
+                Label("Auto", systemImage: "xmark.circle.fill")
+                    .padding(.horizontal, 8).padding(.vertical, 4)
+                    .background(.white.opacity(0.18), in: Capsule())
+            }
+            .foregroundStyle(.white)
+            .accessibilityLabel("Stop following the chosen person and pick automatically")
+            .accessibilityIdentifier("subject-clear")
+        }
+        .font(.caption.weight(.semibold))
+        .padding(.leading, 12).padding(.trailing, 6).padding(.vertical, 6)
+        .background(.black.opacity(0.75), in: Capsule())
     }
 
     private func debugReadout(_ d: LiveGuidance.Detections) -> some View {
