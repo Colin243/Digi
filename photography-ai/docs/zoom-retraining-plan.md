@@ -2,7 +2,7 @@
 
 Digi is getting a continuous **1x to 2x zoom on the main camera only**. The Director should decide, for each look, whether to zoom in and step back or to stay at 1x and step closer, and say why in one line. The rules are in [annotation-guide.md § Zoom versus distance](annotation-guide.md#zoom-versus-distance-shot-v4). The prompt is **v11 / shot-v4** (`--shot-format v4`), and the check is `framing.zoom_fit`.
 
-Nothing here has been trained. The numbers below come from the label files, the tokenizer, and one base-model bench (see "Base model on v11").
+One UNREVIEWED adapter has been trained (see "First zoom run"). The other numbers come from the label files, the tokenizer and the base-model bench.
 
 ## What changed in the prompt (v11)
 
@@ -115,6 +115,33 @@ The five all-1x scenes are a narrow sidewalk, a forest path, a snowy lane pinned
   photo-ai lora train --config configs/lora_bootstrap_r16_zoom.json
   ```
 - **Eval:** bench the adapter (unfused; fusing into 4-bit loses most of the adapter's effect) with `--shot-format v4` on `portrait_v1`, then `python -m photo_ai.training.bootstrap_eval <trim bench> <zoom bench>`.
+
+### First zoom run (`bootstrap-r16-zoom-UNREVIEWED`, bench `zoom-r16-v4-20261115`, 2026-11-15)
+
+Trained on the 44 relabelled drafts (233 train / 55 valid rows): 120 iterations, 73 min on the Mac, validation loss 2.17 → 1.48. Benched unfused, with the same settings as the trim and base benches.
+
+| measure | trim (v10) | base v11 | **zoom adapter (v11)** | gate |
+|---|---|---|---|---|
+| runs schema-valid | 14/14 | 14/14 | 14/14 | |
+| amount within 1–2x | 42/42 | 42/42 | 42/42 | pass |
+| zoom reason matches the amount | 3/42 | 8/42 | 42/42 | pass (keyword check; see below) |
+| amounts used (1x / 2x) | – | 6 / 27 (+9 at 1.5x) | **39 / 3** | **fail** (zoomed share 7%, needs 25–75%) |
+| zoomed but kept the 1x distance | – | 35/36 | 1/3 | fail on a tiny sample (1 of 3) |
+| one zoom line on all 3 looks | – | 9/14 | **10/14** | **fail** (≤ 3) |
+| setup contradictions | 4 | 3 | 1 | pass |
+| compositions tokens, median | 982.5 | 1688.5 | 978.5 | pass |
+| projected iPhone full / on-site s | 59.9 / 36.2 | 85.5 / 55.4 | 60.1 / 36.7 | borderline (+0.2 / +0.5 s) |
+
+**The format is learned; the judgement collapsed to 1x.** The adapter copies a formula line: "1x: step closer, more of the place, background smaller" and close variants. 10 of 14 cases use the same line on all three looks. The 42/42 "matches" overstates it. Some lines mix in 2x traits ("1x: … background soft") that the keyword check doesn't catch.
+
+**Why:** in the labels, the zoom mostly follows the setup. Full body is 1x in 27 of 29 looks; seated is 15:8 and creative 16:11 in favour of 1x. Close-up (17:3) and half body (16:7) lean 2x. The adapter, like trim, rarely picks half body or close-up (3/42), so it lands almost entirely on 1x. This is the contrast problem predicted above: one field edit can't teach when to choose 2x *for the same setup*.
+
+**Next, in order:**
+1. **Contrast batch** (10–15 new examples, `assemble --reserve --batch 3`). Each gets a full-body or seated look at 2x and the same setup at 1x in another place, with reasons tied to the photo: a background shape to enlarge, or clutter to crop out, against a place worth keeping. Target about 40% zoomed within each of full body, seated and creative.
+2. Optionally vary the reason wording in the drafts. Of the 77 1x lines, 13 start "1x: step closer" and 25 start "1x: keep/show more of", so the "more of the place" phrasing the adapter copies is common in the data.
+3. Retrain with the same config and re-bench. Gate as below.
+
+This adapter is format-only evidence, like all runs before #2.
 
 **Acceptance gate (format, not quality):**
 
