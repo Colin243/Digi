@@ -133,7 +133,7 @@ def create_app(backend, keys: dict[str, dict], model_name: str, per_hour: int = 
             raise HTTPException(422, f"style must be one of {tuple(prompts.STYLE_BRIEFS)}")
         if mode == "scene" and not (style or brief.strip()):
             raise HTTPException(422, "Scene mode needs a style or a brief.")
-        if mode == "scene" and inspiration:
+        if mode in ("scene", "scenery") and inspiration:
             raise HTTPException(422, "Scene mode takes one photo and no references.")
         if mode == "inspiration" and not 3 <= len(inspiration) <= 5:
             raise HTTPException(422, "Inspiration mode needs 3 to 5 inspiration photos.")

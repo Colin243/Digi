@@ -231,6 +231,122 @@ Earlier looks for this scene (this one must be clearly different in camera posit
 
 """#
 
+    static let scenerySceneReading = #"""
+SCENE photo: <<image>>
+
+Describe this view for a photographer who is standing there now and wants to photograph the scenery. Say what dominates the view, the sky or light, and which things could serve as a foreground or a focal point.
+
+Fields:
+- description (string): one or two sentences on the view: what it is and what dominates it
+- key_elements (list of strings): 3-6 specific things visible that a shot can use (a peak, a tree, a shoreline, a path, clouds, a light source)
+- constraints (list of strings): 1-3 things in the photo that limit the shot, e.g. harsh midday light, a bare sky, clutter at the edges
+- people_in_frame (string): any people visible and where they are, or the word none
+
+Answer with ONLY one JSON object, no markdown, no commentary. Write your own words about THESE photos; do not repeat the field descriptions. Do not repeat list items.
+Return only a JSON object with keys: "description" (a string); "key_elements" (a list of strings); "constraints" (a list of strings); "people_in_frame" (a string).
+"""#
+    /// Scenery look 1...3 of 3. Sentinels: __SCENE_JSON__, __AVOID__.
+    static let sceneryLooks: [String] = [
+        #"""
+SCENE photo: <<image>>
+
+You are a landscape photography director. The photo is described as:
+__SCENE_JSON__
+
+__AVOID__Propose ONE look, look 1 of 3. Plan for this look: WIDE VISTA: the whole view, the horizon on a third line, the main feature off-centre, nothing cut off at the edges, phone at chest height and level.
+
+Fields:
+- title (string): a short name for this look
+- camera_position (string): where to stand, relative to named things in the photo, under 14 words
+- camera_height (string): how high to hold the phone: ground level, knee, chest, eye level or raised overhead
+- camera_angle (string): tilt up, down or level, and roughly how much
+- subject_position (string): where the main feature (the peak, tree, sun, shoreline) sits in the frame, e.g. the left third with the horizon on the lower third line
+- distance_and_framing (string): how much of the view is in the frame: the whole vista, a layered foreground, or a tight crop of one feature
+- orientation (string): portrait or landscape, and why
+- zoom_or_lens (string): 1x, 0.5x or 2x, and why
+- lighting_tip (string): how to use the light and sky visible in the photo, under 16 words
+- visible_evidence (list of strings): 2-3 things you can actually see in the photo that this look depends on, a few words each
+- needs_on_site_check (list of strings): 1-2 things the still photo cannot tell you, under 8 words each
+- steps (list of strings): exactly 2 short actionable steps, under 8 words each
+
+Direct the photographer, not a model. There is no person to pose: never write a body pose, a head direction or a gaze, and never ask anyone to stand, lean, climb or sit.
+- Every instruction is about where to stand, how to hold the phone, and what goes where in the frame.
+- Use rule-of-thirds placement, leading lines, a foreground layer, and the horizon line; say which one and where.
+- Keep it safe: never ask the photographer to step toward an edge, a cliff, water, a railing, traffic or a rock face. If a spot is not clearly safe from the photo, say to check it in needs_on_site_check and offer a safer alternative.
+- Only use things visible in the photo. Write new instructions for THIS view; do not reuse example sentences.
+Answer with ONLY one JSON object, no markdown, no commentary. Write your own words about THESE photos; do not repeat the field descriptions. Do not repeat list items.
+Return only a JSON object with keys: "title" (a string); "camera_position" (a string); "camera_height" (a string); "camera_angle" (a string); "subject_position" (a string); "distance_and_framing" (a string); "orientation" (a string); "zoom_or_lens" (a string); "lighting_tip" (a string); "visible_evidence" (a list of strings); "needs_on_site_check" (a list of strings); "steps" (a list of strings).
+"""#,
+        #"""
+SCENE photo: <<image>>
+
+You are a landscape photography director. The photo is described as:
+__SCENE_JSON__
+
+__AVOID__Propose ONE look, look 2 of 3. Plan for this look: LAYERED: a low phone height so a foreground element visible in the photo (rocks, grass, a path, a shoreline) fills the lower part of the frame and leads toward the main feature.
+
+Fields:
+- title (string): a short name for this look
+- camera_position (string): where to stand, relative to named things in the photo, under 14 words
+- camera_height (string): how high to hold the phone: ground level, knee, chest, eye level or raised overhead
+- camera_angle (string): tilt up, down or level, and roughly how much
+- subject_position (string): where the main feature (the peak, tree, sun, shoreline) sits in the frame, e.g. the left third with the horizon on the lower third line
+- distance_and_framing (string): how much of the view is in the frame: the whole vista, a layered foreground, or a tight crop of one feature
+- orientation (string): portrait or landscape, and why
+- zoom_or_lens (string): 1x, 0.5x or 2x, and why
+- lighting_tip (string): how to use the light and sky visible in the photo, under 16 words
+- visible_evidence (list of strings): 2-3 things you can actually see in the photo that this look depends on, a few words each
+- needs_on_site_check (list of strings): 1-2 things the still photo cannot tell you, under 8 words each
+- steps (list of strings): exactly 2 short actionable steps, under 8 words each
+
+Direct the photographer, not a model. There is no person to pose: never write a body pose, a head direction or a gaze, and never ask anyone to stand, lean, climb or sit.
+- Every instruction is about where to stand, how to hold the phone, and what goes where in the frame.
+- Use rule-of-thirds placement, leading lines, a foreground layer, and the horizon line; say which one and where.
+- Keep it safe: never ask the photographer to step toward an edge, a cliff, water, a railing, traffic or a rock face. If a spot is not clearly safe from the photo, say to check it in needs_on_site_check and offer a safer alternative.
+- Only use things visible in the photo. Write new instructions for THIS view; do not reuse example sentences.
+Answer with ONLY one JSON object, no markdown, no commentary. Write your own words about THESE photos; do not repeat the field descriptions. Do not repeat list items.
+Return only a JSON object with keys: "title" (a string); "camera_position" (a string); "camera_height" (a string); "camera_angle" (a string); "subject_position" (a string); "distance_and_framing" (a string); "orientation" (a string); "zoom_or_lens" (a string); "lighting_tip" (a string); "visible_evidence" (a list of strings); "needs_on_site_check" (a list of strings); "steps" (a list of strings).
+"""#,
+        #"""
+SCENE photo: <<image>>
+
+You are a landscape photography director. The photo is described as:
+__SCENE_JSON__
+
+__AVOID__Propose ONE look, look 3 of 3. Plan for this look: DETAIL: zoom to 2x and isolate one feature of the view (a peak, a tree, a patch of light, a cloud) with plenty of empty space around it; a new position from the earlier looks.
+
+Fields:
+- title (string): a short name for this look
+- camera_position (string): where to stand, relative to named things in the photo, under 14 words
+- camera_height (string): how high to hold the phone: ground level, knee, chest, eye level or raised overhead
+- camera_angle (string): tilt up, down or level, and roughly how much
+- subject_position (string): where the main feature (the peak, tree, sun, shoreline) sits in the frame, e.g. the left third with the horizon on the lower third line
+- distance_and_framing (string): how much of the view is in the frame: the whole vista, a layered foreground, or a tight crop of one feature
+- orientation (string): portrait or landscape, and why
+- zoom_or_lens (string): 1x, 0.5x or 2x, and why
+- lighting_tip (string): how to use the light and sky visible in the photo, under 16 words
+- visible_evidence (list of strings): 2-3 things you can actually see in the photo that this look depends on, a few words each
+- needs_on_site_check (list of strings): 1-2 things the still photo cannot tell you, under 8 words each
+- steps (list of strings): exactly 2 short actionable steps, under 8 words each
+
+Direct the photographer, not a model. There is no person to pose: never write a body pose, a head direction or a gaze, and never ask anyone to stand, lean, climb or sit.
+- Every instruction is about where to stand, how to hold the phone, and what goes where in the frame.
+- Use rule-of-thirds placement, leading lines, a foreground layer, and the horizon line; say which one and where.
+- Keep it safe: never ask the photographer to step toward an edge, a cliff, water, a railing, traffic or a rock face. If a spot is not clearly safe from the photo, say to check it in needs_on_site_check and offer a safer alternative.
+- Only use things visible in the photo. Write new instructions for THIS view; do not reuse example sentences.
+Answer with ONLY one JSON object, no markdown, no commentary. Write your own words about THESE photos; do not repeat the field descriptions. Do not repeat list items.
+Return only a JSON object with keys: "title" (a string); "camera_position" (a string); "camera_height" (a string); "camera_angle" (a string); "subject_position" (a string); "distance_and_framing" (a string); "orientation" (a string); "zoom_or_lens" (a string); "lighting_tip" (a string); "visible_evidence" (a list of strings); "needs_on_site_check" (a list of strings); "steps" (a list of strings).
+"""#
+    ]
+    static let sceneryAvoidIntro = #"""
+Earlier looks for this view (this one must be clearly different in camera position and framing):
+"""#
+    static let sceneryAvoidOutro = #"""
+
+
+
+"""#
+
     static let imageNotes = #"""
 Photo: <<image>>
 In 2-3 sentences, say what this photo shows and how it was shot: camera height and angle, framing, where the main subject sits in the frame, how much empty space there is, and the light.

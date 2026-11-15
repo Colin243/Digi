@@ -128,9 +128,32 @@ enum OfflinePrompts {
             .replacingOccurrences(of: "__AVOID__", with: avoid)
     }
 
+    /// One scenery look (1...3). Earlier looks are listed so this one differs from them.
+    static func sceneryLook(scene: [String: Any], brief: String?, look: Int, previous: [Shot]) -> String {
+        let templates = OfflinePromptData.sceneryLooks
+        var avoid = ""
+        if !previous.isEmpty {
+            let lines = previous.enumerated().map { i, p in
+                "- Look \(i + 1): \(p.title): camera \(p.cameraPosition); \(p.distanceAndFraming); \(p.subjectPosition)"
+            }
+            avoid = OfflinePromptData.sceneryAvoidIntro + "\n" + lines.joined(separator: "\n") + OfflinePromptData.sceneryAvoidOutro
+        }
+        let note = (brief ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let noteText = note.isEmpty ? "" : "The photographer adds: \(note)\n\n"
+        return templates[min(max(look, 1), templates.count) - 1]
+            .replacingOccurrences(of: "__SCENE_JSON__", with: PromptJSON.dumps(scene))
+            .replacingOccurrences(of: "__AVOID__", with: noteText + avoid)
+    }
+
     static func aesthetic(notes: [String]) -> String {
         let listed = notes.enumerated().map { "Inspiration photo \($0.offset + 1): \($0.element)" }.joined(separator: "\n")
         return OfflinePromptData.aesthetic.replacingOccurrences(of: "__NOTES__", with: listed)
+    }
+
+    /// prompts.photographer_asks(): the photographer's own note, appended only when there is one.
+    static func photographerAsks(_ prompt: String, brief: String?) -> String {
+        let note = (brief ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return note.isEmpty ? prompt : "\(prompt)\n\nThe photographer also asks: \(note)"
     }
 
     /// The aesthetic without `per_image`, plus the target scene (prompts.compositions_from_parts, shot-v3).

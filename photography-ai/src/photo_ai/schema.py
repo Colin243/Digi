@@ -129,6 +129,13 @@ class ShotV2(Composition):
     gaze: str = Field(min_length=1)
 
 
+class ShotScenery(Composition):
+    """Scenery look: the camera and the framing are required; there is no person, so no pose fields."""
+
+    distance_and_framing: str = Field(min_length=1)
+    lighting_tip: str = Field(min_length=1)
+
+
 class ShotV3(Composition):
     """shot-v3: the shot-v1 composition plus the reasoning that comes before the instructions."""
 

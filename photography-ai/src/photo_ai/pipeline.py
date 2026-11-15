@@ -55,8 +55,9 @@ def _emit(event: dict) -> None:
 
 
 STRATEGIES = ("two_stage", "single_pass", "decomposed")
-MODES = ("inspiration", "scene")
+MODES = ("inspiration", "scene", "scenery")
 SCENE_STRATEGY = "scene_director"
+SCENERY_STRATEGY = "scenery_director"
 
 
 @dataclass
@@ -85,7 +86,7 @@ class InputError(ValueError):
 
 
 def _check_inputs(inspiration: list[str], target: str | None, mode: str = "inspiration") -> None:
-    if mode == "scene":
+    if mode in ("scene", "scenery"):
         if inspiration:
             raise InputError("Scene Director takes one scene photo and no reference images.")
     elif not (MIN_INSPIRATION <= len(inspiration) <= MAX_INSPIRATION):
@@ -203,7 +204,7 @@ def _decomposed(backend, run_dir, insp, tgt, cfg):
     streamed: list[dict] = []
     comps, st = _run_stage(
         backend, run_dir, "compositions",
-        prompts.compositions_from_parts(aesthetic, target, cfg.subject, cfg.shot_format),
+        prompts.photographer_asks(prompts.compositions_from_parts(aesthetic, target, cfg.subject, cfg.shot_format), cfg.brief),
         [tgt], schema.shot_set(cfg.shot_format), cfg,
         {"v2": max(cfg.max_tokens, SHOT_V2_TOKENS), "v3": max(cfg.max_tokens, SHOT_V3_TOKENS)}.get(cfg.shot_format),
         on_text=_look_streamer(cfg.shot_format, streamed),
@@ -285,8 +286,30 @@ def _scene_director(backend, run_dir, insp, tgt, cfg):
     return partial, None, stages
 
 
+def _scenery_director(backend, run_dir, insp, tgt, cfg):
+    scene, st = _run_stage(backend, run_dir, "scene", prompts.scenery_scene(), [tgt], schema.TargetScene, cfg,
+                           min(600, cfg.max_tokens))
+    stages = [st]
+    _emit({"type": "stage", "stage": "readingScene"})
+    partial = {"mode": "scenery", "style": {"key": None, "label": "scenery", "brief": cfg.brief},
+               "target_scene": scene, "compositions": []}
+    if scene is None:
+        return None, None, stages
+    for k in range(1, min(cfg.n_looks, len(prompts.SCENERY_LOOK_PLANS)) + 1):
+        look, st = _run_stage(
+            backend, run_dir, f"look{k}", prompts.scenery_look(scene, cfg.brief, k, partial["compositions"]),
+            [tgt], schema.ShotScenery, cfg, min(LOOK_TOKENS, cfg.max_tokens),
+        )
+        stages.append(st)
+        if look is None:
+            return None, partial, stages
+        partial["compositions"].append(look)
+        _emit({"type": "shot", "shot": look})
+    return partial, None, stages
+
+
 _STRATEGY_FUNCS = {"single_pass": _single_pass, "two_stage": _two_stage, "decomposed": _decomposed,
-                   SCENE_STRATEGY: _scene_director}
+                   SCENE_STRATEGY: _scene_director, SCENERY_STRATEGY: _scenery_director}
 
 
 def _normalize_config(cfg: RunConfig) -> RunConfig:
@@ -294,6 +317,9 @@ def _normalize_config(cfg: RunConfig) -> RunConfig:
         raise InputError(f"mode must be one of {MODES}")
     if cfg.shot_format not in schema.SHOT_FORMATS:
         raise InputError(f"shot_format must be one of {schema.SHOT_FORMATS}")
+    if cfg.mode == "scenery":
+        cfg.strategy, cfg.shot_format = SCENERY_STRATEGY, "v2"
+        return cfg
     if cfg.mode == "scene":
         if cfg.style and cfg.style not in prompts.STYLE_BRIEFS:
             raise InputError(f"style must be one of {tuple(prompts.STYLE_BRIEFS)}")

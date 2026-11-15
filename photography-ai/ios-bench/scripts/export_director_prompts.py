@@ -59,6 +59,12 @@ def scene_look_template(look: int) -> str:
                 f"{AVOID}Propose ONE portrait look, look {look} of {N_LOOKS}")
 
 
+def scenery_look_template(look: int) -> str:
+    text = prompts.scenery_look({SCENE: ""}, "", look, None)
+    text = once(text, prompts._shape({SCENE: ""}), SCENE)
+    return once(text, f"Propose ONE look, look {look} of {N_LOOKS}", f"{AVOID}Propose ONE look, look {look} of {N_LOOKS}")
+
+
 def build() -> dict:
     with prompts.json_format("keys"):
         style_blob, target_blob = {STYLE_JSON: ""}, {TARGET_JSON: ""}
@@ -80,11 +86,16 @@ def build() -> dict:
             "aesthetic": aesthetic,
             "compositions": comps,
             "retrySuffix": prompts.RETRY_SUFFIX,
+            "scenerySceneReading": prompts.scenery_scene(),
+            "sceneryLooks": [scenery_look_template(k) for k in range(1, N_LOOKS + 1)],
         }
         sample_prev = [{"title": "T", "camera_position": "C", "distance_and_framing": "D", "body_pose": "P", "gaze": "G"}]
         with_avoid = prompts.scene_look({SCENE: ""}, None, "", prompts.DEFAULT_SUBJECT, 2, sample_prev, N_LOOKS)
         start = with_avoid.index("Earlier looks for this scene")
         data["avoidIntro"] = with_avoid[start:with_avoid.index("\n- Look 1:")]
+        with_avoid_s = prompts.scenery_look({SCENE: ""}, "", 2, [{"title": "T", "camera_position": "C", "distance_and_framing": "D", "subject_position": "S"}])
+        data["sceneryAvoidIntro"] = with_avoid_s[with_avoid_s.index("Earlier looks for this view"):with_avoid_s.index("\n- Look 1:")]
+        data["sceneryAvoidOutro"] = with_avoid_s[with_avoid_s.index("; S") + 3:with_avoid_s.index("Propose ONE")]
         data["avoidOutro"] = with_avoid[with_avoid.index("gaze G") + len("gaze G"):with_avoid.index("Propose ONE")]
         return data
 
@@ -114,6 +125,15 @@ def golden() -> dict:
                 # prompts._shape() keeps dict order; sorted keys make Python and Swift agree.
                 text = text.replace(prompts._shape(scene), dumps(scene))
                 exp["sceneLooks"].append({"style": style, "brief": brief, "look": look, "previous": len(p), "prompt": text})
+        exp["scenerySceneReading"] = prompts.scenery_scene()
+        exp["sceneryLooks"] = []
+        for brief in ("", "wide and calm"):
+            for look in (1, 2, 3):
+                p = [{"title": "Wide vista", "camera_position": "by the rail", "distance_and_framing": "whole view",
+                      "subject_position": "peak left third"}][: min(look - 1, 1)]
+                text = prompts.scenery_look(json.loads(dumps(scene)), brief, look, p or None)
+                text = text.replace(prompts._shape(scene), dumps(scene))
+                exp["sceneryLooks"].append({"brief": brief, "look": look, "previous": len(p), "prompt": text})
         exp["imageNotes"] = prompts.image_notes()
         exp["targetScene"] = prompts.target_scene_only()
         exp["aesthetic"] = prompts.aesthetic_from_notes(notes)
@@ -163,6 +183,14 @@ enum OfflinePromptData {{
     ]
     static let avoidIntro = {lit(data["avoidIntro"])}
     static let avoidOutro = {lit(data["avoidOutro"])}
+
+    static let scenerySceneReading = {lit(data["scenerySceneReading"])}
+    /// Scenery look 1...3 of 3. Sentinels: __SCENE_JSON__, __AVOID__.
+    static let sceneryLooks: [String] = [
+{",\n".join(f"        {lit(t)}" for t in data["sceneryLooks"])}
+    ]
+    static let sceneryAvoidIntro = {lit(data["sceneryAvoidIntro"])}
+    static let sceneryAvoidOutro = {lit(data["sceneryAvoidOutro"])}
 
     static let imageNotes = {lit(data["imageNotes"])}
     static let targetScene = {lit(data["targetScene"])}

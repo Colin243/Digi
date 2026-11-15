@@ -49,6 +49,27 @@ public struct GuidanceCue: Equatable, Sendable {
     public var text: String
     /// SF Symbol name for the cue.
     public var symbol: String
+    /// What the cue means, apart from its words, so `GuidanceWording` can rephrase it per style.
+    /// Nil for cues made without one (they keep `text`).
+    public var variant: CueVariant? = nil
+    public init(kind: Kind, text: String, symbol: String, variant: CueVariant? = nil) {
+        self.kind = kind; self.text = text; self.symbol = symbol; self.variant = variant
+    }
+}
+
+/// The meaning of a cue, with the numbers and sides it needs. Never shown directly.
+public enum CueVariant: Equatable, Sendable {
+    case holdUpright, turnSideways
+    case straighten(rotateLeft: Bool)
+    case tilt(up: Bool, degrees: Int)
+    case findSubject(chosen: Bool)
+    case closer(canZoom: Bool), back(canZoom: Bool)
+    /// `goal` is "center", "left" or "right": the third the subject should sit on.
+    case pan(right: Bool, goal: String)
+    case findFace
+    case headTurn(HeadTurn)
+    case chin(up: Bool)
+    public enum HeadTurn: Equatable, Sendable { case awayFromCamera, towardCamera, subjectLeft, subjectRight }
 }
 
 public struct Guidance: Equatable, Sendable {
@@ -101,6 +122,12 @@ public struct GuidanceTracker: Sendable {
 
     /// Live head-direction cues for the subject (experimental, off by default).
     public var subjectCuesEnabled = false
+    /// True when the user chose who to direct; the "find the subject" cue then names that person.
+    public var subjectChosen = false
+    /// The camera's current zoom and the range it can use (nil = no zoom). Distance cues then offer
+    /// zooming as well as walking; which one suits the shot is the photographer's call.
+    public var zoom = 1.0
+    public var zoomRange: ClosedRange<Double>?
 
     public init(targets: ShotTargets) { self.targets = targets }
 
@@ -139,14 +166,16 @@ public struct GuidanceTracker: Sendable {
         // Orientation (no smoothing needed: PoseSample only reports it when it is clear).
         if let want = targets.portrait, let have = portrait, want != have {
             cues.append(GuidanceCue(kind: .orientation, text: want ? "Hold the phone upright" : "Turn the phone sideways",
-                                    symbol: want ? "rectangle.portrait.rotate" : "rectangle.landscape.rotate"))
+                                    symbol: want ? "rectangle.portrait.rotate" : "rectangle.landscape.rotate",
+                                    variant: want ? .holdUpright : .turnSideways))
         }
 
         // Level horizon.
         if let r = roll.value, let p = pitch.value, abs(p) < Self.flatPitch,
            gate(.level, error: abs(r), enter: Self.levelEnter, exit: Self.levelExit) {
             cues.append(GuidanceCue(kind: .level, text: r > 0 ? "Straighten: rotate the phone left" : "Straighten: rotate the phone right",
-                                    symbol: r > 0 ? "rotate.left" : "rotate.right"))
+                                    symbol: r > 0 ? "rotate.left" : "rotate.right",
+                                    variant: .straighten(rotateLeft: r > 0)))
         } else { active.remove(.level) }
 
         // Tilt.
@@ -155,7 +184,8 @@ public struct GuidanceTracker: Sendable {
             if gate(.tilt, error: abs(error), enter: targets.pitchTolerance, exit: targets.pitchTolerance * 0.5) {
                 let n = max(2, Int((abs(error) / 2).rounded()) * 2)
                 cues.append(GuidanceCue(kind: .tilt, text: error > 0 ? "Tilt down \(n)°" : "Tilt up \(n)°",
-                                        symbol: error > 0 ? "arrow.down" : "arrow.up"))
+                                        symbol: error > 0 ? "arrow.down" : "arrow.up",
+                                        variant: .tilt(up: error <= 0, degrees: n)))
             }
         }
 
@@ -163,12 +193,16 @@ public struct GuidanceTracker: Sendable {
         if targets.needsSubject {
             if !recent(lastSubjectAt) {
                 active.subtract([.distance, .horizontal])
-                cues.append(GuidanceCue(kind: .findSubject, text: "Point the camera at your subject", symbol: "person.crop.rectangle"))
+                cues.append(GuidanceCue(kind: .findSubject, text: subjectChosen ? "Find the person you chose" : "Point the camera at your subject", symbol: "person.crop.rectangle", variant: .findSubject(chosen: subjectChosen)))
             } else {
                 if let framing = targets.framing, let (error, tooSmall) = distanceError(framing, recent: recent),
                    gate(.distance, error: error, enter: Self.distanceEnter, exit: 0.0001) {
-                    cues.append(GuidanceCue(kind: .distance, text: tooSmall ? "Step closer" : "Step back",
-                                            symbol: tooSmall ? "figure.walk" : "arrow.uturn.backward"))
+                    let canZoom = zoomRange.map { tooSmall ? zoom < $0.upperBound - 0.05 : zoom > $0.lowerBound + 0.05 } ?? false
+                    let text = tooSmall ? (canZoom ? "Step closer or zoom in" : "Step closer")
+                                        : (canZoom ? "Step back or zoom out" : "Step back")
+                    cues.append(GuidanceCue(kind: .distance, text: text,
+                                            symbol: tooSmall ? "figure.walk" : "arrow.uturn.backward",
+                                            variant: tooSmall ? .closer(canZoom: canZoom) : .back(canZoom: canZoom)))
                 } else { active.remove(.distance) }
 
                 if let side = targets.horizontal, let x = centerX.value {
@@ -178,7 +212,8 @@ public struct GuidanceTracker: Sendable {
                         let pan = dx > 0 ? "right" : "left"
                         let goal = side == .center ? "to center the subject" : "so the subject sits on the \(side.rawValue) third"
                         cues.append(GuidanceCue(kind: .horizontal, text: "Pan \(pan) \(goal)",
-                                                symbol: dx > 0 ? "arrow.right" : "arrow.left"))
+                                                symbol: dx > 0 ? "arrow.right" : "arrow.left",
+                                                variant: .pan(right: dx > 0, goal: side.rawValue)))
                     }
                 }
             }
@@ -210,24 +245,28 @@ public struct GuidanceTracker: Sendable {
         guard subjectCuesEnabled, !head.isEmpty else { active.subtract([.headTurn, .headTilt]); return ([], false) }
         guard recent(lastFacePoseAt) else {
             active.subtract([.headTurn, .headTilt])
-            return ([GuidanceCue(kind: .findFace, text: "Can't see their face yet", symbol: "face.dashed")], false)
+            return ([GuidanceCue(kind: .findFace, text: "Can't see their face yet", symbol: "face.dashed", variant: .findFace)], false)
         }
         var cues: [GuidanceCue] = []
         if let want = head.yaw, let yaw = headYaw.value {
             let error = head.yawEitherSide ? abs(yaw) - want : yaw - want
             if gate(.headTurn, error: abs(error), enter: head.yawTolerance, exit: head.yawTolerance * 0.5) {
                 let say: String
-                if head.yawEitherSide { say = error < 0 ? "Turn your head a little away from me" : "Turn back toward me a little" }
+                let turn: CueVariant.HeadTurn
+                if head.yawEitherSide { say = error < 0 ? "Turn your head a little away from me" : "Turn back toward me a little"
+                    turn = error < 0 ? .awayFromCamera : .towardCamera }
                 // Face needs to turn toward the frame's right = the subject's own left.
-                else { say = error < 0 ? "Turn your head a little to your left" : "Turn your head a little to your right" }
-                cues.append(GuidanceCue(kind: .headTurn, text: "Say: “\(say)”", symbol: "person.bust"))
+                else { say = error < 0 ? "Turn your head a little to your left" : "Turn your head a little to your right"
+                    turn = error < 0 ? .subjectLeft : .subjectRight }
+                cues.append(GuidanceCue(kind: .headTurn, text: "Say: “\(say)”", symbol: "person.bust", variant: .headTurn(turn)))
             }
         } else { active.remove(.headTurn) }
         if let want = head.pitch, let p = headPitch.value {
             let error = p - want
             if gate(.headTilt, error: abs(error), enter: head.pitchTolerance, exit: head.pitchTolerance * 0.5) {
                 cues.append(GuidanceCue(kind: .headTilt, text: error < 0 ? "Say: “Lift your chin a little”" : "Say: “Lower your chin a little”",
-                                        symbol: error < 0 ? "chevron.up" : "chevron.down"))
+                                        symbol: error < 0 ? "chevron.up" : "chevron.down",
+                                        variant: .chin(up: error < 0)))
             }
         } else { active.remove(.headTilt) }
         return (cues, cues.isEmpty)
@@ -268,12 +307,21 @@ struct Smoother: Sendable {
 
 // MARK: - Subject selection
 
-/// Picks which detected person is "the subject" each frame. With nobody chosen it takes the largest
-/// person. Once the user taps someone it follows that person by overlap and position, ignores
-/// everyone else, and only gives up after `lostTimeout` without a match.
+/// Picks which detected person is "the subject" each frame.
+///
+/// With nobody chosen it follows one person automatically: the largest at first, then the same
+/// person for as long as they stay matched, so it does not flip between two people of similar size.
+/// Once the user taps someone it follows that person by overlap and position and ignores everyone
+/// else. It never switches to another person on its own: after `lostTimeout` without a match it
+/// reports `isLost` and keeps waiting for the chosen person near where they were last seen, until
+/// the user taps someone again or clears the choice.
 public struct SubjectSelector: Sendable {
+    /// The chosen person's last matched box (nil = automatic).
     public private(set) var locked: NormalizedBox?
+    /// True when the chosen person has not been matched for longer than `lostTimeout`.
+    public private(set) var isLost = false
     private var lastSeen: TimeInterval = 0
+    private var auto: NormalizedBox?
     public static let lostTimeout: TimeInterval = 3
 
     public init() {}
@@ -287,32 +335,44 @@ public struct SubjectSelector: Sendable {
         let hit = candidates.filter { $0.contains(x: x, y: y) }.min { $0.area < $1.area }
             ?? candidates.map { ($0, hypot($0.midX - x, $0.midY - y)) }.filter { $0.1 < 0.2 }.min { $0.1 < $1.1 }?.0
         guard let hit else { return false }
-        locked = hit; lastSeen = now
+        locked = hit; lastSeen = now; isLost = false; auto = nil
         return true
     }
 
-    public mutating func clear() { locked = nil }
+    /// Back to automatic: follow the largest person.
+    public mutating func clear() { locked = nil; isLost = false; auto = nil }
 
-    /// The subject's person box and face box for this frame (either may be nil). With a locked
+    /// The subject's person box and face box for this frame (either may be nil). With a chosen
     /// subject that is out of view, both are nil even if other people are visible.
     public mutating func choose(people: [NormalizedBox], faces: [NormalizedBox], now: TimeInterval) -> (person: NormalizedBox?, face: NormalizedBox?) {
         let usingFaces = people.isEmpty
         let candidates = usingFaces ? faces : people
-        if let l = locked {
-            let scored = candidates.compactMap { c -> (NormalizedBox, Double)? in
-                let iou = l.iou(c), dist = hypot(l.midX - c.midX, l.midY - c.midY)
-                guard iou > 0.1 || dist < 0.15 || l.contains(x: c.midX, y: c.midY) else { return nil }
-                return (c, iou - dist)
-            }
-            if let best = scored.max(by: { $0.1 < $1.1 })?.0 {
-                locked = best; lastSeen = now
-                return usingFaces ? (nil, best) : (best, Self.face(in: best, faces))
-            }
-            if now - lastSeen <= Self.lostTimeout { return (nil, nil) }
-            locked = nil  // lost for too long: fall back to the largest person
+        let result = { (b: NormalizedBox) -> (person: NormalizedBox?, face: NormalizedBox?) in
+            usingFaces ? (nil, b) : (b, Self.face(in: b, faces))
         }
-        if let person = people.max(by: { $0.area < $1.area }) { return (person, Self.face(in: person, faces)) }
-        return (nil, faces.max { $0.area < $1.area })
+        if let l = locked {
+            if let best = Self.match(l, in: candidates) {
+                locked = best; lastSeen = now; isLost = false
+                return result(best)
+            }
+            isLost = now - lastSeen > Self.lostTimeout
+            return (nil, nil)
+        }
+        if let a = auto, let best = Self.match(a, in: candidates) {
+            auto = best
+            return result(best)
+        }
+        auto = candidates.max { $0.area < $1.area }
+        return auto.map(result) ?? (nil, nil)
+    }
+
+    /// The candidate that best continues `previous`, if any is close enough to be the same person.
+    static func match(_ previous: NormalizedBox, in candidates: [NormalizedBox]) -> NormalizedBox? {
+        candidates.compactMap { c -> (NormalizedBox, Double)? in
+            let iou = previous.iou(c), dist = hypot(previous.midX - c.midX, previous.midY - c.midY)
+            guard iou > 0.1 || dist < 0.15 || previous.contains(x: c.midX, y: c.midY) else { return nil }
+            return (c, iou - dist)
+        }.max { $0.1 < $1.1 }?.0
     }
 
     static func face(in person: NormalizedBox, _ faces: [NormalizedBox]) -> NormalizedBox? {

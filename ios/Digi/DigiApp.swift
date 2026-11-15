@@ -4,10 +4,11 @@ import AVKit
 import Photos
 import CoreImage
 import ImageIO
+import DirectorKit
 
 @main
 struct DigiApp: App {
-    var body: some Scene { WindowGroup { CameraView() } }
+    var body: some Scene { WindowGroup { GuidanceThemed { CameraView() } } }
 }
 
 enum PhotoFlash: String, CaseIterable, Identifiable {
@@ -38,6 +39,33 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
     private var captureDevice: AVCaptureDevice? // capture queue only
     @Published var focusPoint: CGPoint?
     @Published var focusSupported = false
+    /// Zoom on the main camera, 1x to `maxZoom`, continuous. Capped at 2x: up to there the 48 MP
+    /// sensor still covers a 12 MP photo, and it keeps the fixed-lens camera feel.
+    @Published private(set) var zoom: CGFloat = 1
+    @Published private(set) var zoomSupported = false
+    static let maxZoom: CGFloat = 2
+    /// The main camera's 35 mm-equivalent focal length at 1x (iPhone 17 Pro: 24 mm).
+    static let baseFocalLength: CGFloat = 24
+    private var zoomTarget: CGFloat = 1, zoomApplying = false  // capture queue
+    /// The device zoom factor that shows the main lens at "1x" (capture queue). 1 for the main camera
+    /// and the dual (main + telephoto) camera; on cameras that include the ultra wide, 1 would be the
+    /// ultra wide, so 1x is its first lens switch-over instead.
+    private var zoomBase: CGFloat = 1
+
+    /// The main-lens base factor for `device`, or nil when 1x–2x would not stay on the main lens.
+    static func mainLensZoomBase(_ device: AVCaptureDevice) -> CGFloat? {
+        let switches = device.virtualDeviceSwitchOverVideoZoomFactors.map { CGFloat(truncating: $0) }
+        let base: CGFloat
+        switch device.deviceType {
+        case .builtInWideAngleCamera, .builtInDualCamera: base = 1
+        case .builtInDualWideCamera, .builtInTripleCamera: guard let first = switches.first else { return nil }; base = first
+        default: return nil
+        }
+        // Stay on the main lens: the whole range must sit below the next lens switch (the telephoto).
+        let next = switches.first { $0 > base + 0.01 }
+        guard device.maxAvailableVideoZoomFactor >= base * maxZoom, next.map({ $0 >= base * maxZoom }) ?? true else { return nil }
+        return base
+    }
     @Published var exposureLocked = false
     @Published var exposureBias: Float = 0
     @Published var exposureRange: ClosedRange<Float> = -2...2
@@ -148,6 +176,13 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
                     }
                     if !self.session.isRunning { self.session.startRunning() }
                     let modes = PhotoFlash.allCases.filter { self.output.supportedFlashModes.contains($0.mode) }
+                    // Zoom stays on the main lens, on whichever camera the session uses.
+                    let base = self.captureDevice.flatMap(Self.mainLensZoomBase)
+                    let canZoom = base != nil
+                    if let base, let device = self.captureDevice, device.videoZoomFactor != base * self.zoomTarget {
+                        self.zoomBase = base
+                        try? device.lockForConfiguration(); device.videoZoomFactor = base * self.zoomTarget; device.unlockForConfiguration()
+                    }
                     let canFocus = self.captureDevice.map { $0.isFocusPointOfInterestSupported && $0.isFocusModeSupported(.autoFocus) && $0.isFocusModeSupported(.continuousAutoFocus) } ?? false
                     DispatchQueue.main.async {
                         self.exposureSupported = self.captureDevice?.isExposureModeSupported(.continuousAutoExposure) == true
@@ -155,6 +190,8 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
                             self.exposureRange = max(-2, device.minExposureTargetBias)...min(2, device.maxExposureTargetBias)
                         }
                         self.focusSupported = canFocus
+                        self.zoomSupported = canZoom
+                        if !canZoom { self.zoom = 1 }
                         self.supportedFlash = modes
                         if !modes.contains(self.flash) { self.flash = .off }
                         self.ready = true
@@ -195,6 +232,32 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
             self.configured = false
             DispatchQueue.main.async { self.start() }
         }
+    }
+
+    /// Sets the zoom (clamped to 1...maxZoom). Main thread. Rapid calls from a pinch or drag are
+    /// coalesced: only the latest value is applied to the camera.
+    func setZoom(_ value: CGFloat) {
+        guard zoomSupported else { return }
+        let z = min(max(value, 1), Self.maxZoom)
+        guard abs(z - zoom) > 0.001 else { return }
+        zoom = z
+        queue.async {
+            self.zoomTarget = z
+            guard !self.zoomApplying else { return }
+            self.zoomApplying = true
+            self.applyZoom()
+        }
+    }
+
+    private func applyZoom() {  // capture queue
+        defer { zoomApplying = false }
+        guard let device = captureDevice, let base = Self.mainLensZoomBase(device) else { return }
+        zoomBase = base
+        do {
+            try device.lockForConfiguration()
+            device.videoZoomFactor = min(base * zoomTarget, device.maxAvailableVideoZoomFactor)
+            device.unlockForConfiguration()
+        } catch {}
     }
 
     func focus(at point: CGPoint?, lock: Bool = false) {
@@ -603,7 +666,7 @@ struct CameraPreview: UIViewRepresentable {
     }
 }
 
-private enum CameraStyle {
+enum CameraStyle {
     static let body = Color(red: 0.075, green: 0.08, blue: 0.08)
     static let panel = Color(red: 0.13, green: 0.14, blue: 0.14)
     static let accent = Color(red: 0.88, green: 0.74, blue: 0.48)
@@ -612,6 +675,7 @@ private enum CameraStyle {
 
 struct CameraView: View {
     @StateObject private var camera = CameraController()
+    @State private var pinchStartZoom: CGFloat?
     @Environment(\.scenePhase) private var phase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("digit.grid") private var grid = false
@@ -619,8 +683,10 @@ struct CameraView: View {
     @State private var cameraPicker = false
     @State private var directorOpen = false
     @ObservedObject private var pinnedShot = PinnedShotStore.shared
-    @AppStorage("digi.guidanceDebug") private var guidanceDebug = false
+    @ObservedObject private var guidanceSettings = GuidanceSettings.shared
     @State private var options = false
+    @State private var guidanceSheet = false
+    @State private var guidanceFirstRun = false
     @State private var review = false
     @State private var showStatus = true
     @State private var previewOrientation: UIInterfaceOrientation = .portrait
@@ -662,6 +728,17 @@ struct CameraView: View {
                         }.buttonStyle(.plain)
                             .accessibilityLabel("Photography director")
                             .accessibilityIdentifier("director-open")
+                        if pinnedShot.shot != nil {
+                            // Tap to switch look; hold for the full settings.
+                            Image(systemName: "eye").font(.system(size: 17)).frame(minWidth: 44, minHeight: 44)
+                                .contentShape(Rectangle())
+                                .onTapGesture { guidanceSettings.prefs.select(guidanceSettings.prefs.style.next); guidanceSettings.hasChosen = true }
+                                .onLongPressGesture { options = false; guidanceFirstRun = false; guidanceSheet = true }
+                                .accessibilityElement().accessibilityAddTraits(.isButton)
+                                .accessibilityLabel("Guidance look: \(guidanceSettings.prefs.style.title)")
+                                .accessibilityHint("Double tap to switch. Touch and hold for settings.")
+                                .accessibilityIdentifier("guidance-quick-switch")
+                        }
                         if !portrait { Rectangle().fill(CameraStyle.accent).frame(width: 22, height: 2).padding(.top, 5) }
                         Spacer()
                         if camera.captureStudyEnabled {
@@ -716,8 +793,18 @@ struct CameraView: View {
                             }.allowsHitTesting(false).accessibilityLabel("Selected focus point")
                         }
                         if pinnedShot.shot != nil {
-                            SubjectOverlay(live: LiveGuidance.shared, debug: guidanceDebug)
-                            LevelIndicator(live: LiveGuidance.shared)
+                            SubjectOverlay(live: LiveGuidance.shared, debug: guidanceSettings.display.detectionBoxes,
+                                           readout: guidanceSettings.display.debugReadout,
+                                           brackets: guidanceSettings.display.subjectBrackets,
+                                           corners: guidanceSettings.prefs.style != .full,
+                                           okColor: GuidanceTheme.make(guidanceSettings.prefs.style).ok)
+                            LevelIndicator(live: LiveGuidance.shared, style: guidanceSettings.display.levelIndicator)
+                        }
+                        if camera.zoomSupported {
+                            VStack { Spacer(); ZoomReadout(zoom: camera.zoom, detail: guidanceSettings.display.zoomDetail).padding(.bottom, 12) }.allowsHitTesting(false)
+                        }
+                        if pinnedShot.shot != nil {
+                            VStack { Spacer(); FloatingCue(live: LiveGuidance.shared).padding(.bottom, 52) }
                         }
                         VStack { PinnedShotCard(store: pinnedShot); Spacer() }
                         if showStatus && !camera.status.isEmpty {
@@ -743,6 +830,16 @@ struct CameraView: View {
                             }
                         }
                     }
+                    // Two-finger pinch anywhere on the viewfinder zooms, like the iPhone camera.
+                    .simultaneousGesture(
+                        MagnifyGesture()
+                            .onChanged { value in
+                                let start = pinchStartZoom ?? camera.zoom
+                                if pinchStartZoom == nil { pinchStartZoom = start }
+                                camera.setZoom(start * value.magnification)
+                            }
+                            .onEnded { _ in pinchStartZoom = nil }
+                    )
                     .aspectRatio(portrait ? 3.0 / 4 : 4.0 / 3, contentMode: .fit)
                     .clipShape(RoundedRectangle(cornerRadius: 10))
                     .overlay(RoundedRectangle(cornerRadius: 10).stroke(.white.opacity(0.12), lineWidth: 1))
@@ -794,6 +891,15 @@ struct CameraView: View {
                             }.padding(.horizontal, 20)
                             ScrollView {
                                 VStack(alignment: .leading, spacing: 18) {
+                                    Button { options = false; guidanceFirstRun = false; guidanceSheet = true } label: {
+                                        HStack {
+                                            Label("Guidance", systemImage: "eye")
+                                            Spacer()
+                                            Text(guidanceSettings.prefs.style.title).foregroundStyle(CameraStyle.accent)
+                                            Image(systemName: "chevron.right").font(.footnote).foregroundStyle(.white.opacity(0.5))
+                                        }.frame(minHeight: 44).contentShape(Rectangle())
+                                    }.buttonStyle(.plain).accessibilityIdentifier("guidance-settings-open")
+                                    Divider().overlay(.white.opacity(0.15))
                                     Toggle(isOn: $grid) { Label("Framing grid", systemImage: "grid") }
                                     Toggle(isOn: $haptics) { Label("Shutter feedback", systemImage: "hand.tap") }
                                     VStack(alignment: .leading, spacing: 8) {
@@ -886,6 +992,10 @@ struct CameraView: View {
         .sheet(isPresented: $directorOpen) {
             DirectorView()
         }
+        .sheet(isPresented: $guidanceSheet) {
+            GuidanceSettingsView(firstRun: guidanceFirstRun) { guidanceSheet = false }
+                .presentationDetents(guidanceFirstRun ? [.large] : [.large])
+        }
         .sheet(isPresented: $cameraPicker) {
             CameraPickerView()
                 .presentationDetents([.medium, .large])
@@ -899,9 +1009,20 @@ struct CameraView: View {
             else { cancelCountdown(); camera.stop() }
             updateGuidance()
         }
-        .onChange(of: pinnedShot.shot) { _, _ in updateGuidance() }
+        .onChange(of: pinnedShot.shot) { old, new in
+            updateGuidance()
+            // First time a shot is pinned: let the person pick how much the camera says.
+            if old == nil, new != nil, !guidanceSettings.hasChosen {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                    guard !directorOpen, !guidanceSettings.hasChosen else { return }
+                    guidanceFirstRun = true; guidanceSheet = true
+                }
+            }
+        }
         .onChange(of: directorOpen) { _, _ in updateGuidance() }
         .onChange(of: previewOrientation) { _, o in LiveGuidance.shared.setInterfaceOrientation(o) }
+        .onChange(of: camera.zoom) { _, _ in updateZoomGuidance() }
+        .onChange(of: camera.zoomSupported) { _, _ in updateZoomGuidance() }
         .onChange(of: camera.ready) { _, ready in if !ready { cancelCountdown() } }
         .onChange(of: options) { _, visible in if visible { cancelCountdown() } }
         .onChange(of: review) { _, visible in if visible { cancelCountdown() } }
@@ -914,6 +1035,10 @@ struct CameraView: View {
                 if !Task.isCancelled { showStatus = false }
             }
         }
+    }
+
+    private func updateZoomGuidance() {
+        LiveGuidance.shared.setZoom(Double(camera.zoom), range: camera.zoomSupported ? 1...Double(CameraController.maxZoom) : nil)
     }
 
     private func takePhoto() {
@@ -1013,5 +1138,67 @@ private struct ShutterPressStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label.scaleEffect(configuration.isPressed ? 0.94 : 1)
             .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
+
+/// What the pinch zoom is set to. Hidden at 1x; while zooming it shows a 1–2x scale and the
+/// equivalent focal length, then shrinks to a small "1.4×" while zoomed in. A light click marks 1x,
+/// 1.5x and 2x without snapping to them; 1x and 2x are the sharpest settings. Not interactive.
+struct ZoomReadout: View {
+    let zoom: CGFloat
+    /// `.simple` shows just "1.4×": no ruler, no focal length.
+    var detail: ZoomDetail = .ruler
+    @State private var showDetail = false
+    @State private var detailGeneration = 0
+    private let haptic = UIImpactFeedbackGenerator(style: .light)
+    static let detents: [CGFloat] = [1, 1.5, 2]
+
+    var body: some View {
+        Group {
+            if (showDetail && detail == .ruler) || zoom > 1.01 {
+                HStack(spacing: 8) {
+                    if showDetail && detail == .ruler { ruler.transition(.opacity) }
+                    Text(label).font(.system(size: 13, weight: .semibold, design: detail == .ruler ? .monospaced : .default)).monospacedDigit()
+                        .foregroundStyle(zoom > 1.01 && detail == .ruler ? CameraStyle.accent : .white)
+                }
+                .padding(.horizontal, 12).padding(.vertical, 7)
+                .background(.black.opacity(0.6), in: Capsule())
+                .transition(.opacity)
+            }
+        }
+        .onChange(of: zoom) { old, new in
+            if Self.detents.contains(where: { (old < $0 && new >= $0) || (old > $0 && new <= $0) }) { haptic.impactOccurred() }
+            withAnimation(.easeOut(duration: 0.15)) { showDetail = true }
+            detailGeneration += 1
+            let generation = detailGeneration
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                if generation == detailGeneration { withAnimation(.easeOut(duration: 0.3)) { showDetail = false } }
+            }
+        }
+        .accessibilityElement()
+        .accessibilityLabel(String(format: "Zoom %.1f times", zoom))
+        .accessibilityIdentifier("zoom-readout")
+    }
+
+    private var label: String {
+        let x = zoom.truncatingRemainder(dividingBy: 1) < 0.05 || zoom > 1.95 ? String(format: "%.0f×", zoom.rounded()) : String(format: "%.1f×", zoom)
+        guard showDetail, detail == .ruler else { return x }
+        return x + String(format: " · %.0f mm", CameraController.baseFocalLength * zoom)
+    }
+
+    /// Ticks every 0.1x from 1x to 2x, longer at the stops, with the current zoom marked.
+    private var ruler: some View {
+        let width: CGFloat = 100
+        return ZStack(alignment: .leading) {
+            ForEach(0...10, id: \.self) { i in
+                let stop = i == 0 || i == 5 || i == 10
+                Rectangle().fill(.white.opacity(stop ? 0.85 : 0.4))
+                    .frame(width: 1, height: stop ? 10 : 5)
+                    .offset(x: width * CGFloat(i) / 10)
+            }
+            Circle().fill(CameraStyle.accent).frame(width: 7, height: 7)
+                .offset(x: width * (zoom - 1) - 3)
+        }
+        .frame(width: width + 1, height: 12, alignment: .leading)
     }
 }

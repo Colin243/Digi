@@ -31,6 +31,7 @@ public final class OfflineEngine: DirectorEngine {
                     continuation.yield(.stage(.preparing, .offline))
                     switch request.mode {
                     case .scene: try await self.scene(request, continuation)
+                    case .scenery: try await self.scenery(request, continuation)
                     case .inspiration: try await self.inspiration(request, continuation)
                     }
                     continuation.yield(.finished(.offline))
@@ -59,6 +60,30 @@ public final class OfflineEngine: DirectorEngine {
             try Task.checkCancellation()
             let prompt = OfflinePrompts.sceneLook(scene: sceneObj, style: request.style, brief: request.brief,
                                                   look: look, previous: shots)
+            let obj = try await jsonObject(prompt: prompt, image: target, profile: profile,
+                                           maxTokens: lookTokens(profile), stage: "look \(look)")
+            let shot = try Self.decodeShot(obj)
+            guard shot.isActionable else {
+                throw DirectorError.invalidOutput("The on-device director wrote an incomplete shot.")
+            }
+            shots.append(shot)
+            out.yield(.shot(shot, .offline))
+        }
+    }
+
+    // MARK: scenery mode
+
+    private func scenery(_ request: DirectorRequest, _ out: AsyncThrowingStream<DirectorEvent, Error>.Continuation) async throws {
+        let target = request.images.first { $0.role == .target }!.jpeg
+        let profile = request.offlineProfile
+        out.yield(.stage(.readingScene, .offline))
+        let sceneObj = try await jsonObject(prompt: OfflinePromptData.scenerySceneReading, image: target, profile: profile,
+                                            maxTokens: Budget.scene, stage: "scene reading")
+        out.yield(.stage(.writingShots, .offline))
+        var shots: [Shot] = []
+        for look in 1...min(max(request.shotCount, 1), OfflinePromptData.sceneryLooks.count) {
+            try Task.checkCancellation()
+            let prompt = OfflinePrompts.sceneryLook(scene: sceneObj, brief: request.brief, look: look, previous: shots)
             let obj = try await jsonObject(prompt: prompt, image: target, profile: profile,
                                            maxTokens: lookTokens(profile), stage: "look \(look)")
             let shot = try Self.decodeShot(obj)
@@ -99,7 +124,7 @@ public final class OfflineEngine: DirectorEngine {
                                              maxTokens: Budget.target, stage: "target scene")
 
         out.yield(.stage(.writingShots, .offline))
-        let prompt = OfflinePrompts.compositions(aesthetic: aesthetic, target: targetObj)
+        let prompt = OfflinePrompts.photographerAsks(OfflinePrompts.compositions(aesthetic: aesthetic, target: targetObj), brief: request.brief)
         // Three shots with reasoning fields run well past the profile's single-look cap; a cut-off answer
         // still yields its finished shots, so the budget bounds time rather than validity.
         let budget = profile.maxCompositionTokens * 2

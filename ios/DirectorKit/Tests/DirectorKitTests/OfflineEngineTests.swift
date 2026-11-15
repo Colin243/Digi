@@ -39,11 +39,32 @@ final class OfflinePromptTests: XCTestCase {
         }
     }
 
+    func testSceneryPromptsMatchPython() throws {
+        let g = try golden(), inp = g["inputs"] as! [String: Any], exp = g["expected"] as! [String: Any]
+        XCTAssertEqual(OfflinePromptData.scenerySceneReading, exp["scenerySceneReading"] as? String)
+        let prev = [Shot(title: "Wide vista", cameraPosition: "by the rail", cameraHeight: "", cameraAngle: "",
+                         subjectPosition: "peak left third", distanceAndFraming: "whole view")]
+        let cases = exp["sceneryLooks"] as! [[String: Any]]
+        XCTAssertEqual(cases.count, 6)
+        for c in cases {
+            let look = c["look"] as! Int, n = c["previous"] as! Int
+            let text = OfflinePrompts.sceneryLook(scene: inp["scene"] as! [String: Any], brief: c["brief"] as? String,
+                                                  look: look, previous: Array(prev.prefix(n)))
+            XCTAssertEqual(text, c["prompt"] as? String, "brief \(String(describing: c["brief"])) look \(look)")
+        }
+    }
+
     func testInspirationPromptsMatchPython() throws {
         let g = try golden(), inp = g["inputs"] as! [String: Any], exp = g["expected"] as! [String: Any]
         XCTAssertEqual(OfflinePrompts.aesthetic(notes: inp["notes"] as! [String]), exp["aesthetic"] as? String)
         XCTAssertEqual(OfflinePrompts.compositions(aesthetic: inp["aesthetic"] as! [String: Any], target: inp["target"] as! [String: Any]),
                        exp["compositions"] as? String)
+    }
+
+    func testPhotographerNoteIsAppendedOnlyWhenPresent() {
+        XCTAssertEqual(OfflinePrompts.photographerAsks("P", brief: nil), "P")
+        XCTAssertEqual(OfflinePrompts.photographerAsks("P", brief: "  "), "P")
+        XCTAssertEqual(OfflinePrompts.photographerAsks("P", brief: "new ideas"), "P\n\nThe photographer also asks: new ideas")
     }
 
     func testDumpsMatchesPython() {
@@ -114,6 +135,18 @@ final class OfflineEngineTests: XCTestCase {
         XCTAssertTrue(prompts[1].contains("look 1 of 3"))
         XCTAssertTrue(prompts[3].contains("Earlier looks for this scene"))
         XCTAssertTrue(prompts[3].contains("Look 2: Look 2"), "later looks list the earlier ones")
+    }
+
+    func testSceneryModeNeedsNoStyleAndWritesThreeShots() async throws {
+        let script = Script([Self.scene, Self.look(1), Self.look(2), Self.look(3)])
+        let image = DirectorImage(role: .target, jpeg: Data([1]))
+        let request = DirectorRequest(mode: .scenery, images: [image])
+        let events = try await collect(OfflineEngine(generator: script), request)
+        let titles = events.compactMap { e -> String? in if case .shot(let s, .offline) = e { return s.title }; return nil }
+        XCTAssertEqual(titles, ["Look 1", "Look 2", "Look 3"])
+        let prompts = await script.prompts
+        XCTAssertTrue(prompts[0].contains("photograph the scenery"))
+        XCTAssertTrue(prompts[3].contains("Earlier looks for this view"))
     }
 
     func testReducedProfileShrinksImagesAndTokens() async throws {

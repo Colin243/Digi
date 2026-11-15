@@ -22,7 +22,7 @@ struct DirectorView: View {
 
     private var canRun: Bool {
         guard targetImage != nil, model.phase != .running else { return false }
-        return mode == .scene || (3...5).contains(inspirationImages.count)
+        return mode != .inspiration || (3...5).contains(inspirationImages.count)
     }
 
     var body: some View {
@@ -30,7 +30,8 @@ struct DirectorView: View {
             Form {
                 Section("What to shoot") {
                     Picker("Mode", selection: $mode) {
-                        Text("One photo + style").tag(DirectorMode.scene)
+                        Text("Portrait").tag(DirectorMode.scene)
+                        Text("Scenery").tag(DirectorMode.scenery)
                         Text("Inspiration photos").tag(DirectorMode.inspiration)
                     }.pickerStyle(.segmented).accessibilityIdentifier("director-mode")
 
@@ -44,6 +45,8 @@ struct DirectorView: View {
                             ForEach(DirectorStyle.allCases, id: \.self) { Text($0.label).tag($0) }
                         }
                         TextField("Optional note, e.g. she prefers seated poses", text: $brief)
+                    } else if mode == .scenery {
+                        TextField("Optional note, e.g. calm and minimal", text: $brief)
                     } else {
                         PhotosPicker(selection: $inspirationItems, maxSelectionCount: 5, matching: .images) {
                             Label("Choose 3 to 5 inspiration photos (\(inspirationImages.count) picked)", systemImage: "photo.stack")
@@ -104,12 +107,28 @@ struct DirectorView: View {
         if !model.shots.isEmpty {
             Section {
                 ForEach(Array(model.shots.enumerated()), id: \.offset) { i, shot in
-                    ShotCard(index: i + 1, shot: shot) { PinnedShotStore.shared.pin(shot); model.cancel(); dismiss() }
+                    ShotCard(index: i + 1, shot: shot, kept: model.deck.isKept(shot),
+                             rewriting: model.deck.pending.contains(i),
+                             onKeep: { model.toggleKeep(shot) },
+                             onUse: { PinnedShotStore.shared.pin(shot); model.cancel(); dismiss() })
                 }
+                Button { model.refresh() } label: {
+                    Label(refreshTitle, systemImage: "arrow.clockwise")
+                }.disabled(!model.deck.canRefresh || model.phase == .running)
+                    .accessibilityIdentifier("director-refresh")
             } header: {
                 Text(model.engineUsed == .online ? "Shots · online" : model.engineUsed == .offline ? "Shots · on this phone" : "Shots")
+            } footer: {
+                Text("Star the shots you like, then refresh to replace the rest.")
             }
         }
+    }
+
+    private var refreshTitle: String {
+        let kept = model.deck.keptCount, total = model.shots.count
+        if model.phase == .running && model.deck.isRefreshing { return "Rewriting…" }
+        if kept == total { return "All shots kept" }
+        return kept == 0 ? "Refresh all shots" : "Refresh the other \(total - kept)"
     }
 
     private func run() {
@@ -125,11 +144,20 @@ struct DirectorView: View {
 private struct ShotCard: View {
     let index: Int
     let shot: Shot
+    let kept: Bool
+    let rewriting: Bool
+    let onKeep: () -> Void
     let onUse: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("\(index). \(shot.title)").font(.headline)
+            HStack(alignment: .firstTextBaseline) {
+                Text("\(index). \(shot.title)").font(.headline)
+                Spacer()
+                Button(action: onKeep) { Image(systemName: kept ? "star.fill" : "star").foregroundStyle(kept ? .yellow : .secondary) }
+                    .buttonStyle(.borderless).accessibilityLabel(kept ? "Unkeep this shot" : "Keep this shot")
+                    .accessibilityIdentifier("director-keep-\(index)")
+            }
             if !shot.sceneReading.isEmpty { Text(shot.sceneReading).font(.footnote).foregroundStyle(.secondary) }
             row("Stand", shot.cameraPosition); row("Height", shot.cameraHeight); row("Angle", shot.cameraAngle)
             row("Subject", shot.subjectPosition); row("Framing", shot.distanceAndFraming); row("Light", shot.lightingTip)
@@ -138,6 +166,9 @@ private struct ShotCard: View {
             Button("Use this shot on the camera", action: onUse)
                 .buttonStyle(.borderedProminent).padding(.top, 4).accessibilityIdentifier("director-use-shot-\(index)")
         }.padding(.vertical, 4)
+            .opacity(rewriting ? 0.35 : 1)
+            .overlay { if rewriting { ProgressView("Rewriting…") } }
+            .animation(.easeOut(duration: 0.2), value: rewriting)
     }
 
     @ViewBuilder private func row(_ label: String, _ text: String) -> some View {
