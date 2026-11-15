@@ -88,3 +88,12 @@ def test_summary_and_export_gate():
     assert not export.has_zoom({"compositions": [good, good, {"zoom_or_lens": "1x"}]})
     ordered = export._ordered({"title": "t", "setup_choice": "s", "scene_reading": "r"}, "v4")
     assert list(ordered)[:2] == ["scene_reading", "setup_choice"]
+
+
+def test_zoomed_setup_must_step_back():
+    half = {"setup_choice": "Half body: plain wall", "distance_and_framing": "about 1.2 m (4 ft) away, waist up"}
+    assert F.zoom_fit({**half, "zoom_or_lens": "2x: wall becomes a soft wash"})["distance_not_scaled"]
+    stepped = {**half, "distance_and_framing": "about 2.4 m away, waist up", "zoom_or_lens": "2x: soft wall"}
+    assert not F.zoom_fit(stepped)["distance_not_scaled"]
+    assert not F.zoom_fit({**half, "zoom_or_lens": "1x: show the street"})["distance_not_scaled"]
+    assert not F.zoom_fit({**half, "distance_and_framing": "3-4 m, waist up", "zoom_or_lens": "2x: soft"})["distance_not_scaled"]

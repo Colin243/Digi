@@ -2,7 +2,7 @@
 
 Digi is getting a continuous **1x to 2x zoom on the main camera only**. The Director should decide, for each look, whether to zoom in and step back or to stay at 1x and step closer, and say why in one line. The rules are in [annotation-guide.md § Zoom versus distance](annotation-guide.md#zoom-versus-distance-shot-v4). The prompt is **v11 / shot-v4** (`--shot-format v4`), and the check is `framing.zoom_fit`.
 
-Nothing here has been trained or run on a model yet. All numbers below are from the label files and the tokenizer.
+Nothing here has been trained. The numbers below come from the label files, the tokenizer, and one base-model bench (see "Base model on v11").
 
 ## What changed in the prompt (v11)
 
@@ -27,6 +27,31 @@ The cost is in the compositions call only (36.9 tok/s decode, 622 tok/s prefill 
 Starting point: the v10 trim run projected **59.9 s full / 36.2 s on-site** (budgets 60 / 30). v11 should land at about **59.6 s / 35.9 s**. On-site still misses its 30 s soft budget, as v10 already did.
 
 **Risk:** if the trained model keeps three reasons *and* adds the zoom reason, output grows by about 42 tokens: about +1.5 s in total, and the full analysis goes over 60 s. The acceptance gate below checks this.
+
+## Base model on v11 (bench `zoom-base-v4-20261114`, 2026-11-15)
+
+This is the base Qwen3-VL-2B with no adapter, run on the 14 `portrait_v1` cases (decomposed, greedy, keys, 1024 px). It is compared with the same model on v10 (`blind-base-trim-4B-20261114`). The base model matters because it is the on-device fallback.
+
+| measure | base v10 | trim adapter v10 | **base v11** |
+|---|---|---|---|
+| runs schema-valid | 14/14 | 14/14 | 14/14 |
+| looks with a zoom amount within 1–2x | 42/42 | 42/42 | 42/42 |
+| zoom reason matches the amount | 0/42 | 3/42 | 8/42 |
+| zoomed 1.5x+ but kept the 1x distance | – | – | **35/36** |
+| `why_each_choice` with exactly 2 reasons | – | – | 42/42 |
+| setup contradictions (wrong tilt) | 1 | 4 | 3 |
+| compositions tokens, median | 1730.5 | 982.5 | 1688.5 |
+| projected iPhone full / on-site s, median | 87.7 / 56.2 | 59.9 / 36.2 | 85.5 / 55.4 |
+
+**The format works from the prompt alone.** Every look states an amount within range in the `"<amount>x: <reason>"` form, every look has 2 reasons, and the base model's output got 42 tokens shorter (−2.2 s projected). The base model is still far over budget either way; only the adapter gets under 60 s.
+
+**The judgement does not.**
+- **It zooms in but stays put.** 35 of 36 zoomed looks keep the setup's 1x distance ("2x … about 1.2 m away"), so the photo would crop the subject. `zoom_fit` now reports this as `distance_not_scaled`. It flags 2 of the 132 draft-label looks.
+- **It defaults to 2x:** 27 looks at 2x, 9 at 1.5x, 6 at 1x. That includes 9 full-body looks at 2x, which lose the low-camera effect.
+- **One zoom line per scene.** 9 of 14 cases repeat the same zoom line on all three looks.
+- **The reasons are long and often not about zoom:** 15 words median against a limit of 10, for example "to emphasize the height of the castle and the scale of the scene", and contradictions such as "1x: zooming in to …".
+
+So training is needed for the trade-off itself, and the relabelled data must show it: zoomed looks with doubled distances, and 1x looks where the place matters. The acceptance gate below now includes "zoomed 1.5x+ but kept the 1x distance ≤ 10% of zoomed looks".
 
 ## Relabel, or a new batch?
 
@@ -59,7 +84,7 @@ So the relabel pass is a **field edit on the existing examples**, with no new ph
 
 ## Run
 
-- **Cheap first check (no training, about 15 min):** bench the base Qwen3-VL-2B on the 14 `portrait_v1` cases with `--shot-format v4`. This tells us whether the prompt alone gets in-range amounts with reasons. That matters for the on-device base-model fallback, which has no adapter.
+- **Base-model check: done** (see "Base model on v11" above). It took 14 minutes.
 - **Training:** `configs/lora_bootstrap_r16_zoom.json` is a copy of the v10 trim config. Only `run_name` and `data_dir` (`sft-UNREVIEWED-zoom`) change: 2B, r16, 120 iters, seed 0. That makes it directly comparable with `reason-trim-r16-v3-20261113`. It takes about 1 h on the Mac. **Not started; ask first.** Stay on 2B: 4B projected 61 s for v10 and trains for 3 h.
   ```
   photo-ai train-data export --shot-format v4 --include-unapproved   # then move sft-UNREVIEWED-smoke to sft-UNREVIEWED-zoom
@@ -74,6 +99,8 @@ So the relabel pass is a **field edit on the existing examples**, with no new ph
 | looks with an amount within 1–2x | ≥ 90% |
 | zoom reason matches the amount | ≥ 75% |
 | amounts used | both 1x and 2x appear; zoomed share between 25% and 75% |
+| zoomed 1.5x+ but kept the 1x distance | ≤ 10% of zoomed looks |
+| one zoom line repeated on all 3 looks | ≤ 3 of 14 cases |
 | setup contradictions | no more than trim |
 | compositions tokens, median | ≤ trim's |
 | projected iPhone full / on-site | ≤ 60 s / ≤ 36.2 s |

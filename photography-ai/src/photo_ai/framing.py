@@ -274,6 +274,16 @@ _WIDE_REASON = re.compile(
     r"\bfits?\b|whole body|head to toe|keep[s]? .{0,20}(in|the) (frame|view)")
 
 
+_METRES = re.compile(r"(\d+(?:\.\d+)?)\s*(?:(?:-|–|to)\s*(\d+(?:\.\d+)?)\s*)?(?:m|metres?|meters?)\b")
+SETUP_DISTANCE_1X = {"half_body": 1.2, "full_body": 2.0, "seated": 1.5}  # metres, from SETUPS
+
+
+def _distance(look: dict) -> float | None:
+    """The first distance stated in distance_and_framing, in metres (the far end of a range)."""
+    m = _METRES.search(_text(look, ("distance_and_framing",)))
+    return float(m.group(2) or m.group(1)) if m else None
+
+
 def _amounts(text: str) -> list[float]:
     out = [float(m.group(1)) for m in _AMOUNT.finditer(text)]
     # A focal length such as "48 mm" maps to the main camera's 24 mm = 1x.
@@ -286,7 +296,8 @@ def zoom_fit(look: dict) -> dict:
 
     {"amount": first zoom stated or None, "stated": bool, "in_range": bool (every amount within 1-2x),
      "reason": bool (a reason accompanies the amount), "reason_matches": bool (the reason argues for the
-     side the amount is on), "lean": "1x" | "2x" | None (what the setup_choice leans to), "lean_mismatch": bool}
+     side the amount is on), "lean": "1x" | "2x" | None (what the setup_choice leans to), "lean_mismatch": bool,
+     "distance_not_scaled": bool (zoomed to 1.5x+ on a half/full/seated setup but kept about the 1x distance)}
     Never gates a run: a scenery look at 2x can be right when it says why."""
     zoom_text = _text(look, ("zoom_or_lens",))
     amounts = _amounts(zoom_text)
@@ -308,9 +319,13 @@ def zoom_fit(look: dict) -> dict:
         matches = bool(_WIDE_REASON.search(reason_text)) and not re.search(r"compress", reason_text)
     choice = stated_choice(look)
     lean = {"close_up": "2x", "scenery": "1x"}.get(choice or "")
+    # Zooming in for a setup framing means stepping back: flag a 1.5x+ look that keeps (most of) the 1x distance.
+    base, dist = SETUP_DISTANCE_1X.get(classify(look) or ""), _distance(look)
+    distance_not_scaled = bool(base and dist and amount and amount >= 1.5 and dist < base * amount * 0.75)
     lean_mismatch = amount is not None and ((lean == "2x" and not zoomed) or (lean == "1x" and amount >= 1.5))
     return {"amount": amount, "stated": amount is not None, "in_range": in_range, "reason": reason,
-            "reason_matches": matches, "lean": lean, "lean_mismatch": bool(lean_mismatch)}
+            "reason_matches": matches, "lean": lean, "lean_mismatch": bool(lean_mismatch),
+            "distance_not_scaled": distance_not_scaled}
 
 
 def summarize_zoom(looks: list[dict]) -> dict:
@@ -327,5 +342,6 @@ def summarize_zoom(looks: list[dict]) -> dict:
         "zoom_reason_matches": sum(f["reason_matches"] for f in fits),
         "zoomed_in": len(zoomed),
         "zoom_lean_mismatches": sum(f["lean_mismatch"] for f in fits),
+        "zoom_distance_not_scaled": sum(f["distance_not_scaled"] for f in fits),
         "zoom_score_mean": round(sum(score) / n, 2) if n else None,
     }

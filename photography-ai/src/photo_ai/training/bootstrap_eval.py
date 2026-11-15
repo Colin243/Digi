@@ -69,6 +69,7 @@ def markdown(rows: dict[str, dict]) -> str:
              ("setup contradictions (wrong tilt)", lambda r: str(r["setup_conflicts"])),
              ("looks with a zoom amount in 1-2x", lambda r: f"{r['zoom_in_range']}/{r['looks']}"),
              ("looks whose zoom reason matches the amount", lambda r: f"{r['zoom_reason_matches']}/{r['looks']}"),
+             ("zoomed 1.5x+ but kept the 1x distance", lambda r: f"{r['zoom_distance_not_scaled']}/{r['zoomed_in']} zoomed"),
              ("compositions tokens, median", lambda r: str(r["compositions_tokens_median"])),
              ("generated tokens per analysis, median", lambda r: str(r["generated_tokens_median"])),
              ("projected iPhone full analysis s, median (budget 60)", lambda r: str(r["phone_full_s_median"])),
