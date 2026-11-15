@@ -156,6 +156,13 @@ def shot_set(shot_format: str) -> type[BaseModel]:
     return {"v2": ShotSetV2, "v3": ShotSetV3}.get(shot_format, CompositionSet)
 
 
+def shot_model(shot_format: str) -> type[BaseModel]:
+    """The model for ONE look in `shot_format` (the item type of shot_set's compositions list)."""
+    if shot_format not in SHOT_FORMATS:
+        raise ValueError(f"shot_format must be one of {SHOT_FORMATS}")
+    return {"v2": ShotV2, "v3": ShotV3}.get(shot_format, Composition)
+
+
 def shot_format_of(record: dict) -> str:
     """Shot format of a saved run; runs made before shot-v2 existed are shot-v1."""
     return (record.get("config") or {}).get("shot_format") or record.get("shot_format") or "v1"

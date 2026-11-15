@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import Callable, Protocol
 
 # Put this marker in a prompt where each image should go (one per image, in order).
 # Without markers, images are placed before the text (the models' default layout).
@@ -50,7 +50,9 @@ class VLMBackend(Protocol):
     def load(self) -> float:
         """Load weights; return seconds taken (0 if already loaded)."""
 
-    def generate(self, prompt: str, images: list[str], params: GenerationParams) -> Generation: ...
+    def generate(self, prompt: str, images: list[str], params: GenerationParams,
+                 on_text: Callable[[str], None] | None = None) -> Generation:
+        """`on_text`, when given, receives the output in pieces as it is generated (same text, same result)."""
 
     def unload(self) -> None: ...
 
