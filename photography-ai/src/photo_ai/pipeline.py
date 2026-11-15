@@ -20,11 +20,13 @@ Modes (RunConfig.mode):
                (2-4) scene image + scene JSON + style brief + one look plan (wide / medium / close)
                      + the earlier looks -> one shot-v2 look per call.
 Both modes share the versioned shot format (schema.SHOT_FORMATS). Scene mode always uses shot-v2;
-inspiration mode uses shot-v1 unless asked (shot-v2 is supported with the decomposed strategy).
+inspiration mode uses shot-v1 unless asked (shot-v2 and shot-v3, which reasons before it instructs, are
+supported with the decomposed strategy).
 """
 
 from __future__ import annotations
 
+import contextvars
 import platform
 import time
 from dataclasses import asdict, dataclass
@@ -35,11 +37,23 @@ from . import prompts, schema
 from .backends import GenerationParams, VLMBackend
 from .cases import Case
 from .images import PreparedImage, prepare
-from .metrics import evaluate_result
+from .metrics import evaluate_result, notes_from_stages
 from .parsing import extract_json
 from .storage import DEFAULT_RUNS_DIR, new_run_dir, save_run, write_raw
 
 MIN_INSPIRATION, MAX_INSPIRATION = 3, 5
+
+# Optional progress sink for servers: called with {"type": "stage", "stage": ...} or {"type": "shot", "shot": {...}}
+# as work finishes. A contextvar (not RunConfig) so it never lands in the saved run record.
+_EVENT_SINK: contextvars.ContextVar = contextvars.ContextVar("photo_ai_event_sink", default=None)
+
+
+def _emit(event: dict) -> None:
+    sink = _EVENT_SINK.get()
+    if sink is not None:
+        sink(event)
+
+
 STRATEGIES = ("two_stage", "single_pass", "decomposed")
 MODES = ("inspiration", "scene")
 SCENE_STRATEGY = "scene_director"
@@ -184,15 +198,27 @@ def _decomposed(backend, run_dir, insp, tgt, cfg):
         backend, run_dir, "compositions",
         prompts.compositions_from_parts(aesthetic, target, cfg.subject, cfg.shot_format),
         [tgt], schema.shot_set(cfg.shot_format), cfg,
-        max(cfg.max_tokens, SHOT_V2_TOKENS) if cfg.shot_format == "v2" else None,
+        {"v2": max(cfg.max_tokens, SHOT_V2_TOKENS), "v3": max(cfg.max_tokens, SHOT_V3_TOKENS)}.get(cfg.shot_format),
     )
     stages.append(st)
     result = {"aesthetic": aesthetic, "target_scene": target, **comps} if comps else None
+    for comp in (comps or {}).get("compositions", []):
+        _emit({"type": "shot", "shot": comp})
     return result, partial, stages
 
 
 SHOT_V2_TOKENS = 2200  # three shot-v2 looks run ~1.3-1.8K tokens; leave headroom so JSON isn't cut off
+SHOT_V3_TOKENS = 2600  # shot-v1 (~1K tokens for 3 looks) plus ~150-250 tokens of reasoning per look
 LOOK_TOKENS = 900  # one shot-v2 look runs ~450-650 tokens
+
+
+def set_event_sink(sink):
+    """Install a progress callback for the current context; returns the token for reset_event_sink."""
+    return _EVENT_SINK.set(sink)
+
+
+def reset_event_sink(token) -> None:
+    _EVENT_SINK.reset(token)
 
 
 def _scene_director(backend, run_dir, insp, tgt, cfg):
@@ -200,6 +226,7 @@ def _scene_director(backend, run_dir, insp, tgt, cfg):
     scene, st = _run_stage(backend, run_dir, "scene", prompts.director_scene(), [tgt], schema.TargetScene, cfg,
                            min(600, cfg.max_tokens))
     stages = [st]
+    _emit({"type": "stage", "stage": "readingScene"})
     style = {"key": cfg.style, "label": prompts.style_label(cfg.style), "brief": cfg.brief}
     partial = {"mode": "scene", "style": style, "target_scene": scene, "compositions": []}
     if scene is None:
@@ -214,6 +241,7 @@ def _scene_director(backend, run_dir, insp, tgt, cfg):
         if look is None:
             return None, partial, stages
         partial["compositions"].append(look)
+        _emit({"type": "shot", "shot": look})
     return partial, None, stages
 
 
@@ -235,8 +263,8 @@ def _normalize_config(cfg: RunConfig) -> RunConfig:
         return cfg
     if cfg.strategy not in STRATEGIES:
         raise InputError(f"strategy must be one of {STRATEGIES}")
-    if cfg.shot_format == "v2" and cfg.strategy != "decomposed":
-        raise InputError("shot-v2 in inspiration mode needs the decomposed strategy")
+    if cfg.shot_format in ("v2", "v3") and cfg.strategy != "decomposed":
+        raise InputError(f"shot-{cfg.shot_format} in inspiration mode needs the decomposed strategy")
     return cfg
 
 
@@ -300,7 +328,7 @@ def analyze(
         "result": result,
         "partial_result": None if result else partial,
         "validation": {"ok": result is not None, "errors": errors},
-        "auto_metrics": evaluate_result(result or partial, case),
+        "auto_metrics": evaluate_result(result or partial, case, notes_from_stages(stages, run_dir)),
         "stages": stages,
         "environment": {
             "python": platform.python_version(),

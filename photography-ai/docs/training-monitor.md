@@ -41,7 +41,7 @@ and rejects non-local `Host` headers.
 | Tab | What it shows |
 |---|---|
 | **Live metrics** | Tiles and charts for train/validation loss, LR, step and epoch, progress and ETA, elapsed time, step time, gradient norm, MLX active/cache/peak, process footprint, system swap, memory pressure, and dropped samples. Polls every 2 s while the run is live. |
-| **Architecture & layers** | **Network** view: every node is a real unit of the loaded model and every line is a real data path. Vision blocks → patch merger → token embedding; vision blocks 5/11/17 → DeepStack mergers → LM layers 0–2 (read from `vision_config.deepstack_visual_indexes`); each decoder layer with its 7 LoRA modules (q,k,v→o→gate,up→down). Hue shows where a node is in the model. Glow and size of LoRA nodes show the selected statistic. Gray means frozen. A hollow ring means not sampled yet (unavailable). **Grid** view: the same data as a 28 × 7 heatmap. Click any node or cell to see its details. |
+| **Architecture & layers** | **Network** view: every one of the model's 468 real units is a node (Linear layers, norms, q/k norms, embeddings, final norm), plus one hub per block marking the residual stream entering it. Edges are the real forward paths: inside a vision block norm1 → qkv → proj → norm2 → fc1 → fc2; inside a decoder layer input norm → q/k/v → q-norm/k-norm → o → post-attention norm → gate/up → down; faint edges are residual skips (block to block, and around attention into the second norm). Vision block 5/11/17 outputs → DeepStack mergers (norm → fc1 → fc2) → LM layers 0–2 (from `vision_config.deepstack_visual_indexes`); last vision block → patch merger → image tokens at the token embedding; last layer → final norm → LM head (tied to the token embedding). Colour shows where a node is in the model (vision cyan→blue, mergers gold, decoder orange→violet). Small dim dots are frozen units. Glow and size of LoRA nodes show the selected statistic, scaled within each group (vision, mergers, language model), because their weight shapes differ. A hollow ring means not sampled yet (unavailable). **Grid** view: the language model as a 28 × 7 heatmap, and, when a run gives the vision tower adapters, a vision-block × (qkv, proj, fc1, fc2) heatmap and merger cells on their own colour scale. Click any node or cell to see its details. |
 | **Checkpoints** | Offline comparison of two adapter files, or base vs a file (see below). |
 | **Recommendation comparison** | Placeholder: three separate panels for measurements, human evaluation and interpretation. Not implemented. |
 | **Run log** | Run identity, data hashes, prompt/schema versions, LoRA/optimizer/memory settings, sampling cadence, checkpoints, end-of-run summary, and all metric definitions. |
@@ -124,6 +124,16 @@ controls, pan/pinch, cancellation cleanup, metric/replay camera persistence, mis
 the grid fallback and themes. The default framing was checked across 21 yaw angles and three
 pitch angles. These browser interaction checks use synthetic events; native trackpad/touch
 behavior still benefits from hands-on testing.
+
+### Vision-tower adapters
+
+`vision_targets` in a LoRA config adds adapters inside the vision tower, e.g.
+`["qkv", "proj", "linear_fc1", "linear_fc2"]` (attention, MLP, and the patch/DeepStack mergers' fc1/fc2).
+`vision_first_block` leaves blocks below that index without adapters, so backprop stops there.
+Measured on the 18 GB M3 Pro (rank 16, 768 px, 3-step probe): language-only peaked at 11.3 GB in the full
+run; adding all 24 vision blocks peaked at 18.1 GB and doubled time per row; blocks 12–23 plus the mergers
+(`configs/lora_bootstrap_r16_vision.json`: 252 adapters, 21.5M trainable weights) peaked at 13.3 GB at
+about the language-only speed. The monitor samples vision adapters like the language ones.
 
 **Replay.** The step slider scrubs every tab to "state as of step N". **▶ Replay** animates from
 step 0, so you can watch the adapter changes light up across the network. **Follow latest**

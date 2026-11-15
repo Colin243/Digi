@@ -72,8 +72,10 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
         // Process each available frame. A 1/24 threshold on a 30 fps stream
         // discards every other frame (15 fps), rather than producing 24 fps.
-        guard renderEnabled,
-              let pixel = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        guard let pixel = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        // Live shot guidance: in-memory person detection, throttled, never stored (no-op without a pinned shot).
+        LiveGuidance.shared.consider(pixel)
+        guard renderEnabled else { return }
         guard previewSlot.wait(timeout: .now()) == .success else { return }
         autoreleasepool {
             guard let frame = renderer?.render(CIImage(cvPixelBuffer: pixel), maxDimension: 960) else { previewSlot.signal(); return }
@@ -615,6 +617,9 @@ struct CameraView: View {
     @AppStorage("digit.grid") private var grid = false
     @AppStorage("digit.haptics") private var haptics = true
     @State private var cameraPicker = false
+    @State private var directorOpen = false
+    @ObservedObject private var pinnedShot = PinnedShotStore.shared
+    @AppStorage("digi.guidanceDebug") private var guidanceDebug = false
     @State private var options = false
     @State private var review = false
     @State private var showStatus = true
@@ -648,6 +653,15 @@ struct CameraView: View {
                         }.buttonStyle(.plain)
                             .accessibilityLabel("Choose camera, G12")
                             .accessibilityIdentifier("camera-picker")
+                        Button {
+                            options = false
+                            directorOpen = true
+                        } label: {
+                            Image(systemName: "wand.and.stars").font(.system(size: 18))
+                                .frame(minWidth: 44, minHeight: 44)
+                        }.buttonStyle(.plain)
+                            .accessibilityLabel("Photography director")
+                            .accessibilityIdentifier("director-open")
                         if !portrait { Rectangle().fill(CameraStyle.accent).frame(width: 22, height: 2).padding(.top, 5) }
                         Spacer()
                         if camera.captureStudyEnabled {
@@ -672,7 +686,7 @@ struct CameraView: View {
                                       orientationChanged: { previewOrientation = $0 },
                                       focusRequested: { camera.focus(at: $0, lock: $1) },
                                       focusPositionChanged: { focusDisplayPoint = $0 },
-                                      hardwareCaptureEnabled: canShoot && countdown.remaining == nil && !options && !review && !cameraPicker && phase == .active,
+                                      hardwareCaptureEnabled: canShoot && countdown.remaining == nil && !options && !review && !cameraPicker && !directorOpen && phase == .active,
                                       captureRequested: takePhoto)
                         if camera.lookEnabled, let frame = camera.renderedPreview {
                             Image(uiImage: UIImage(cgImage: frame, scale: 1, orientation: previewOrientation == .portrait ? .right : previewOrientation == .landscapeLeft ? .down : .up))
@@ -701,6 +715,11 @@ struct CameraView: View {
                                     .position(x: point.x * area.size.width, y: point.y * area.size.height)
                             }.allowsHitTesting(false).accessibilityLabel("Selected focus point")
                         }
+                        if pinnedShot.shot != nil {
+                            SubjectOverlay(live: LiveGuidance.shared, debug: guidanceDebug)
+                            LevelIndicator(live: LiveGuidance.shared)
+                        }
+                        VStack { PinnedShotCard(store: pinnedShot); Spacer() }
                         if showStatus && !camera.status.isEmpty {
                             VStack {
                                 Spacer()
@@ -864,6 +883,9 @@ struct CameraView: View {
                 }
             }.foregroundStyle(CameraStyle.silver).tint(CameraStyle.accent)
         }
+        .sheet(isPresented: $directorOpen) {
+            DirectorView()
+        }
         .sheet(isPresented: $cameraPicker) {
             CameraPickerView()
                 .presentationDetents([.medium, .large])
@@ -871,11 +893,15 @@ struct CameraView: View {
         }
         .preferredColorScheme(.dark)
         .statusBarHidden()
-        .onAppear { camera.start() }
+        .onAppear { camera.start(); updateGuidance() }
         .onChange(of: phase) { _, newPhase in
             if newPhase == .active { camera.start() }
             else { cancelCountdown(); camera.stop() }
+            updateGuidance()
         }
+        .onChange(of: pinnedShot.shot) { _, _ in updateGuidance() }
+        .onChange(of: directorOpen) { _, _ in updateGuidance() }
+        .onChange(of: previewOrientation) { _, o in LiveGuidance.shared.setInterfaceOrientation(o) }
         .onChange(of: camera.ready) { _, ready in if !ready { cancelCountdown() } }
         .onChange(of: options) { _, visible in if visible { cancelCountdown() } }
         .onChange(of: review) { _, visible in if visible { cancelCountdown() } }
@@ -906,6 +932,15 @@ struct CameraView: View {
                     return
                 }
             }
+        }
+    }
+    /// Live guidance runs only while a shot is pinned and the viewfinder is in front.
+    private func updateGuidance() {
+        if let shot = pinnedShot.shot, phase == .active, !directorOpen {
+            LiveGuidance.shared.setInterfaceOrientation(previewOrientation)
+            LiveGuidance.shared.start(shot: shot)
+        } else {
+            LiveGuidance.shared.stop()
         }
     }
     private func cancelCountdown() {
