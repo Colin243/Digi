@@ -876,7 +876,7 @@ struct CameraView: View {
                             }.transition(.opacity)
                         }
                         VStack {
-                            PinnedShotCard(store: pinnedShot) { guidanceFirstRun = false; guidanceSheet = true }
+                            PinnedShotCard(store: pinnedShot)
                             Spacer()
                         }
                         if showStatus && !camera.status.isEmpty {
@@ -958,8 +958,7 @@ struct CameraView: View {
                     HStack(spacing: 0) {
                         SidePanel(width: min(310 * deviceScale, geometry.size.width * 0.82),
                                   close: { withAnimation(.easeOut(duration: 0.22)) { cameraPicker = false } },
-                                  openGuidance: { cameraPicker = false; guidanceFirstRun = false; guidanceSheet = true },
-                                  openDirector: { cameraPicker = false; directorOpen = true })
+                                  openGuidance: { cameraPicker = false; guidanceFirstRun = false; guidanceSheet = true })
                         Spacer(minLength: 0)
                     }.transition(.move(edge: .leading))
                 }
@@ -975,15 +974,6 @@ struct CameraView: View {
                             }.padding(.horizontal, 20)
                             ScrollView {
                                 VStack(alignment: .leading, spacing: 18) {
-                                    Button { options = false; guidanceFirstRun = false; guidanceSheet = true } label: {
-                                        HStack {
-                                            Label("Guidance", systemImage: "eye")
-                                            Spacer()
-                                            Text(guidanceSettings.prefs.style.title).foregroundStyle(CameraStyle.accent)
-                                            Image(systemName: "chevron.right").font(.footnote).foregroundStyle(.white.opacity(0.5))
-                                        }.frame(minHeight: 44).contentShape(Rectangle())
-                                    }.buttonStyle(.plain).accessibilityIdentifier("guidance-settings-open")
-                                    Divider().overlay(.white.opacity(0.15))
                                     Toggle(isOn: $grid) { Label("Framing grid", systemImage: "grid") }
                                     Toggle(isOn: $haptics) { Label("Shutter feedback", systemImage: "hand.tap") }
                                     VStack(alignment: .leading, spacing: 8) {
@@ -1174,7 +1164,7 @@ private struct SidePanel: View {
     let width: CGFloat
     let close: () -> Void
     let openGuidance: () -> Void
-    let openDirector: () -> Void
+    @ObservedObject private var settings = GuidanceSettings.shared
     @Environment(\.deviceScale) private var scale
 
     var body: some View {
@@ -1196,11 +1186,18 @@ private struct SidePanel: View {
                 cameraRow("G7 X", detail: "Coming soon", available: false)
             }
 
-            Text("Shortcuts").font(.footnote.weight(.semibold)).foregroundStyle(.white.opacity(0.55)).padding(.top, 24).padding(.bottom, 8)
-            VStack(spacing: 8) {
-                shortcut("wand.and.stars", "Photography director", id: "menu-director", action: openDirector)
-                shortcut("eye", "Guidance", id: "menu-guidance", action: openGuidance)
+            Text("Camera guidance").font(.footnote.weight(.semibold)).foregroundStyle(.white.opacity(0.55)).padding(.top, 24).padding(.bottom, 8)
+            HStack(spacing: 8) {
+                ForEach([GuidanceStyle.soft, .minimal, .full], id: \.self) { style in
+                    Button { settings.prefs.select(style); settings.hasChosen = true } label: {
+                        Text(style == .full ? "Full" : style.title).font(.subheadline.weight(.medium))
+                            .frame(maxWidth: .infinity, minHeight: 40)
+                            .background(settings.prefs.style == style ? CameraStyle.accent : CameraStyle.panel, in: Capsule())
+                            .foregroundStyle(settings.prefs.style == style ? Color.black : CameraStyle.silver)
+                    }.buttonStyle(.plain).accessibilityIdentifier("menu-look-\(style.rawValue)")
+                }
             }
+            shortcut("slider.horizontal.3", "Fine-tune guidance", id: "menu-guidance", action: openGuidance).padding(.top, 8)
             Spacer()
         }
         .foregroundStyle(CameraStyle.silver)

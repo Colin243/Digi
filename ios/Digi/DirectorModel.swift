@@ -18,12 +18,21 @@ final class DirectorModel: ObservableObject {
 
     private var task: Task<Void, Never>?
 
+    #if DEBUG
+    init() {
+        // Debug only: `-digiDebugShots YES` shows sample results so the shot cards can be reviewed without a server.
+        if UserDefaults.standard.bool(forKey: "digiDebugShots") {
+            for i in 0..<3 { var shot = PinnedShotStore.debugSampleShot; shot.title += " \(i + 1)"; deck.append(shot) }
+            engineUsed = .online; phase = .done
+        }
+    }
+    #endif
+
     /// Builds the director from the current Settings each time, so edits apply to the next request.
     private func makeDirector() -> HybridDirector {
-        // The Mac-hosted server needs ~12 s for a first shot and 30-60 s overall; the package defaults
-        // (6 s / 15 s) are for a cloud GPU. Tighten these again when the server moves to the cloud.
-        let config = DirectorConfig(preference: DirectorDefaults.userPreference(),
-                                    onlineFirstShotDeadline: 40, onlineTotalDeadline: 120)
+        // Best results by default: the online model writes better shots, so it gets time to finish.
+        // Waiting limits come from the user's priority (see DirectorPriority).
+        let config = DirectorConfig.make(preference: DirectorDefaults.userPreference(), priority: DirectorDefaults.userPriority())
         let online = DirectorDefaults.configuration().map { OnlineEngine(configuration: $0) }
         return HybridDirector(online: online, offline: OfflineEngine(generator: OnDeviceGenerator.shared),
                               conditions: SystemConditionsProvider(), config: { config })
@@ -53,13 +62,33 @@ final class DirectorModel: ObservableObject {
         start(request, refreshing: true)
     }
 
-    func toggleKeep(_ shot: Shot) { deck.toggleKeep(shot) }
+    func toggleKeep(_ shot: Shot) {
+        deck.toggleKeep(shot)
+        if let id = currentRun { let kept = deck.keptCount; RunLogStore.update(id) { $0.keptCount = kept } }
+    }
+
+    /// The person pinned a shot to the camera: the strongest sign the run was useful.
+    func markUsed() { if let id = currentRun { RunLogStore.update(id) { $0.usedShot = true } } }
+
+    private var currentRun: UUID?
 
     private func start(_ request: DirectorRequest, refreshing: Bool) {
         task?.cancel(); task = nil  // not cancel(): that would end the refresh that was just begun
         engineUsed = nil; notice = nil; stageText = refreshing ? "Rewriting" : "Starting"; phase = .running
         let director = makeDirector()
+        let priority = DirectorDefaults.userPriority()
+        let started = Date()
+        var firstShotAt: Date?, shotCount = 0, fellBack = false
         task = Task { [weak self] in
+            /// Writes the run to the log once it ends with at least one shot.
+            @MainActor func record() {
+                guard let self, shotCount > 0 else { return }
+                let r = RunRecord(engine: self.engineUsed ?? .offline, priority: priority,
+                                  firstShotSeconds: firstShotAt.map { $0.timeIntervalSince(started) },
+                                  totalSeconds: Date().timeIntervalSince(started), shotCount: shotCount, fellBack: fellBack)
+                self.currentRun = r.id
+                RunLogStore.append(r)
+            }
             do {
                 for try await event in director.plan(request) {
                     guard let self else { return }
@@ -69,13 +98,15 @@ final class DirectorModel: ObservableObject {
                         self.stageText = Self.describe(stage, engine)
                     case .shot(let shot, let engine):
                         self.engineUsed = engine
+                        shotCount += 1; if firstShotAt == nil { firstShotAt = Date() }
                         if refreshing {
                             // Every waiting slot filled: stop early, the rest of the answer is not needed.
-                            if self.deck.fill(shot) { self.phase = .done; self.task?.cancel(); return }
+                            if self.deck.fill(shot) { self.phase = .done; record(); self.task?.cancel(); return }
                         } else {
                             self.deck.append(shot)
                         }
                     case .engineSwitched(_, let to, let reason):
+                        fellBack = true
                         if !refreshing { self.deck.resetKeepingFavorites() }
                         self.engineUsed = to
                         self.notice = "Switched to \(to == .offline ? "the phone" : "online"): \(reason)."
@@ -84,6 +115,7 @@ final class DirectorModel: ObservableObject {
                     }
                 }
                 if self?.phase == .running { self?.phase = .done }
+                record()
                 self?.deck.endRefresh()
             } catch is CancellationError {
                 self?.deck.endRefresh()
@@ -208,23 +240,6 @@ struct PinnedShotCard: View {
     @Environment(\.deviceScale) private var scale
     private var cardRadius: CGFloat { theme.style == .soft ? 20 : theme.style == .minimal ? 14 : 12 }
     private var cardStroke: Double { theme.style == .minimal ? 0.3 : theme.style == .soft ? 0.35 : 0.45 }
-    /// Opens the guidance settings (long-press on the eye).
-    var openGuidance: () -> Void = {}
-
-    /// Tap to switch look; hold for the full settings.
-    private var eyeButton: some View {
-        Image(systemName: "eye").font(.system(size: 15 * scale))
-            .frame(width: 36 * scale, height: 36 * scale)
-            .background(.black.opacity(0.5), in: Circle())
-            .contentShape(Circle())
-            .onTapGesture { settings.prefs.select(settings.prefs.style.next); settings.hasChosen = true }
-            .onLongPressGesture { openGuidance() }
-            .accessibilityElement().accessibilityAddTraits(.isButton)
-            .accessibilityLabel("Guidance look: \(settings.prefs.style.title)")
-            .accessibilityHint("Double tap to switch. Touch and hold for settings.")
-            .accessibilityIdentifier("guidance-quick-switch")
-    }
-
     var body: some View {
         if let shot = store.shot, compact, !store.expanded {
             // Soft and Minimal: just a small circle that opens the shot guide.
@@ -237,7 +252,6 @@ struct PinnedShotCard: View {
                 .accessibilityLabel("Open shot guide: \(shot.title)")
                 .accessibilityIdentifier("pinned-shot-toggle")
                 Spacer()
-                eyeButton
             }.padding(8).foregroundStyle(.white).accessibilityIdentifier("pinned-shot-card")
         } else if let shot = store.shot {
             VStack(alignment: .leading, spacing: 8) {
@@ -245,7 +259,6 @@ struct PinnedShotCard: View {
                     Image(systemName: "scope").foregroundStyle(accent)
                     Text(shot.title).font(.subheadline.weight(.semibold)).lineLimit(1)
                     Spacer()
-                    if !compact { eyeButton }
                     Button { withAnimation(.easeOut(duration: 0.15)) { store.expanded.toggle() } } label: {
                         Image(systemName: store.expanded ? "chevron.up" : "chevron.down").frame(width: 32, height: 32)
                     }.accessibilityLabel(store.expanded ? "Collapse shot guide" : "Expand shot guide")

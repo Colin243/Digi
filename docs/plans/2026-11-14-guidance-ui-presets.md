@@ -377,3 +377,30 @@ Ask them to take the photo, and note:
 - Anything they ignore or tap that does nothing.
 Decide the default style for new installs from this (current default is Full for migrated users and the pick
 sheet for new ones).
+
+## Addendum (2026-11-15, evening): Director screens and quality-first routing
+
+### Director screens
+The Director sheet is now a card layout: mode chips, a large place-photo card, style chips, one
+primary "Plan my shots" button, and server details tucked under Advanced. Each shot is a card with
+Camera facts up front (Stand, Height, Angle), and "Show all details" for framing, light, pose and the
+on-site checks. Cards and buttons follow the chosen look.
+
+### Quality first, speed only by choice
+- Routing already tries the online model first; what could cut it short was the waiting limit.
+  `DirectorPriority` makes that explicit: Best results (default: 40 s to a first shot, 120 s total),
+  Balanced (15/45), Fastest (6/15). Priority only changes the limits, never the route, and sits under
+  Advanced in the Director sheet.
+- Low Data Mode still tries the phone first (the person asked to limit data); the router is unchanged.
+
+### How we decide what is best (so it is measured, not assumed)
+1. Model quality: the existing blind `scene-eval` harness (held-out set, pack, import-review, score).
+   Run the same fixtures through each candidate (online model, base 2B, each adapter), review blind, and
+   pick by win rate. Speed never enters this step.
+2. Speed as a budget, not a goal: set the longest wait people accept (today 40 s to a first shot). A
+   faster engine replaces a better one only if blind review shows no loss.
+3. Real use: the phone logs each run (engine, time to first shot, total time, whether it fell back) and
+   what the person did with it (starred shots, pinned a shot). Advanced shows these per engine. A model that
+   is fast but never starred or pinned is worse than it looks on a benchmark.
+4. Revisit the default when two things hold: the on-device engine matches the online one in blind review,
+   and users' pin rate on it is equal. Until then, Best results stays the default.
