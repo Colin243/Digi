@@ -116,5 +116,26 @@ def run_train_data(a) -> int:
                           shot_format=getattr(a, "shot_format", "v1"))
         print(json.dumps(info, indent=1))
         return 0
+    if a.action == "zoom-relabel":
+        from . import zoom_relabel as Z
+
+        if a.step == "backup":
+            print(f"labels copied to {Z.backup(a.dataset)}")
+        elif a.step == "worklist":
+            w = Z.worklist(a.dataset)
+            text = json.dumps(w, indent=1, ensure_ascii=False)
+            if a.out:
+                a.out.write_text(text)
+                print(f"{len(w)} draft labels -> {a.out}")
+            else:
+                print(text)
+        elif a.step == "apply":
+            if not a.file or a.source == "ai-draft":
+                print("pass --file edits.json and --source 'ai-draft:<who>' or 'human:<name>'", file=sys.stderr)
+                return 2
+            print(json.dumps(Z.apply_edits(a.dataset, Z.load_edits(a.file), a.source), indent=1))
+        else:
+            print(json.dumps(Z.report(a.dataset), indent=1, ensure_ascii=False))
+        return 0
     print(f"unknown action {a.action}", file=sys.stderr)
     return 2

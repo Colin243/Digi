@@ -70,8 +70,32 @@ So the relabel pass is a **field edit on the existing examples**, with no new ph
 
 1. Back up `data/train_v1/labels` to `labels.before-zoom`, as earlier passes did.
 2. For each look, rewrite `zoom_or_lens` as `"<amount>x: <reason>"`. Move the lens or distance reason out of `why_each_choice`, leaving 2 reasons. Double the distance in `distance_and_framing` when the look zooms to 2x. Fix the 15 out-of-range looks. Revisit the 7 close-ups at 1x. Add "room to step back N m" to `needs_on_site_check` where needed.
-3. This can be a Claude drafting pass (`draft_api` with a v4 field instruction; not built yet, about an hour of work) or a manual pass in the review site. Either way, the labels stay `draft`.
-4. Check: `train-data export --shot-format v4 --include-unapproved` should skip 0 labels for zoom. Today it would keep 29 of 44, and even those still carry 3 reasons.
+3. The tool is `photo-ai train-data zoom-relabel` (`training/zoom_relabel.py`):
+   ```
+   photo-ai train-data zoom-relabel --step backup                      # labels -> labels.before-zoom, never overwritten
+   photo-ai train-data zoom-relabel --step worklist --out work.json    # each draft's looks + zoom_fit, for the drafters
+   photo-ai train-data zoom-relabel --step apply --file edits.json --source "ai-draft:<who>"
+   photo-ai train-data zoom-relabel --step report                      # zoom_fit totals, v4 readiness, failing looks
+   ```
+   An edit may change only `zoom_or_lens`, `why_each_choice`, `distance_and_framing` and `needs_on_site_check`. The tool applies an example's edit whole or not at all: each look needs `"<amount>x: <3-9 words>"` within 1–2x, exactly 2 reasons, 1–2 on-site checks, and a distance scaled to the zoom. It skips approved and rejected labels, keeps status `draft`, and records a `zoom-relabelled` history entry. The edits were drafted by Claude Code subagents that looked at each target photo, as in the earlier passes.
+4. Check: `train-data export --shot-format v4 --include-unapproved` should skip 0 labels for zoom. Before the pass it kept 29 of 44, and even those still carried 3 reasons.
+
+**Done 2026-11-15.** All 44 drafts were relabelled and still unreviewed; the 3 rejected labels were left alone. The backup is `data/train_v1/labels.before-zoom`.
+
+| measure | before | after |
+|---|---|---|
+| exportable as v4 (0 skipped for zoom) | 29 / 44 | 44 / 44 |
+| looks with an amount within 1–2x | 117 / 132 | 132 / 132 |
+| zoom reason matches the amount | 91 / 132 | 132 / 132 |
+| amounts (1x / 1.5x / 2x) | 85 / 0 / 39, plus 7 at 0.5x and 1 at 3x | 77 / 1 / 54 |
+| scenes mixing 1x and 2x | – | 39 / 44 |
+| the same zoom line on all 3 looks | – | 0 / 44 |
+| zoomed but kept the 1x distance | 2 | 0 |
+| lean mismatches | 7 | 3 (each says why: arm's length, a tight hall, sky kept in view) |
+| looks with a setup contradiction | 14 | 14 (camera fields untouched) |
+| compositions tokens per label, median | 1028 | 1005 |
+
+The five all-1x scenes are a narrow sidewalk, a forest path, a snowy lane pinned at 4–5 m, a parking deck, and a round library made of scenery looks. Many 2x looks add "Room to step back N m", because most target photos don't show the space behind the camera. Reviewers should check those first.
 
 **When a new batch is worth it.** One field edit can't teach *contrast*: when to pick 2x over 1x *in the same place*. Of the 40 zoomed looks, 26 are half body or close-up at 2x, so the data mostly says "portraits zoom". The earlier v3 runs also copied `setup_choice` across looks (19/42 on 2B). If the eval below shows the model always writing one amount, or 2x only for close-ups, add **10–15 contrast examples**. These are targets with visible room behind the camera and a background shape worth enlarging, plus a few tight interiors, each labelled with at least one 1x look and one 2x look (`train-data assemble --reserve --batch 3`). Do this after #2, so the review queue doesn't grow before the first human pass.
 

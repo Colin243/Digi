@@ -156,7 +156,8 @@ def main(argv: list[str] | None = None) -> int:
 
     td = sub.add_parser("train-data", help="Phase 4 training data: pool, fetch, tags, examples, labels, export")
     td.add_argument("action", choices=["pool", "fetch", "status", "attribution", "assemble", "qa", "export",
-                                       "import-tags", "import-labels", "draft", "import-review", "review-site", "audit"])
+                                       "import-tags", "import-labels", "draft", "import-review", "review-site", "audit",
+                                       "zoom-relabel"])
     td.add_argument("--reviewer", help="import-review: the human reviewer's name (default: the name in the file)")
     td.add_argument("--site", type=Path, help="import-review: the review page folder (or HTML file) the reviewer was "
                                                "sent; ties the review to the answer versions it showed")
@@ -164,7 +165,10 @@ def main(argv: list[str] | None = None) -> int:
     td.add_argument("--model", default="claude-opus-5-5", help="draft: reference model (Anthropic API)")
     td.add_argument("--dataset", default="train_v1")
     td.add_argument("--ids", nargs="*", help="limit fetch to these pool ids")
-    td.add_argument("--file", type=Path, help="JSON file for import-tags / import-labels")
+    td.add_argument("--file", type=Path, help="JSON file for import-tags / import-labels / zoom-relabel --step apply")
+    td.add_argument("--step", choices=["backup", "worklist", "apply", "report"], default="report",
+                    help="zoom-relabel: back up labels, write the worklist, apply edits, or report (shot-v4)")
+    td.add_argument("--out", type=Path, help="zoom-relabel --step worklist: where to write the worklist JSON")
     td.add_argument("--source", default="ai-draft", help="provenance label for imported drafts")
     td.add_argument("--n-examples", type=int, default=24)
     td.add_argument("--reserve", action="store_true",
