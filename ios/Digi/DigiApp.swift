@@ -673,6 +673,36 @@ enum CameraStyle {
     static let silver = Color(red: 0.90, green: 0.91, blue: 0.88)
 }
 
+/// What the app just changed for a pinned shot, and what it replaced.
+struct PresetNote: Identifiable, Equatable {
+    struct Undo: Equatable { var zoom: CGFloat; var bias: Float; var flash: PhotoFlash; var shotID: String = "" }
+    let id = UUID()
+    var reasons: [CameraPreset.Reason]
+    var undo: Undo
+}
+
+/// "Set for you" line over the viewfinder with a one-tap Undo.
+struct PresetChip: View {
+    let note: PresetNote
+    let style: GuidanceStyle
+    var undo: () -> Void
+
+    var body: some View {
+        let text = note.reasons.map { GuidanceWording.text($0, style: style) }.joined(separator: " · ")
+        HStack(spacing: 8) {
+            Image(systemName: "slider.horizontal.3").font(.footnote)
+            Text(text).font(.footnote).lineLimit(2)
+            Button("Undo", action: undo).font(.footnote.weight(.semibold)).foregroundStyle(CameraStyle.accent)
+                .frame(minHeight: 32).accessibilityIdentifier("preset-undo")
+        }
+        .foregroundStyle(.white).padding(.horizontal, 12).padding(.vertical, 6)
+        .background(.black.opacity(0.6), in: Capsule())
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("preset-chip")
+        .padding(.horizontal, 12)
+    }
+}
+
 struct CameraView: View {
     @StateObject private var camera = CameraController()
     @State private var pinchStartZoom: CGFloat?
@@ -687,6 +717,9 @@ struct CameraView: View {
     @State private var options = false
     @State private var guidanceSheet = false
     @State private var guidanceFirstRun = false
+    @AppStorage("digi.autoCameraSettings") private var autoSettings = true
+    @State private var presetNote: PresetNote?
+    @Environment(\.deviceScale) private var deviceScale
     @State private var review = false
     @State private var showStatus = true
     @State private var previewOrientation: UIInterfaceOrientation = .portrait
@@ -694,6 +727,43 @@ struct CameraView: View {
     @AppStorage("digi.timerSeconds") private var timerSeconds = 0
     @State private var countdown = ShutterCountdown()
     @State private var countdownTask: Task<Void, Never>?
+
+    /// Sets zoom, brightness and flash from the shot's text, keeps what it replaced so Undo can restore it.
+    private func applyPreset(for shot: Shot) {
+        guard autoSettings, pinnedShot.shot?.id == shot.id else { return }
+        let p = CameraPreset.make(for: shot, baseFocalLengthMM: Double(CameraController.baseFocalLength))
+        guard !p.isEmpty else { return }
+        var undo = PresetNote.Undo(zoom: camera.zoom, bias: camera.exposureBias, flash: camera.flash)
+        var applied: [CameraPreset.Reason] = []
+        for r in p.reasons {
+            switch r {
+            case .zoom(let z) where camera.zoomSupported:
+                camera.setZoom(CGFloat(z)); applied.append(r)
+            case .backlit, .dim, .harsh, .warm:
+                if camera.exposureSupported, !camera.exposureLocked, let b = p.exposureBias {
+                    camera.setBrightness(Float(b)); applied.append(r)
+                }
+            case .flashOn, .flashOff:
+                let want: PhotoFlash = r == .flashOn ? .on : .off
+                if camera.supportedFlash.contains(want) { camera.flash = want; applied.append(r) }
+            default: break
+            }
+        }
+        guard !applied.isEmpty else { return }
+        undo.shotID = shot.id
+        let note = PresetNote(reasons: applied, undo: undo)
+        withAnimation { presetNote = note }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 9) {
+            if presetNote?.id == note.id { withAnimation { presetNote = nil } }
+        }
+    }
+
+    private func undoPreset(_ note: PresetNote) {
+        camera.setZoom(note.undo.zoom)
+        camera.setBrightness(note.undo.bias)
+        if camera.supportedFlash.contains(note.undo.flash) { camera.flash = note.undo.flash }
+        withAnimation { presetNote = nil }
+    }
 
     private var canShoot: Bool { camera.ready && !camera.busy && !camera.pending }
 
@@ -706,18 +776,14 @@ struct CameraView: View {
                 CameraStyle.body.ignoresSafeArea()
                 cameraLayout {
                     (portrait ? AnyLayout(HStackLayout(spacing: 12)) : AnyLayout(VStackLayout(alignment: .leading, spacing: 6))) {
-                        Text("Digi").font(.system(size: 15, weight: .semibold, design: .rounded))
-                            .tracking(1)
                         Button {
                             options = false
-                            cameraPicker = true
+                            withAnimation(.easeOut(duration: 0.22)) { cameraPicker = true }
                         } label: {
-                            VStack(spacing: 2) {
-                                Text("G12").font(.system(size: 25, weight: .light, design: .rounded))
-                                Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold))
-                            }.frame(minWidth: 44, minHeight: 44)
+                            Image(systemName: "line.3.horizontal").font(.system(size: 20))
+                                .frame(minWidth: 44, minHeight: 44)
                         }.buttonStyle(.plain)
-                            .accessibilityLabel("Choose camera, G12")
+                            .accessibilityLabel("Menu")
                             .accessibilityIdentifier("camera-picker")
                         Button {
                             options = false
@@ -728,30 +794,19 @@ struct CameraView: View {
                         }.buttonStyle(.plain)
                             .accessibilityLabel("Photography director")
                             .accessibilityIdentifier("director-open")
-                        if pinnedShot.shot != nil {
-                            // Tap to switch look; hold for the full settings.
-                            Image(systemName: "eye").font(.system(size: 17)).frame(minWidth: 44, minHeight: 44)
-                                .contentShape(Rectangle())
-                                .onTapGesture { guidanceSettings.prefs.select(guidanceSettings.prefs.style.next); guidanceSettings.hasChosen = true }
-                                .onLongPressGesture { options = false; guidanceFirstRun = false; guidanceSheet = true }
-                                .accessibilityElement().accessibilityAddTraits(.isButton)
-                                .accessibilityLabel("Guidance look: \(guidanceSettings.prefs.style.title)")
-                                .accessibilityHint("Double tap to switch. Touch and hold for settings.")
-                                .accessibilityIdentifier("guidance-quick-switch")
-                        }
                         if !portrait { Rectangle().fill(CameraStyle.accent).frame(width: 22, height: 2).padding(.top, 5) }
                         Spacer()
                         if camera.captureStudyEnabled {
                             Text("STUDY").font(.system(size: 10, weight: .semibold, design: .monospaced))
-                                .foregroundStyle(CameraStyle.accent)
+                                .foregroundStyle(CameraStyle.accent).fixedSize()
                         }
-                        Text(camera.exposureLocked ? "LOCK" : "AUTO").font(.system(size: 11, weight: .semibold, design: .monospaced)).foregroundStyle(CameraStyle.accent)
+                        Text(camera.exposureLocked ? "LOCK" : "AUTO").font(.system(size: 11, weight: .semibold, design: .monospaced)).foregroundStyle(CameraStyle.accent).fixedSize()
                         if timerSeconds > 0 {
                             Label("\(timerSeconds)s", systemImage: "timer").font(.system(size: 11))
                                 .foregroundStyle(CameraStyle.accent)
                         }
                         Label(camera.flash.rawValue, systemImage: camera.flash.symbol)
-                            .font(.system(size: 10, weight: .medium))
+                            .font(.system(size: 10, weight: .medium)).fixedSize()
                             .foregroundStyle(camera.flash == .off ? CameraStyle.silver : CameraStyle.accent)
                             .accessibilityLabel("Flash \(camera.flash.rawValue)")
                         Text(portrait ? "3:4 JPEG" : "4:3\nJPEG").font(.system(size: 10, design: .monospaced)).lineSpacing(5).foregroundStyle(.white.opacity(0.6))
@@ -800,13 +855,30 @@ struct CameraView: View {
                                            okColor: GuidanceTheme.make(guidanceSettings.prefs.style).ok)
                             LevelIndicator(live: LiveGuidance.shared, style: guidanceSettings.display.levelIndicator)
                         }
-                        if camera.zoomSupported {
-                            VStack { Spacer(); ZoomReadout(zoom: camera.zoom, detail: guidanceSettings.display.zoomDetail).padding(.bottom, 12) }.allowsHitTesting(false)
+                        if camera.zoomSupported || pinnedShot.shot != nil {
+                            // One bottom column, so the hint, the chosen-person chip and the zoom never overlap.
+                            VStack(spacing: 8 * deviceScale) {
+                                Spacer().allowsHitTesting(false)
+                                if pinnedShot.shot != nil {
+                                    FloatingCue(live: LiveGuidance.shared)
+                                    SubjectChip(live: LiveGuidance.shared)
+                                }
+                                if camera.zoomSupported {
+                                    ZoomReadout(zoom: camera.zoom, detail: guidanceSettings.display.zoomDetail).allowsHitTesting(false)
+                                }
+                            }.padding(.bottom, 12)
                         }
-                        if pinnedShot.shot != nil {
-                            VStack { Spacer(); FloatingCue(live: LiveGuidance.shared).padding(.bottom, 52) }
+                        if let note = presetNote, !pinnedShot.expanded {
+                            VStack {
+                                PresetChip(note: note, style: guidanceSettings.prefs.style) { undoPreset(note) }
+                                    .padding(.top, guidanceSettings.prefs.style == .full ? 128 : 64)
+                                Spacer()
+                            }.transition(.opacity)
                         }
-                        VStack { PinnedShotCard(store: pinnedShot); Spacer() }
+                        VStack {
+                            PinnedShotCard(store: pinnedShot) { guidanceFirstRun = false; guidanceSheet = true }
+                            Spacer()
+                        }
                         if showStatus && !camera.status.isEmpty {
                             VStack {
                                 Spacer()
@@ -879,6 +951,18 @@ struct CameraView: View {
                     }.frame(width: portrait ? nil : 84, height: portrait ? 84 : nil).padding(.vertical, 10)
                 }.padding(.horizontal, 18).padding(.vertical, 12)
 
+                if cameraPicker {
+                    Color.black.opacity(0.45).ignoresSafeArea()
+                        .onTapGesture { withAnimation(.easeOut(duration: 0.22)) { cameraPicker = false } }
+                        .accessibilityLabel("Close menu").accessibilityAddTraits(.isButton)
+                    HStack(spacing: 0) {
+                        SidePanel(width: min(310 * deviceScale, geometry.size.width * 0.82),
+                                  close: { withAnimation(.easeOut(duration: 0.22)) { cameraPicker = false } },
+                                  openGuidance: { cameraPicker = false; guidanceFirstRun = false; guidanceSheet = true },
+                                  openDirector: { cameraPicker = false; directorOpen = true })
+                        Spacer(minLength: 0)
+                    }.transition(.move(edge: .leading))
+                }
                 if options {
                     Color.black.opacity(0.25).ignoresSafeArea().onTapGesture { options = false }.accessibilityLabel("Dismiss options")
                     HStack {
@@ -996,11 +1080,6 @@ struct CameraView: View {
             GuidanceSettingsView(firstRun: guidanceFirstRun) { guidanceSheet = false }
                 .presentationDetents(guidanceFirstRun ? [.large] : [.large])
         }
-        .sheet(isPresented: $cameraPicker) {
-            CameraPickerView()
-                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
-        }
         .preferredColorScheme(.dark)
         .statusBarHidden()
         .onAppear { camera.start(); updateGuidance() }
@@ -1011,6 +1090,8 @@ struct CameraView: View {
         }
         .onChange(of: pinnedShot.shot) { old, new in
             updateGuidance()
+            if let new, new.id != old?.id { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { applyPreset(for: new) } }
+            if new == nil { presetNote = nil }
             // First time a shot is pinned: let the person pick how much the camera says.
             if old == nil, new != nil, !guidanceSettings.hasChosen {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
@@ -1088,48 +1169,76 @@ struct CameraView: View {
     }
 }
 
-private struct CameraPickerView: View {
-    @Environment(\.dismiss) private var dismiss
+/// Side menu: the Digi name, which camera look to use (just G12 for now), and shortcuts.
+private struct SidePanel: View {
+    let width: CGFloat
+    let close: () -> Void
+    let openGuidance: () -> Void
+    let openDirector: () -> Void
+    @Environment(\.deviceScale) private var scale
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 12) {
-                    cameraRow("G12", detail: "Your everyday classic", available: true)
-                    cameraRow("S95", detail: "Coming soon", available: false)
-                    cameraRow("G7 X", detail: "Coming soon", available: false)
-                }.padding(20)
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("Digi").font(.system(size: 28 * scale, weight: .semibold, design: .rounded)).tracking(1)
+                Spacer()
+                Button(action: close) {
+                    Image(systemName: "xmark").font(.system(size: 15 * scale, weight: .semibold))
+                        .frame(width: 36 * scale, height: 36 * scale)
+                        .background(.white.opacity(0.12), in: Circle())
+                }.accessibilityLabel("Close menu").accessibilityIdentifier("menu-close")
+            }.padding(.bottom, 24)
+
+            Text("Your cameras").font(.footnote.weight(.semibold)).foregroundStyle(.white.opacity(0.55)).padding(.bottom, 8)
+            VStack(spacing: 8) {
+                cameraRow("G12", detail: "Your everyday classic", available: true)
+                cameraRow("S95", detail: "Coming soon", available: false)
+                cameraRow("G7 X", detail: "Coming soon", available: false)
             }
-            .background(CameraStyle.body)
-            .navigationTitle("Your cameras")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }.tint(CameraStyle.accent)
-                }
+
+            Text("Shortcuts").font(.footnote.weight(.semibold)).foregroundStyle(.white.opacity(0.55)).padding(.top, 24).padding(.bottom, 8)
+            VStack(spacing: 8) {
+                shortcut("wand.and.stars", "Photography director", id: "menu-director", action: openDirector)
+                shortcut("eye", "Guidance", id: "menu-guidance", action: openGuidance)
             }
-        }.preferredColorScheme(.dark)
+            Spacer()
+        }
+        .foregroundStyle(CameraStyle.silver)
+        .padding(.horizontal, 20 * scale).padding(.top, 60).padding(.bottom, 24)
+        .frame(width: width).frame(maxHeight: .infinity)
+        .background(CameraStyle.body.ignoresSafeArea())
+        .overlay(alignment: .trailing) { Rectangle().fill(.white.opacity(0.1)).frame(width: 1).ignoresSafeArea() }
     }
 
     private func cameraRow(_ name: String, detail: String, available: Bool) -> some View {
-        Button { dismiss() } label: {
-            HStack(spacing: 16) {
-                Image(systemName: "camera").font(.system(size: 24))
+        Button { if available { close() } } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "camera").font(.system(size: 20 * scale))
                     .foregroundStyle(available ? CameraStyle.accent : CameraStyle.silver.opacity(0.5))
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(name).font(.title3.weight(.semibold))
-                    Text(detail).font(.subheadline).foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(name).font(.headline)
+                    Text(detail).font(.footnote).foregroundStyle(.secondary)
                 }
                 Spacer()
-                if available {
-                    Image(systemName: "checkmark.circle.fill").foregroundStyle(CameraStyle.accent)
-                }
-            }.foregroundStyle(CameraStyle.silver)
-                .padding(18).frame(maxWidth: .infinity, alignment: .leading)
-                .background(CameraStyle.panel, in: RoundedRectangle(cornerRadius: 16))
+                if available { Image(systemName: "checkmark.circle.fill").foregroundStyle(CameraStyle.accent) }
+            }
+            .padding(14).frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+            .background(CameraStyle.panel, in: RoundedRectangle(cornerRadius: 14))
         }.buttonStyle(.plain).disabled(!available)
             .accessibilityLabel(available ? "\(name), selected" : "\(name), coming soon")
             .accessibilityIdentifier("camera-\(name)")
+    }
+
+    private func shortcut(_ symbol: String, _ title: String, id: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: symbol).frame(width: 24)
+                Text(title)
+                Spacer()
+                Image(systemName: "chevron.right").font(.footnote).foregroundStyle(.white.opacity(0.4))
+            }.padding(14).frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+                .background(CameraStyle.panel, in: RoundedRectangle(cornerRadius: 14))
+        }.buttonStyle(.plain).accessibilityIdentifier(id)
     }
 }
 

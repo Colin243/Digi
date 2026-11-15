@@ -201,17 +201,51 @@ struct PinnedShotCard: View {
     @ObservedObject private var live = LiveGuidance.shared
     @ObservedObject private var settings = GuidanceSettings.shared
     @Environment(\.guidanceTheme) private var theme
-    private let accent = Color(red: 1.0, green: 0.78, blue: 0.2)
+    /// The card's highlight colour follows the look: gold in Full info, pink in Soft, white in Minimal.
+    private var accent: Color { theme.hint ?? Color(red: 1.0, green: 0.78, blue: 0.2) }
     /// Soft and Minimal keep the card small: just the title, with the live hint floating lower.
     private var compact: Bool { settings.prefs.style != .full }
+    @Environment(\.deviceScale) private var scale
+    private var cardRadius: CGFloat { theme.style == .soft ? 20 : theme.style == .minimal ? 14 : 12 }
+    private var cardStroke: Double { theme.style == .minimal ? 0.3 : theme.style == .soft ? 0.35 : 0.45 }
+    /// Opens the guidance settings (long-press on the eye).
+    var openGuidance: () -> Void = {}
+
+    /// Tap to switch look; hold for the full settings.
+    private var eyeButton: some View {
+        Image(systemName: "eye").font(.system(size: 15 * scale))
+            .frame(width: 36 * scale, height: 36 * scale)
+            .background(.black.opacity(0.5), in: Circle())
+            .contentShape(Circle())
+            .onTapGesture { settings.prefs.select(settings.prefs.style.next); settings.hasChosen = true }
+            .onLongPressGesture { openGuidance() }
+            .accessibilityElement().accessibilityAddTraits(.isButton)
+            .accessibilityLabel("Guidance look: \(settings.prefs.style.title)")
+            .accessibilityHint("Double tap to switch. Touch and hold for settings.")
+            .accessibilityIdentifier("guidance-quick-switch")
+    }
 
     var body: some View {
-        if let shot = store.shot {
+        if let shot = store.shot, compact, !store.expanded {
+            // Soft and Minimal: just a small circle that opens the shot guide.
+            HStack {
+                Button { withAnimation(.easeOut(duration: 0.15)) { store.expanded = true } } label: {
+                    Image(systemName: "scope").font(.system(size: 17 * scale)).foregroundStyle(accent)
+                        .frame(width: 40 * scale, height: 40 * scale)
+                        .background(.black.opacity(0.5), in: Circle())
+                }
+                .accessibilityLabel("Open shot guide: \(shot.title)")
+                .accessibilityIdentifier("pinned-shot-toggle")
+                Spacer()
+                eyeButton
+            }.padding(8).foregroundStyle(.white).accessibilityIdentifier("pinned-shot-card")
+        } else if let shot = store.shot {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 10) {
                     Image(systemName: "scope").foregroundStyle(accent)
                     Text(shot.title).font(.subheadline.weight(.semibold)).lineLimit(1)
                     Spacer()
+                    if !compact { eyeButton }
                     Button { withAnimation(.easeOut(duration: 0.15)) { store.expanded.toggle() } } label: {
                         Image(systemName: store.expanded ? "chevron.up" : "chevron.down").frame(width: 32, height: 32)
                     }.accessibilityLabel(store.expanded ? "Collapse shot guide" : "Expand shot guide")
@@ -254,10 +288,10 @@ struct PinnedShotCard: View {
                 }
             }
             .font(.footnote).foregroundStyle(.white)
-            .padding(8)
-            .background(.black.opacity(store.expanded ? 0.7 : compact ? 0.45 : 0.55), in: RoundedRectangle(cornerRadius: compact ? 16 : 12))
-            .overlay { if !compact { RoundedRectangle(cornerRadius: 12).stroke(accent.opacity(0.45), lineWidth: 1) } }
-            .fixedSize(horizontal: !(store.expanded || !compact), vertical: false)
+            .fontDesign(theme.cueDesign)
+            .padding(compact ? 12 : 8)
+            .background(.black.opacity(store.expanded ? 0.72 : 0.55), in: RoundedRectangle(cornerRadius: cardRadius))
+            .overlay { RoundedRectangle(cornerRadius: cardRadius).stroke(accent.opacity(cardStroke), lineWidth: theme.style == .minimal ? 0.5 : 1) }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(8)
             .accessibilityIdentifier("pinned-shot-card")

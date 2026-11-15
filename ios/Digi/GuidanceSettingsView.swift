@@ -37,18 +37,30 @@ struct GuidanceSettingsView: View {
     var firstRun = false
     var done: () -> Void
     @State private var taps = 0
+    @State private var fineOpen = false
+    @Environment(\.deviceScale) private var scale
+    @AppStorage("digi.autoCameraSettings") private var autoSettings = true
 
     private var prefs: GuidancePrefs { settings.prefs }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(firstRun ? "Pick your look" : "Guidance").font(.title2.weight(.semibold))
-                        .onTapGesture { taps += 1; if taps >= 5 { settings.prefs.developerReadout.toggle(); taps = 0 } }
-                    Text(firstRun ? "How much should the camera tell you while you shoot? You can change this any time."
-                                  : "How the camera helps you line up a shot.")
-                        .font(.subheadline).foregroundStyle(.white.opacity(0.7))
+                HStack(alignment: .top, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(firstRun ? "Pick your look" : "Guidance").font(.title2.weight(.semibold))
+                            .onTapGesture { taps += 1; if taps >= 5 { settings.prefs.developerReadout.toggle(); taps = 0 } }
+                        Text(firstRun ? "How much should the camera tell you while you shoot? You can change this any time."
+                                      : "How the camera helps you line up a shot. Changes save as you go.")
+                            .font(.subheadline).foregroundStyle(.white.opacity(0.7))
+                    }
+                    Spacer(minLength: 0)
+                    Button { settings.hasChosen = true; done() } label: {
+                        Image(systemName: "xmark").font(.system(size: 15 * scale, weight: .semibold))
+                            .frame(width: 36 * scale, height: 36 * scale)
+                            .background(.white.opacity(0.14), in: Circle())
+                    }
+                    .accessibilityLabel("Close").accessibilityIdentifier("guidance-close")
                 }
 
                 VStack(spacing: 10) {
@@ -56,24 +68,29 @@ struct GuidanceSettingsView: View {
                         StyleCard(style: style, selected: prefs.style == style) {
                             settings.prefs.select(style)
                             settings.hasChosen = true
+                            // First run: picking a look is the whole job, so close as soon as it is picked.
+                            if firstRun { DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { done() } }
                         }
                     }
                 }
 
                 if !firstRun {
+                    Toggle(isOn: $autoSettings) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Set the camera for me").font(.headline)
+                            Text("Adjusts zoom, brightness and flash to suit the shot. You can undo each time.")
+                                .font(.footnote).foregroundStyle(.white.opacity(0.7))
+                        }
+                    }.accessibilityIdentifier("auto-camera-settings")
                     levelSection
                     fineTune
                     if settings.prefs.developerReadout || DEBUGBuild.isDebug { developer }
                 }
 
-                Button(firstRun ? "Continue" : "Done") { settings.hasChosen = true; done() }
-                    .font(.headline).frame(maxWidth: .infinity, minHeight: 48)
-                    .background(CameraStyle.accent, in: RoundedRectangle(cornerRadius: 14)).foregroundStyle(.black)
-                    .accessibilityIdentifier("guidance-done")
-            }.padding(20)
+            }.padding(.horizontal, 20 * scale).padding(.vertical, 20)
         }
         .background(CameraStyle.body.ignoresSafeArea())
-        .foregroundStyle(.white)
+        .foregroundStyle(.white).tint(CameraStyle.accent)
         .preferredColorScheme(.dark)
     }
 
@@ -89,8 +106,22 @@ struct GuidanceSettingsView: View {
     }
 
     private var fineTune: some View {
-        DisclosureGroup {
-            VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 0) {
+            Button { withAnimation(.easeOut(duration: 0.15)) { fineOpen.toggle() } } label: {
+                HStack {
+                    Text("Fine-tune").font(.headline)
+                    if prefs.isCustom { Text("Custom").font(.caption).padding(.horizontal, 8).padding(.vertical, 2)
+                        .background(.white.opacity(0.15), in: Capsule()) }
+                    Spacer()
+                    Image(systemName: fineOpen ? "chevron.up" : "chevron.down").font(.footnote.weight(.semibold))
+                }.frame(minHeight: 44).contentShape(Rectangle())
+            }.buttonStyle(.plain).accessibilityIdentifier("guidance-fine-tune")
+            if fineOpen { fineToggles }
+        }
+    }
+
+    private var fineToggles: some View {
+        VStack(alignment: .leading, spacing: 12) {
                 let d = prefs.display
                 Toggle("Level line", isOn: flag(d.levelIndicator != .off) { o, v in
                     o.levelIndicator = v ? (prefs.style == .full ? .full : .subtle) : .off })
@@ -102,14 +133,7 @@ struct GuidanceSettingsView: View {
                     Button("Reset to \(prefs.style.title)") { settings.prefs.resetOverrides() }
                         .font(.subheadline).foregroundStyle(CameraStyle.accent)
                 }
-            }.padding(.top, 10)
-        } label: {
-            HStack {
-                Text("Fine-tune").font(.headline)
-                if prefs.isCustom { Text("Custom").font(.caption).padding(.horizontal, 8).padding(.vertical, 2)
-                    .background(.white.opacity(0.15), in: Capsule()) }
-            }
-        }.tint(.white)
+        }.padding(.top, 6).tint(CameraStyle.accent)
     }
 
     private var developer: some View {
@@ -141,11 +165,12 @@ private struct StyleCard: View {
     let style: GuidanceStyle
     let selected: Bool
     let action: () -> Void
+    @Environment(\.deviceScale) private var scale
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 14) {
-                StyleSample(style: style).frame(width: 64, height: 84)
+                StyleSample(style: style).frame(width: 64 * scale, height: 84 * scale)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(style.title).font(.headline)
                     Text(style.blurb).font(.footnote).foregroundStyle(.white.opacity(0.7)).multilineTextAlignment(.leading)

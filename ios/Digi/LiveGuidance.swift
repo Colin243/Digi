@@ -346,31 +346,9 @@ struct SubjectOverlay: View {
                     }
                 }
                 if readout ?? debug { debugReadout(d).position(x: w / 2, y: h - (d.locked ? 138 : 92)).allowsHitTesting(false) }
-                if d.locked { subjectChip(lost: d.lost).position(x: w / 2, y: h - 76) }
             }
             .coordinateSpace(name: "subjectOverlay")
         }
-    }
-
-    /// Shown while a chosen person is being directed: their state, and the way back to automatic.
-    private func subjectChip(lost: Bool) -> some View {
-        HStack(spacing: 10) {
-            Label(lost ? "Lost: tap them to choose again" : "Directing the person you chose",
-                  systemImage: lost ? "person.crop.rectangle.badge.questionmark" : "person.crop.rectangle")
-                .foregroundStyle(lost ? .orange : .green)
-                .accessibilityIdentifier(lost ? "subject-lost" : "subject-locked")
-            Button { live.clearSubject() } label: {
-                Label("Auto", systemImage: "xmark.circle.fill")
-                    .padding(.horizontal, 8).padding(.vertical, 4)
-                    .background(.white.opacity(0.18), in: Capsule())
-            }
-            .foregroundStyle(.white)
-            .accessibilityLabel("Stop following the chosen person and pick automatically")
-            .accessibilityIdentifier("subject-clear")
-        }
-        .font(.caption.weight(.semibold))
-        .padding(.leading, 12).padding(.trailing, 6).padding(.vertical, 6)
-        .background(.black.opacity(0.75), in: Capsule())
     }
 
     private func debugReadout(_ d: LiveGuidance.Detections) -> some View {
@@ -483,5 +461,35 @@ struct FloatingCue: View {
             Text(text).font(font).tracking(0.3).foregroundStyle(color)
                 .shadow(color: .black.opacity(0.6), radius: 2)
         }
+    }
+}
+
+/// Shown while a chosen person is being directed: their state, and the way back to automatic.
+/// Lives in the camera's bottom column so it never overlaps the hint or the zoom readout.
+struct SubjectChip: View {
+    @ObservedObject var live: LiveGuidance
+
+    var body: some View {
+        if live.detections.locked { chip(lost: live.detections.lost) }
+    }
+
+    private func chip(lost: Bool) -> some View {
+        HStack(spacing: 10) {
+            Label(lost ? "Lost: tap them to choose again" : "Directing the person you chose",
+                  systemImage: lost ? "person.crop.rectangle.badge.questionmark" : "person.crop.rectangle")
+                .foregroundStyle(lost ? .orange : .green)
+                .accessibilityIdentifier(lost ? "subject-lost" : "subject-locked")
+            Button { live.clearSubject() } label: {
+                Label("Auto", systemImage: "xmark.circle.fill")
+                    .padding(.horizontal, 8).padding(.vertical, 4)
+                    .background(.white.opacity(0.18), in: Capsule())
+            }
+            .foregroundStyle(.white)
+            .accessibilityLabel("Stop following the chosen person and pick automatically")
+            .accessibilityIdentifier("subject-clear")
+        }
+        .font(.caption.weight(.semibold))
+        .padding(.leading, 12).padding(.trailing, 6).padding(.vertical, 6)
+        .background(.black.opacity(0.75), in: Capsule())
     }
 }

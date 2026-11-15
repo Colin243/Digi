@@ -142,6 +142,7 @@ struct DirectorView: View {
 }
 
 private struct ShotCard: View {
+    @Environment(\.guidanceTheme) private var theme
     let index: Int
     let shot: Shot
     let kept: Bool
@@ -164,8 +165,11 @@ private struct ShotCard: View {
             row("Pose", shot.bodyPose); row("Head", shot.headDirection); row("Gaze", shot.gaze); row("Expression", shot.expressionCue)
             if !shot.needsOnSiteCheck.isEmpty { row("Check on site", shot.needsOnSiteCheck.joined(separator: "; ")) }
             Button("Use this shot on the camera", action: onUse)
-                .buttonStyle(.borderedProminent).padding(.top, 4).accessibilityIdentifier("director-use-shot-\(index)")
+                .buttonStyle(.borderedProminent).foregroundStyle(theme.style == .full ? Color.white : Color.black)
+                .padding(.top, 4).accessibilityIdentifier("director-use-shot-\(index)")
         }.padding(.vertical, 4)
+            .fontDesign(theme.cueDesign)
+            .tint(theme.hint)
             .opacity(rewriting ? 0.35 : 1)
             .overlay { if rewriting { ProgressView("Rewriting…") } }
             .animation(.easeOut(duration: 0.2), value: rewriting)

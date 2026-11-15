@@ -97,24 +97,24 @@ final class CameraUITests: XCTestCase {
         let app = XCUIApplication()
         XCUIDevice.shared.orientation = .portrait
         app.launch()
-        let picker = app.buttons["camera-picker"]
-        XCTAssertTrue(picker.waitForExistence(timeout: 10))
-        picker.tap()
-        XCTAssertTrue(app.navigationBars["Your cameras"].waitForExistence(timeout: 3))
+        let menu = app.buttons["camera-picker"]
+        XCTAssertTrue(menu.waitForExistence(timeout: 10))
+        menu.tap()
+        XCTAssertTrue(app.staticTexts["Digi"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.buttons["camera-G12"].isEnabled)
         XCTAssertFalse(app.buttons["camera-S95"].isEnabled)
         XCTAssertFalse(app.buttons["camera-G7 X"].isEnabled)
         let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-        shot.name = "Camera picker portrait"
+        shot.name = "Side menu portrait"
         shot.lifetime = .keepAlways
         add(shot)
         app.buttons["camera-G12"].tap()
-        XCTAssertTrue(picker.waitForExistence(timeout: 3))
+        XCTAssertTrue(menu.waitForExistence(timeout: 3))
         XCUIDevice.shared.orientation = .landscapeRight
-        picker.tap()
-        XCTAssertTrue(app.navigationBars["Your cameras"].waitForExistence(timeout: 3))
-        app.buttons["Done"].tap()
-        XCTAssertTrue(picker.waitForExistence(timeout: 3))
+        menu.tap()
+        XCTAssertTrue(app.staticTexts["Digi"].waitForExistence(timeout: 3))
+        app.buttons["menu-close"].tap()
+        XCTAssertTrue(menu.waitForExistence(timeout: 3))
     }
 
     func testRotationPreservesControlsAndPanels() throws {
