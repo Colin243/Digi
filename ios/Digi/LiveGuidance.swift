@@ -20,6 +20,8 @@ final class LiveGuidance: ObservableObject, @unchecked Sendable {
         var subjectFace: NormalizedBox?
         var subjectPose: FacePose?
         var locked = false
+        /// The chosen person has been out of view for a while; nobody else is directed instead.
+        var lost = false
     }
 
     @Published private(set) var guidance: Guidance = .idle
@@ -64,7 +66,7 @@ final class LiveGuidance: ObservableObject, @unchecked Sendable {
         let targets = ShotTargets(shot: shot)
         var fresh = GuidanceTracker(targets: targets)
         fresh.subjectCuesEnabled = subjectCuesEnabled
-        lock.lock(); tracker = fresh; lock.unlock()
+        lock.lock(); fresh.subjectChosen = selector.isLocked; tracker = fresh; lock.unlock()
         targetPitch = targets.pitchDegrees
         self.targets = targets
         if motion.isDeviceMotionAvailable, !motion.isDeviceMotionActive {
@@ -95,15 +97,16 @@ final class LiveGuidance: ObservableObject, @unchecked Sendable {
     func selectSubject(atX x: Double, y: Double) -> Bool {
         lock.lock()
         let ok = selector.lock(atX: x, y: y, people: lastPeople, faces: lastFaces, now: CACurrentMediaTime())
+        if ok { tracker?.subjectChosen = true }
         lock.unlock()
-        if ok { choosingSubject = false; detections.locked = true }
+        if ok { choosingSubject = false; detections.locked = true; detections.lost = false }
         return ok
     }
 
     /// Back to following whoever is largest in the frame. Main thread.
     func clearSubject() {
-        lock.lock(); selector.clear(); lock.unlock()
-        detections.locked = false
+        lock.lock(); selector.clear(); tracker?.subjectChosen = false; lock.unlock()
+        detections.locked = false; detections.lost = false
     }
 
     /// How preview frames must be rotated to be upright (same mapping as the rendered preview).
@@ -131,7 +134,8 @@ final class LiveGuidance: ObservableObject, @unchecked Sendable {
             let (person, face) = self.selector.choose(people: people, faces: faces, now: now)
             let pose = face.flatMap { f in found.first { $0.box == f }?.pose }
             self.tracker?.addSubject(person: person, face: face, facePose: pose, at: now)
-            let seen = Detections(people: people, faces: faces, subject: person ?? face, subjectFace: face, subjectPose: pose, locked: self.selector.isLocked)
+            let seen = Detections(people: people, faces: faces, subject: person ?? face, subjectFace: face, subjectPose: pose,
+                                  locked: self.selector.isLocked, lost: self.selector.isLost)
             let active = self.tracker != nil
             self.visionBusy = false
             self.lock.unlock()
@@ -302,7 +306,7 @@ struct SubjectOverlay: View {
 
     private func debugReadout(_ d: LiveGuidance.Detections) -> some View {
         let t = live.targets
-        var lines = ["people \(d.people.count) · faces \(d.faces.count)" + (d.locked ? " · locked" : "")]
+        var lines = ["people \(d.people.count) · faces \(d.faces.count)" + (d.locked ? (d.lost ? " · locked, lost" : " · locked") : "")]
         if let f = d.subjectFace {
             let want = t?.framing.map { r in String(format: " (want %.2f–%.2f)", r.faceHeightRange.lowerBound, r.faceHeightRange.upperBound) } ?? ""
             lines.append(String(format: "face height %.2f", f.height) + want)

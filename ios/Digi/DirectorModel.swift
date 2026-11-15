@@ -233,7 +233,21 @@ struct PinnedShotCard: View {
             .onChange(of: store.directing) { _, on in if on { store.expanded = true } }
             .accessibilityIdentifier("pinned-shot-mode")
             Spacer()
-            if live.detections.locked {
+            if live.detections.locked && live.detections.lost && !live.choosingSubject {
+                // The chosen person is out of view. Nobody else is directed until they come back,
+                // the user picks someone again, or clears the choice.
+                Label("Lost", systemImage: "person.crop.rectangle.badge.questionmark")
+                    .font(.caption.weight(.semibold)).foregroundStyle(.orange)
+                    .accessibilityLabel("The person you chose is out of view")
+                    .accessibilityIdentifier("subject-lost")
+                Button { live.choosingSubject = true } label: {
+                    Text("Choose again").font(.caption.weight(.semibold))
+                }.tint(accent).accessibilityIdentifier("subject-rechoose")
+                Button { live.clearSubject() } label: {
+                    Image(systemName: "xmark.circle.fill").font(.caption.weight(.semibold))
+                }.tint(.orange).accessibilityLabel("Stop following the chosen subject")
+                    .accessibilityIdentifier("subject-clear")
+            } else if live.detections.locked && !live.choosingSubject {
                 Button { live.clearSubject() } label: {
                     Label("Subject", systemImage: "xmark.circle.fill").font(.caption.weight(.semibold))
                 }.tint(.green).accessibilityLabel("Stop following the chosen subject")

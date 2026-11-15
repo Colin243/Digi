@@ -101,6 +101,8 @@ public struct GuidanceTracker: Sendable {
 
     /// Live head-direction cues for the subject (experimental, off by default).
     public var subjectCuesEnabled = false
+    /// True when the user chose who to direct; the "find the subject" cue then names that person.
+    public var subjectChosen = false
 
     public init(targets: ShotTargets) { self.targets = targets }
 
@@ -163,7 +165,7 @@ public struct GuidanceTracker: Sendable {
         if targets.needsSubject {
             if !recent(lastSubjectAt) {
                 active.subtract([.distance, .horizontal])
-                cues.append(GuidanceCue(kind: .findSubject, text: "Point the camera at your subject", symbol: "person.crop.rectangle"))
+                cues.append(GuidanceCue(kind: .findSubject, text: subjectChosen ? "Find the person you chose" : "Point the camera at your subject", symbol: "person.crop.rectangle"))
             } else {
                 if let framing = targets.framing, let (error, tooSmall) = distanceError(framing, recent: recent),
                    gate(.distance, error: error, enter: Self.distanceEnter, exit: 0.0001) {
@@ -268,12 +270,21 @@ struct Smoother: Sendable {
 
 // MARK: - Subject selection
 
-/// Picks which detected person is "the subject" each frame. With nobody chosen it takes the largest
-/// person. Once the user taps someone it follows that person by overlap and position, ignores
-/// everyone else, and only gives up after `lostTimeout` without a match.
+/// Picks which detected person is "the subject" each frame.
+///
+/// With nobody chosen it follows one person automatically: the largest at first, then the same
+/// person for as long as they stay matched, so it does not flip between two people of similar size.
+/// Once the user taps someone it follows that person by overlap and position and ignores everyone
+/// else. It never switches to another person on its own: after `lostTimeout` without a match it
+/// reports `isLost` and keeps waiting for the chosen person near where they were last seen, until
+/// the user taps someone again or clears the choice.
 public struct SubjectSelector: Sendable {
+    /// The chosen person's last matched box (nil = automatic).
     public private(set) var locked: NormalizedBox?
+    /// True when the chosen person has not been matched for longer than `lostTimeout`.
+    public private(set) var isLost = false
     private var lastSeen: TimeInterval = 0
+    private var auto: NormalizedBox?
     public static let lostTimeout: TimeInterval = 3
 
     public init() {}
@@ -287,32 +298,44 @@ public struct SubjectSelector: Sendable {
         let hit = candidates.filter { $0.contains(x: x, y: y) }.min { $0.area < $1.area }
             ?? candidates.map { ($0, hypot($0.midX - x, $0.midY - y)) }.filter { $0.1 < 0.2 }.min { $0.1 < $1.1 }?.0
         guard let hit else { return false }
-        locked = hit; lastSeen = now
+        locked = hit; lastSeen = now; isLost = false; auto = nil
         return true
     }
 
-    public mutating func clear() { locked = nil }
+    /// Back to automatic: follow the largest person.
+    public mutating func clear() { locked = nil; isLost = false; auto = nil }
 
-    /// The subject's person box and face box for this frame (either may be nil). With a locked
+    /// The subject's person box and face box for this frame (either may be nil). With a chosen
     /// subject that is out of view, both are nil even if other people are visible.
     public mutating func choose(people: [NormalizedBox], faces: [NormalizedBox], now: TimeInterval) -> (person: NormalizedBox?, face: NormalizedBox?) {
         let usingFaces = people.isEmpty
         let candidates = usingFaces ? faces : people
-        if let l = locked {
-            let scored = candidates.compactMap { c -> (NormalizedBox, Double)? in
-                let iou = l.iou(c), dist = hypot(l.midX - c.midX, l.midY - c.midY)
-                guard iou > 0.1 || dist < 0.15 || l.contains(x: c.midX, y: c.midY) else { return nil }
-                return (c, iou - dist)
-            }
-            if let best = scored.max(by: { $0.1 < $1.1 })?.0 {
-                locked = best; lastSeen = now
-                return usingFaces ? (nil, best) : (best, Self.face(in: best, faces))
-            }
-            if now - lastSeen <= Self.lostTimeout { return (nil, nil) }
-            locked = nil  // lost for too long: fall back to the largest person
+        let result = { (b: NormalizedBox) -> (person: NormalizedBox?, face: NormalizedBox?) in
+            usingFaces ? (nil, b) : (b, Self.face(in: b, faces))
         }
-        if let person = people.max(by: { $0.area < $1.area }) { return (person, Self.face(in: person, faces)) }
-        return (nil, faces.max { $0.area < $1.area })
+        if let l = locked {
+            if let best = Self.match(l, in: candidates) {
+                locked = best; lastSeen = now; isLost = false
+                return result(best)
+            }
+            isLost = now - lastSeen > Self.lostTimeout
+            return (nil, nil)
+        }
+        if let a = auto, let best = Self.match(a, in: candidates) {
+            auto = best
+            return result(best)
+        }
+        auto = candidates.max { $0.area < $1.area }
+        return auto.map(result) ?? (nil, nil)
+    }
+
+    /// The candidate that best continues `previous`, if any is close enough to be the same person.
+    static func match(_ previous: NormalizedBox, in candidates: [NormalizedBox]) -> NormalizedBox? {
+        candidates.compactMap { c -> (NormalizedBox, Double)? in
+            let iou = previous.iou(c), dist = hypot(previous.midX - c.midX, previous.midY - c.midY)
+            guard iou > 0.1 || dist < 0.15 || previous.contains(x: c.midX, y: c.midY) else { return nil }
+            return (c, iou - dist)
+        }.max { $0.1 < $1.1 }?.0
     }
 
     static func face(in person: NormalizedBox, _ faces: [NormalizedBox]) -> NormalizedBox? {
