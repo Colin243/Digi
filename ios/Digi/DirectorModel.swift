@@ -3,15 +3,6 @@ import SwiftUI
 import UIKit
 import DirectorKit
 
-/// Stand-in until the on-device engine (mlx-swift-lm) is wrapped as a DirectorEngine. It always
-/// declines, so HybridDirector reports a clear error instead of crashing when the server is unreachable.
-struct OfflineEngineUnavailable: DirectorEngine {
-    let kind: EngineKind = .offline
-    func plan(_ request: DirectorRequest) -> AsyncThrowingStream<DirectorEvent, Error> {
-        AsyncThrowingStream { $0.finish(throwing: DirectorError.offlineUnavailable("The on-device director is not installed yet.")) }
-    }
-}
-
 @MainActor
 final class DirectorModel: ObservableObject {
     enum Phase: Equatable { case idle, running, done, failed(String) }
@@ -31,7 +22,7 @@ final class DirectorModel: ObservableObject {
         let config = DirectorConfig(preference: DirectorDefaults.userPreference(),
                                     onlineFirstShotDeadline: 40, onlineTotalDeadline: 120)
         let online = DirectorDefaults.configuration().map { OnlineEngine(configuration: $0) }
-        return HybridDirector(online: online, offline: OfflineEngineUnavailable(),
+        return HybridDirector(online: online, offline: OfflineEngine(generator: OnDeviceGenerator.shared),
                               conditions: SystemConditionsProvider(), config: { config })
     }
 
@@ -140,7 +131,7 @@ final class PinnedShotStore: ObservableObject {
     }
 
     func pin(_ shot: Shot) {
-        self.shot = shot; stepIndex = 0; expanded = true; directing = false; cueIndex = 0
+        self.shot = shot; stepIndex = 0; expanded = false; directing = false; cueIndex = 0
         if let data = try? JSONEncoder().encode(shot) { UserDefaults.standard.set(data, forKey: Self.storageKey) }
     }
 
@@ -183,7 +174,7 @@ struct PinnedShotCard: View {
                     }.accessibilityLabel("Remove pinned shot").accessibilityIdentifier("pinned-shot-clear")
                 }
                 LiveCueRow(live: LiveGuidance.shared, accent: accent)
-                controls
+                if store.expanded { controls }
                 if store.expanded && store.directing {
                     subjectCards(shot)
                 } else if store.expanded {
@@ -195,7 +186,7 @@ struct PinnedShotCard: View {
                             line("Pose", shot.bodyPose); line("Head", shot.headDirection); line("Gaze", shot.gaze)
                             line("Expression", shot.expressionCue)
                         }
-                    }.frame(maxHeight: 190)
+                    }.frame(maxHeight: 120)
                     if !shot.steps.isEmpty {
                         let i = min(store.stepIndex, shot.steps.count - 1)
                         HStack(alignment: .top, spacing: 8) {
@@ -214,15 +205,15 @@ struct PinnedShotCard: View {
                 }
             }
             .font(.footnote).foregroundStyle(.white)
-            .padding(10)
-            .background(.black.opacity(0.72), in: RoundedRectangle(cornerRadius: 12))
+            .padding(8)
+            .background(.black.opacity(store.expanded ? 0.7 : 0.55), in: RoundedRectangle(cornerRadius: 12))
             .overlay(RoundedRectangle(cornerRadius: 12).stroke(accent.opacity(0.45), lineWidth: 1))
             .padding(8)
             .accessibilityIdentifier("pinned-shot-card")
         }
     }
 
-    /// Camera / Subject switch, plus choosing who to direct.
+    /// Camera / Subject switch. Choosing who to direct is a tap on the person in the viewfinder.
     private var controls: some View {
         HStack(spacing: 8) {
             Picker("Guide", selection: $store.directing) {
