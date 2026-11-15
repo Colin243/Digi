@@ -103,6 +103,10 @@ public struct GuidanceTracker: Sendable {
     public var subjectCuesEnabled = false
     /// True when the user chose who to direct; the "find the subject" cue then names that person.
     public var subjectChosen = false
+    /// The camera's current zoom and the range it can use (nil = no zoom). Distance cues then offer
+    /// zooming as well as walking; which one suits the shot is the photographer's call.
+    public var zoom = 1.0
+    public var zoomRange: ClosedRange<Double>?
 
     public init(targets: ShotTargets) { self.targets = targets }
 
@@ -169,7 +173,10 @@ public struct GuidanceTracker: Sendable {
             } else {
                 if let framing = targets.framing, let (error, tooSmall) = distanceError(framing, recent: recent),
                    gate(.distance, error: error, enter: Self.distanceEnter, exit: 0.0001) {
-                    cues.append(GuidanceCue(kind: .distance, text: tooSmall ? "Step closer" : "Step back",
+                    let canZoom = zoomRange.map { tooSmall ? zoom < $0.upperBound - 0.05 : zoom > $0.lowerBound + 0.05 } ?? false
+                    let text = tooSmall ? (canZoom ? "Step closer or zoom in" : "Step closer")
+                                        : (canZoom ? "Step back or zoom out" : "Step back")
+                    cues.append(GuidanceCue(kind: .distance, text: text,
                                             symbol: tooSmall ? "figure.walk" : "arrow.uturn.backward"))
                 } else { active.remove(.distance) }
 
