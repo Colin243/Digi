@@ -43,6 +43,12 @@ History
      checks, 2-3 short evidence items, one-line position, pose and light. The reasoning added ~190 generated tokens
      per analysis and v9 projected 67 s on the iPhone (budget 60), so the instructions make room for it.
      v3 runs now record PROMPT_VERSION_V10.
+  v11 (2026-11-14.11) shot-v4 = shot-v3 + zoom. Digi zooms continuously from 1x to 2x on the main camera, so
+     zoom_or_lens must give one amount in that range ("1x", "1.5x", "2x") and a short reason why zooming in beats
+     stepping closer, or the reverse (framing.zoom_rules). why_each_choice drops to exactly 2 reasons (height,
+     tilt) because the distance/lens reason now lives in zoom_or_lens, which keeps the output about as long as v10
+     (v10 projected 59.9 s full on the iPhone against a 60 s budget). Only shot_format "v4" prompts are new; v10
+     (shot-v3) and every older prompt stay byte-identical. shot-v4 runs record PROMPT_VERSION_V11.
 """
 
 from __future__ import annotations
@@ -59,9 +65,12 @@ PROMPT_VERSION_V7 = "2026-11-12.7"  # shot-v3 as first released (runs reason-*-v
 PROMPT_VERSION_V8 = "2026-11-12.8"  # shot-v3 with short reasoning (run reason-short-r16-v3-20261112)
 PROMPT_VERSION_V9 = "2026-11-13.9"  # shot-v3, setup_choice names the framing (run reason-choices-r16-v3-20261113)
 PROMPT_VERSION_V10 = "2026-11-13.10"  # shot-v3 with word-limited instruction fields; what version_for returns for v3
+PROMPT_VERSION_V11 = "2026-11-14.11"  # shot-v4: shot-v3 + a 1-2x zoom amount with a reason
 
 
 def version_for(mode: str = "inspiration", shot_format: str = "v1") -> str:
+    if shot_format == "v4":
+        return PROMPT_VERSION_V11
     if shot_format == "v3":
         return PROMPT_VERSION_V10
     return PROMPT_VERSION if (mode == "inspiration" and shot_format == "v1") else PROMPT_VERSION_V5
@@ -128,6 +137,15 @@ SHORT_FIELDS_V3 = {
     "steps[]": "exactly 2 short actionable steps, under 8 words each",
 }
 COMPOSITION_FIELDS_V3 = {**REASONING_FIELDS, **COMPOSITION_FIELDS, **SHORT_FIELDS_V3}  # shot-v1 order + reasoning
+# shot-v4 (prompt v11): shot-v3 plus a zoom amount from 1x to 2x with a reason; the lens reason moves out of
+# why_each_choice into zoom_or_lens so the output stays about as long as v10.
+ZOOM_FIELDS_V4 = {
+    "why_each_choice[]": "exactly 2 reasons under 12 words each, for camera height and tilt: the effect on the subject",
+    "distance_and_framing": "approximate distance for the chosen zoom and how much of the subject is in frame",
+    "zoom_or_lens": "one zoom amount from 1x to 2x on the main camera, then under 10 words on why: what zooming in "
+                    "and stepping back, or staying at 1x and stepping closer, does for this look",
+}
+COMPOSITION_FIELDS_V4 = {**COMPOSITION_FIELDS_V3, **ZOOM_FIELDS_V4}  # same key order as shot-v3
 SCENE_SHOT_FIELDS = {
     **COMPOSITION_FIELDS_V2,
     "title": "a short name for this look",
@@ -140,7 +158,7 @@ DIRECTOR_TARGET_FIELDS = {
 
 ALL_FIELD_DESCRIPTIONS = {
     d for f in (AESTHETIC_FIELDS, TARGET_FIELDS, COMPOSITION_FIELDS, DIRECTION_FIELDS, SCENE_SHOT_FIELDS,
-                DIRECTOR_TARGET_FIELDS, REASONING_FIELDS) for d in f.values()
+                DIRECTOR_TARGET_FIELDS, REASONING_FIELDS, ZOOM_FIELDS_V4) for d in f.values()
 }
 
 # Starter style briefs (XHS / 小红书 portrait vocabulary). Each brief steers camera, light, pose,
@@ -242,6 +260,19 @@ REASONING_RULES = (
     "Keep the tilt consistent with the setup: half body and seated tilt the phone DOWN, full body tilts it UP. "
     "Every reason must name a visible thing in the TARGET photo or a visible effect on the subject (longer legs, "
     "face in proportion, background kept clean); never write generic praise such as \"looks great\"."
+)
+
+# shot-v4 only. Same reasoning text as v10 with the lens line replaced by the zoom rules, so v10 stays unchanged.
+REASONING_RULES_V4 = (
+    "Think like a photographer before giving instructions. Fill scene_reading, setup_choice, why_each_choice and "
+    "fix_if_wrong first; the camera and framing fields after them must follow from that reasoning.\n"
+    "For a person framed half body, full body or seated, use the matching phone setup (distances are for 1x):\n"
+    f"{framing.playbook(lens=False)}\n"
+    "Keep the tilt consistent with the setup: half body and seated tilt the phone DOWN, full body tilts it UP. "
+    "Every reason must name a visible thing in the TARGET photo or a visible effect on the subject (longer legs, "
+    "face in proportion, background kept clean); never write generic praise such as \"looks great\".\n"
+    f"{framing.zoom_rules()}\n"
+    "In zoom_or_lens write the amount first, then the reason for THIS scene: \"<amount>x: <reason>\"."
 )
 
 _RULES = (
@@ -383,11 +414,13 @@ def aesthetic_from_notes(notes: list[str]) -> str:
 def compositions_from_parts(aesthetic: dict, target: dict, subject: str = DEFAULT_SUBJECT,
                             shot_format: str = "v1") -> str:
     """shot_format "v1" returns exactly the v4 prompt (benchmark and training-template parity); "v3" adds
-    reasoning fields first plus REASONING_RULES."""
+    reasoning fields first plus REASONING_RULES; "v4" is v3 plus the 1-2x zoom rules (prompt v11)."""
     style = {k: v for k, v in aesthetic.items() if k != "per_image"}
-    fields = {"v2": COMPOSITION_FIELDS_V2, "v3": COMPOSITION_FIELDS_V3}.get(shot_format, COMPOSITION_FIELDS)
+    fields = {"v2": COMPOSITION_FIELDS_V2, "v3": COMPOSITION_FIELDS_V3,
+              "v4": COMPOSITION_FIELDS_V4}.get(shot_format, COMPOSITION_FIELDS)
     shape = {"compositions": [_blank(fields)] * 3}
-    direction = {"v2": f"\n{DIRECTION_RULES}", "v3": f"\n{REASONING_RULES}"}.get(shot_format, "")
+    direction = {"v2": f"\n{DIRECTION_RULES}", "v3": f"\n{REASONING_RULES}",
+                 "v4": f"\n{REASONING_RULES_V4}"}.get(shot_format, "")
     return (
         TARGET_LABEL + "\n"
         f"You are a photography director. The TARGET scene photo is described as:\n{_shape(target)}\n\n"

@@ -41,6 +41,7 @@ def model_rows(bench_ids: list[str], runs_dir: Path = RUNS) -> dict[str, dict]:
     for model, recs in by_model.items():
         comps = [c for rec in recs for c in ((rec.get("result") or {}).get("compositions") or [])]
         fit = framing.summarize_fit(comps)
+        zoom = framing.summarize_zoom(comps)
         proj = [phone_projection.project_run(rec["stages"]) for rec in recs]
         proj = [p for p in proj if p]
         comp_tokens = [p["generated_tokens"].get("compositions") for p in proj]
@@ -49,6 +50,7 @@ def model_rows(bench_ids: list[str], runs_dir: Path = RUNS) -> dict[str, dict]:
             "valid": sum(bool(rec["validation"]["ok"]) for rec in recs),
             "max_side": sorted({rec["config"].get("max_side") for rec in recs}),
             **fit,
+            **{k: v for k, v in zoom.items() if k != "looks"},
             "compositions_tokens_median": _med(comp_tokens),
             "generated_tokens_median": _med([sum(p["generated_tokens"].values()) for p in proj]),
             "phone_full_s_median": _med([p["full_s"] for p in proj]),
@@ -65,6 +67,9 @@ def markdown(rows: dict[str, dict]) -> str:
               f"(half {r['by_setup']['half_body']}, full {r['by_setup']['full_body']}, seated {r['by_setup']['seated']})"),
              ("setup cues stated, mean (0-1)", lambda r: str(r["setup_cue_score_mean"])),
              ("setup contradictions (wrong tilt)", lambda r: str(r["setup_conflicts"])),
+             ("looks with a zoom amount in 1-2x", lambda r: f"{r['zoom_in_range']}/{r['looks']}"),
+             ("looks whose zoom reason matches the amount", lambda r: f"{r['zoom_reason_matches']}/{r['looks']}"),
+             ("zoomed 1.5x+ but kept the 1x distance", lambda r: f"{r['zoom_distance_not_scaled']}/{r['zoomed_in']} zoomed"),
              ("compositions tokens, median", lambda r: str(r["compositions_tokens_median"])),
              ("generated tokens per analysis, median", lambda r: str(r["generated_tokens_median"])),
              ("projected iPhone full analysis s, median (budget 60)", lambda r: str(r["phone_full_s_median"])),
