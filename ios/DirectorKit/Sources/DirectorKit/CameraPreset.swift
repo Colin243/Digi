@@ -27,18 +27,25 @@ public struct CameraPreset: Equatable, Sendable {
     /// The rules. Light comes from the lighting tip and scene reading, zoom from the lens and framing text.
     public static func make(for shot: Shot, baseFocalLengthMM: Double = 24) -> CameraPreset {
         var p = CameraPreset()
-        let light = [shot.lightingTip, shot.sceneReading, shot.setupChoice, shot.title].joined(separator: " ").lowercased()
+        // Light comes from the lighting tip. The title is only checked for backlight ("Sun behind the subject").
+        // Phrases like "no harsh shadows" are removed first, so a warning against a problem is not read as the problem.
+        let tip = Self.withoutNegations(shot.lightingTip.lowercased())
         let lens = [shot.zoomOrLens, shot.distanceAndFraming].joined(separator: " ").lowercased()
-        func has(_ words: [String], in text: String) -> Bool { words.contains { text.contains($0) } }
+        func has(_ patterns: [String], in text: String) -> Bool {
+            patterns.contains { text.range(of: $0, options: .regularExpression) != nil }
+        }
 
         // Light. The first rule that matches wins, strongest problem first.
-        if has(["backlit", "backlight", "back-lit", "contre-jour", "light behind", "sun behind", "against the light", "rim light"], in: light) {
+        let backlit = [#"\bback-?lit\b"#, #"\bbacklight"#, #"contre-?jour"#, #"\b(light|sun|sunlight) (is |from |comes from |low )?behind\b"#,
+                       #"against the light"#, #"\brim light"#, #"sun is behind"#]
+        if has(backlit, in: tip) || has([#"sun behind"#, #"backlit"#, #"light behind"#], in: shot.title.lowercased()) {
             p.exposureBias = 0.7; p.reasons.append(.backlit)
-        } else if has(["low light", "low-light", "dim", "dark", "night", "dusk", "twilight", "indoor"], in: light) {
+        } else if has([#"\blow[- ]light\b"#, #"\bdimly\b"#, #"\bdim (light|room|interior)"#, #"\bdusk\b"#, #"\btwilight\b"#,
+                       #"\bnight\b"#, #"\bindoors?\b"#, #"face[^.]{0,30}\b(dark|shadow(ed)?)\b"#, #"\bdark\b[^.]{0,20}\bface"#], in: tip) {
             p.exposureBias = 0.3; p.reasons.append(.dim)
-        } else if has(["harsh", "midday", "noon", "bright sun", "direct sun", "high contrast", "high-contrast"], in: light) {
+        } else if has([#"\bharsh\b"#, #"\bmidday\b"#, #"\bnoon\b"#, #"\b(bright|direct|strong) sun"#, #"\bhigh[- ]contrast\b"#], in: tip) {
             p.exposureBias = -0.3; p.reasons.append(.harsh)
-        } else if has(["golden hour", "golden-hour", "sunset", "sunrise", "warm light", "golden light"], in: light) {
+        } else if has([#"\bgolden[- ]hour\b"#, #"\bsunset\b"#, #"\bsunrise\b"#, #"\bwarm,? (low|golden)"#, #"low[- ]angle (light|sun)"#, #"\bgolden light\b"#], in: tip) {
             p.exposureBias = -0.3; p.reasons.append(.warm)
         }
 
@@ -49,12 +56,19 @@ public struct CameraPreset: Equatable, Sendable {
         }
 
         // Flash only when the shot says so.
-        if has(["no flash", "without flash", "flash off", "turn off the flash"], in: lens + " " + light) {
+        let flashText = lens + " " + shot.lightingTip.lowercased()
+        if has([#"no flash"#, #"without flash"#, #"flash off"#, #"turn off the flash"#], in: flashText) {
             p.flash = .off; p.reasons.append(.flashOff)
-        } else if has(["fill flash", "use flash", "flash on", "use the flash"], in: lens + " " + light) {
+        } else if has([#"fill flash"#, #"use (the )?flash"#, #"flash on"#], in: flashText) {
             p.flash = .on; p.reasons.append(.flashOn)
         }
         return p
+    }
+
+    /// Drops "no harsh", "without dark", "avoid glare" and similar, so a warning is not read as a problem.
+    static func withoutNegations(_ s: String) -> String {
+        s.replacingOccurrences(of: #"\b(no|without|not|avoid|avoiding|never|free of)\s+(\w+\s+)?(harsh|dark|dim|glare|backlight\w*|shadows?)\b"#,
+                               with: " ", options: .regularExpression)
     }
 
     private static func explicitZoom(_ s: String, baseMM: Double) -> Double? {

@@ -29,6 +29,22 @@ final class CameraPresetTests: XCTestCase {
         XCTAssertEqual(CameraPreset.make(for: shot(lens: "35mm")).zoom ?? 0, 1.5, accuracy: 0.06)
     }
 
+    func testRealModelPhrasesAreNotMisread() {
+        // From real Director output: a warning against harsh shadows must not darken the picture.
+        XCTAssertNil(CameraPreset.make(for: shot(light: "use soft and even lighting, with no harsh shadows")).exposureBias)
+        XCTAssertNil(CameraPreset.make(for: shot(light: "soft, diffused lighting without harsh shadows")).exposureBias)
+        XCTAssertNil(CameraPreset.make(for: shot(light: "a diminished sense of scale")).exposureBias)
+        XCTAssertEqual(CameraPreset.make(for: shot(light: "Soft daylight from the side keeps the face dark.")).exposureBias, 0.3)
+        XCTAssertEqual(CameraPreset.make(for: shot(light: "The sun is low and soft.", title: "Sun behind the subject")).exposureBias, 0.7)
+        XCTAssertEqual(CameraPreset.make(for: shot(light: "The dappled light on the wall can be used as a backlight.")).exposureBias, 0.7)
+        XCTAssertNil(CameraPreset.make(for: shot(light: "The bright sky is flat and even.")).exposureBias)
+    }
+
+    func testRealZoomLine() {
+        XCTAssertEqual(CameraPreset.make(for: shot(lens: "1x: step closer, more of the place, the background smaller")).zoom, 1)
+        XCTAssertEqual(CameraPreset.make(for: shot(lens: "2x: tight on the face, background compressed")).zoom, 2)
+    }
+
     func testZoomIsClampedToTheAppRange() {
         XCTAssertEqual(CameraPreset.make(for: shot(lens: "5x telephoto")).zoom, 2)
         XCTAssertEqual(CameraPreset.make(for: shot(lens: "0.5x ultra-wide")).zoom, 1)

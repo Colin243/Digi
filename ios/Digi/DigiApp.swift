@@ -737,10 +737,10 @@ struct CameraView: View {
         var applied: [CameraPreset.Reason] = []
         for r in p.reasons {
             switch r {
-            case .zoom(let z) where camera.zoomSupported:
+            case .zoom(let z) where camera.zoomSupported && abs(CGFloat(z) - camera.zoom) > 0.05:
                 camera.setZoom(CGFloat(z)); applied.append(r)
             case .backlit, .dim, .harsh, .warm:
-                if camera.exposureSupported, !camera.exposureLocked, let b = p.exposureBias {
+                if camera.exposureSupported, !camera.exposureLocked, let b = p.exposureBias, abs(Float(b) - camera.exposureBias) > 0.05 {
                     camera.setBrightness(Float(b)); applied.append(r)
                 }
             case .flashOn, .flashOff:
