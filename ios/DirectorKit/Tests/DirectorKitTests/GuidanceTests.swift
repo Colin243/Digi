@@ -361,3 +361,24 @@ final class FullBodyDistanceTests: XCTestCase {
         XCTAssertEqual(g.guidance(at: 2).top?.text, "Step closer")
     }
 }
+
+final class ZoomDistanceCueTests: XCTestCase {
+    func distanceText(zoom: Double, range: ClosedRange<Double>?, faceHeight: Double) -> String? {
+        var g = GuidanceTracker(targets: ShotTargets(framing: .waistUp))
+        g.zoom = zoom; g.zoomRange = range
+        let face = NormalizedBox(x: 0.45, y: 0.2, width: faceHeight * 0.75, height: faceHeight)
+        for i in 0..<10 { g.addSubject(person: nil, face: face, at: Double(i) * 0.2) }
+        return g.guidance(at: 2).cues.first { $0.kind == .distance }?.text
+    }
+
+    func testTooSmallOffersZoomUntilMaxed() {
+        XCTAssertEqual(distanceText(zoom: 1, range: 1...2, faceHeight: 0.05), "Step closer or zoom in")
+        XCTAssertEqual(distanceText(zoom: 2, range: 1...2, faceHeight: 0.05), "Step closer")
+        XCTAssertEqual(distanceText(zoom: 1, range: nil, faceHeight: 0.05), "Step closer")
+    }
+
+    func testTooBigOffersZoomOutOnlyWhenZoomedIn() {
+        XCTAssertEqual(distanceText(zoom: 1.6, range: 1...2, faceHeight: 0.4), "Step back or zoom out")
+        XCTAssertEqual(distanceText(zoom: 1, range: 1...2, faceHeight: 0.4), "Step back")
+    }
+}

@@ -51,6 +51,7 @@ final class LiveGuidance: ObservableObject, @unchecked Sendable {
     private var lastVisionAt: TimeInterval = 0
     private var frameOrientation: CGImagePropertyOrientation = .right
     private var selector = SubjectSelector()
+    private var zoomState: (Double, ClosedRange<Double>?) = (1, nil)
     private var lastPeople: [NormalizedBox] = [], lastFaces: [NormalizedBox] = []
     private var publishTimer: Timer?
 
@@ -64,6 +65,7 @@ final class LiveGuidance: ObservableObject, @unchecked Sendable {
         let targets = ShotTargets(shot: shot)
         var fresh = GuidanceTracker(targets: targets)
         fresh.subjectCuesEnabled = subjectCuesEnabled
+        lock.lock(); (fresh.zoom, fresh.zoomRange) = zoomState; lock.unlock()
         lock.lock(); fresh.subjectChosen = selector.isLocked; tracker = fresh; lock.unlock()
         targetPitch = targets.pitchDegrees
         self.targets = targets
@@ -108,6 +110,11 @@ final class LiveGuidance: ObservableObject, @unchecked Sendable {
     }
 
     /// How preview frames must be rotated to be upright (same mapping as the rendered preview).
+    /// Current zoom and its range, so distance cues can offer zoom as well as walking. Main thread.
+    func setZoom(_ zoom: Double, range: ClosedRange<Double>?) {
+        lock.lock(); tracker?.zoom = zoom; tracker?.zoomRange = range; zoomState = (zoom, range); lock.unlock()
+    }
+
     func setInterfaceOrientation(_ o: UIInterfaceOrientation) {
         let orientation: CGImagePropertyOrientation = o == .portrait ? .right : o == .landscapeLeft ? .down : .up
         lock.lock(); frameOrientation = orientation; lock.unlock()
@@ -301,8 +308,8 @@ struct SubjectOverlay: View {
                             .accessibilityAddTraits(.isButton)
                     }
                 }
-                if debug { debugReadout(d).position(x: w / 2, y: h - (d.locked ? 92 : 46)).allowsHitTesting(false) }
-                if d.locked { subjectChip(lost: d.lost).position(x: w / 2, y: h - 30) }
+                if debug { debugReadout(d).position(x: w / 2, y: h - (d.locked ? 138 : 92)).allowsHitTesting(false) }
+                if d.locked { subjectChip(lost: d.lost).position(x: w / 2, y: h - 76) }
             }
             .coordinateSpace(name: "subjectOverlay")
         }
