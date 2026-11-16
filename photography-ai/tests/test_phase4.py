@@ -335,3 +335,16 @@ def test_review_page_reuses_earlier_previews_only_when_asked(ds):
     assert previews()[ids[0]] == []  # the answer changed since the preview was drawn
     shots = previews(reuse_previews=True)[ids[0]]
     assert len(shots) == 1 and shots[0]["earlier"] is True
+
+    # a redrawn shot carries the current fingerprint: shown as current, while the old shot stays hidden by default
+    _img(prev / "b.png", 4)
+    current = L.answer_sha(L.load_label(ds, ids[0])["answer"])
+    (prev / "manifest.json").write_text(json.dumps({ids[0]: {"answer_sha": "0000000000000000", "shots": [
+        {"file": "a.png", "alt": "old shot"}, {"file": "b.png", "alt": "redrawn", "answer_sha": current}]}}))
+    shots = previews()[ids[0]]
+    assert shots[0] is None and shots[1]["earlier"] is False and shots[1]["src"].endswith("-2.jpg")
+    assert [s["earlier"] for s in previews(reuse_previews=True)[ids[0]]] == [True, False]
+    m = json.loads((prev / "manifest.json").read_text())
+    m[ids[0]]["shots"][1]["hidden"] = True
+    (prev / "manifest.json").write_text(json.dumps(m))
+    assert previews(reuse_previews=True)[ids[0]][1] is None

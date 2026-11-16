@@ -11,7 +11,6 @@ private claude.ai artifact with the photos as files beside the page. Reviews com
 from __future__ import annotations
 
 import json
-import shutil
 from pathlib import Path
 
 from PIL import Image, ImageOps
@@ -69,16 +68,25 @@ def build(dataset: str = "train_v1", max_side: int = 900, target: str = "artifac
                 notes.append({"who": "Codex (AI review)" if "codex" in h["by"] else h["by"], "note": h["note"]})
         sha = answer_sha(lab["answer"])
         preview = previews.get(e["example_id"], {})
-        illustrations = []
-        earlier = preview.get("answer_sha") != sha
-        if preview and (not earlier or reuse_previews):
-            for shot in preview.get("shots", []):
-                source = (preview_root / shot["file"]).resolve()
-                if not source.is_relative_to(preview_root.resolve()) or not source.is_file():
-                    raise ValueError("Shot preview must be an existing file inside shot_previews")
-                destination = out / "img" / f"preview-{e['example_id']}-{len(illustrations) + 1}{source.suffix}"
-                shutil.copyfile(source, destination)
-                illustrations.append({"src": f"img/{destination.name}", "alt": shot["alt"], "earlier": earlier})
+        illustrations = []  # one entry per shot, in shot order; None where no preview is shown
+        for k, shot in enumerate(preview.get("shots", []), 1):
+            # A shot may carry its own answer_sha (redrawn later); otherwise the example's applies.
+            # "hidden": true drops a preview that shows the wrong shot.
+            earlier = shot.get("answer_sha", preview.get("answer_sha")) != sha
+            if shot.get("hidden") or (earlier and not reuse_previews):
+                illustrations.append(None)
+                continue
+            source = (preview_root / shot["file"]).resolve()
+            if not source.is_relative_to(preview_root.resolve()) or not source.is_file():
+                raise ValueError("Shot preview must be an existing file inside shot_previews")
+            destination = out / "img" / f"preview-{e['example_id']}-{k}.jpg"
+            with Image.open(source) as im:  # generated PNGs are ~2 MB each; the page is read on a phone
+                im = im.convert("RGB")
+                im.thumbnail((max_side, max_side))
+                im.save(destination, "JPEG", quality=82, optimize=True)
+            illustrations.append({"src": f"img/{destination.name}", "alt": shot["alt"], "earlier": earlier})
+        if not any(illustrations):
+            illustrations = []
         examples.append({"id": e["example_id"], "short": e["example_id"].split("-")[1], "split": e["split"],
                          "technique": e["technique"]["description"], "inspiration": [img(p) for p in e["inspiration"]],
                          "target": img(e["target"]), "answer": lab["answer"], "ai_notes": notes,
