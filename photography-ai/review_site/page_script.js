@@ -123,7 +123,9 @@
         el("button", { type: "button", "aria-label": `Enlarge shot ${k + 1} illustration`,
           onclick: () => openLight(e.shot_previews[k].src) },
           el("img", { src: e.shot_previews[k].src, alt: e.shot_previews[k].alt, loading: "lazy" })),
-        el("figcaption", { text: "AI-generated · approximate illustration of this draft" })) : null,
+        el("figcaption", { text: e.shot_previews[k].earlier
+          ? "AI-generated · illustration of an earlier draft; the text below is current"
+          : "AI-generated · approximate illustration of this draft" })) : null,
       el("dl", {},
         row("Where to stand", c.camera_position), row("Camera height", c.camera_height), row("Angle", c.camera_angle),
         row("Subject & pose", c.subject_position), row("Distance & framing", c.distance_and_framing),

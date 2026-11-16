@@ -28,11 +28,13 @@ VERCEL_JSON = {"headers": [{"source": "/(.*)", "headers": [{"key": "X-Robots-Tag
 
 
 def build(dataset: str = "train_v1", max_side: int = 900, target: str = "artifact", batch: int | None = None,
-          output_dir: Path | None = None) -> dict:
+          output_dir: Path | None = None, reuse_previews: bool = False) -> dict:
     """target "artifact": a claude.ai page (the publish adds the document skeleton; answers go to its db).
     target "vercel": a standalone static site (full HTML document + vercel.json, not indexed); answers stay in
     the reviewer's browser and come back as a downloaded or copied JSON file.
-    batch: only examples of that batch (examples without a "batch" field are batch 1), built into a separate folder."""
+    batch: only examples of that batch (examples without a "batch" field are batch 1), built into a separate folder.
+    reuse_previews: also show shot previews drawn from an earlier version of the answer; the page captions them
+    as illustrations of an earlier draft (by default only previews of the exact current answer are shown)."""
     out = Path(output_dir) if output_dir else data_dir(dataset) / (
         ("review_site" if target == "artifact" else "review_site_vercel") + (f"_batch{batch}" if batch else ""))
     (out / "img").mkdir(parents=True, exist_ok=True)
@@ -68,14 +70,15 @@ def build(dataset: str = "train_v1", max_side: int = 900, target: str = "artifac
         sha = answer_sha(lab["answer"])
         preview = previews.get(e["example_id"], {})
         illustrations = []
-        if preview.get("answer_sha") == sha:
+        earlier = preview.get("answer_sha") != sha
+        if preview and (not earlier or reuse_previews):
             for shot in preview.get("shots", []):
                 source = (preview_root / shot["file"]).resolve()
                 if not source.is_relative_to(preview_root.resolve()) or not source.is_file():
                     raise ValueError("Shot preview must be an existing file inside shot_previews")
                 destination = out / "img" / f"preview-{e['example_id']}-{len(illustrations) + 1}{source.suffix}"
                 shutil.copyfile(source, destination)
-                illustrations.append({"src": f"img/{destination.name}", "alt": shot["alt"]})
+                illustrations.append({"src": f"img/{destination.name}", "alt": shot["alt"], "earlier": earlier})
         examples.append({"id": e["example_id"], "short": e["example_id"].split("-")[1], "split": e["split"],
                          "technique": e["technique"]["description"], "inspiration": [img(p) for p in e["inspiration"]],
                          "target": img(e["target"]), "answer": lab["answer"], "ai_notes": notes,
