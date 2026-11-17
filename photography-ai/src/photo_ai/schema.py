@@ -122,6 +122,10 @@ class Composition(_Lenient):
 class ShotV2(Composition):
     """shot-v2: framing, light and subject direction are required; the expression cue stays optional."""
 
+    # Place facts the app's zoom rule reads. Optional so earlier shot-v2 output stays valid.
+    room_to_step_back: str = ""
+    background_worth_enlarging: str = ""
+
     distance_and_framing: str = Field(min_length=1)
     lighting_tip: str = Field(min_length=1)
     body_pose: str = Field(min_length=1)

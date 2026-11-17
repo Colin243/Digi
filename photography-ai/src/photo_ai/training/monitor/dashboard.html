@@ -218,6 +218,24 @@ body.network-display { overflow:hidden; background:#080a0f; }
 .network-display.display-resting .display-controls { opacity:.12; }
 .network-display.display-resting .display-controls:hover,.network-display.display-resting .display-controls:focus-within { opacity:1; }
 .network-display.display-resting .netleg,.network-display.display-resting #netTitle { opacity:.14; }
+#cmpDisplay, .display-switch { display:none; }
+.compare-display #netwrap { display:none!important; }
+.compare-display .display-meta { display:none; }
+.compare-display #cmpDisplay { display:flex; position:fixed; inset:0; z-index:5; background:#080a0f; }
+.cmp-pane { position:relative; flex:1; min-width:0; border-left:1px solid #1d2230; }
+.cmp-pane:first-child { border-left:0; }
+.cmp-pane canvas { position:absolute; inset:0; width:100%; height:100%; display:block; touch-action:none; cursor:grab; }
+.cmp-pane .tip { background:rgba(10,12,18,.92); color:#eef; border-color:#2a2f3d; display:none; }
+.cmp-cap { position:absolute; left:14px; bottom:78px; font-size:11px; color:#8e98ad; pointer-events:none; max-width:calc(100% - 28px); }
+.cmp-label { position:absolute; left:50%; top:78px; transform:translateX(-50%); font-size:13px; color:#eceef4; padding:3px 12px; border:1px solid #2b303c; border-radius:999px; background:rgba(17,21,29,.8); pointer-events:none; white-space:nowrap; }
+.network-display .display-switch { display:flex; position:fixed; top:22px; left:50%; transform:translateX(-50%); z-index:16; gap:3px; padding:4px; border:1px solid #2b303c; border-radius:999px; background:rgba(17,21,29,.92); transition:opacity .4s; }
+.display-switch button { color:#dbe0eb; background:transparent; border-color:transparent; border-radius:999px; font-size:12px; min-height:30px; padding:0 14px; max-width:230px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.display-switch button:hover { background:#232b3b; }
+.display-switch button[aria-pressed=true] { background:#34456b; color:#fff; }
+.network-display.display-resting .display-switch { opacity:.3; }
+.network-display.display-resting .display-switch:hover { opacity:1; }
+.display-controls .dsel { color:#9aa3b6; font-size:11px; display:flex; align-items:center; gap:4px; }
+.display-controls select { background:#1b2130; color:#dbe0eb; border:1px solid #2b303c; border-radius:6px; font-size:12px; max-width:150px; min-height:30px; }
 .network-display #banners { position:fixed; bottom:90px; left:20px; z-index:16; max-width:700px; }
 .network-display #banners .banner:not(.crit) { display:none; }
 .network-display.display-offline #displayRunState { color:#efb4a4; }
@@ -235,7 +253,7 @@ body.network-display { overflow:hidden; background:#080a0f; }
   <button id="openBtn">Open</button></div></details><select id="themeSel" aria-label="Color theme"><option value="auto">System</option><option value="light">Light</option><option value="dark">Dark</option></select>
   <span id="stateBadge" class="badge">no run</span>
   <span id="pollInfo" style="color:var(--text-2);font-size:12px"></span>
-  <span class="header-note">Qwen3-VL-2B · local MLX instrumentation · read-only</span>
+  <span class="header-note" id="headerNote">local MLX instrumentation · read-only</span>
 </header>
 <div class="studio-title"><div><div class="eyebrow">Photography AI / model observatory</div><h2 id="viewTitle">Training overview</h2><p>Follow the run. Inspect the changes. Evaluate the recommendations separately.</p></div><span class="readonly-note">Local measurements<br>No training controls</span></div><div id="pageError" role="alert" hidden></div><div id="banners" aria-live="polite"></div>
 <div class="replay">
@@ -248,6 +266,7 @@ body.network-display { overflow:hidden; background:#080a0f; }
 <nav id="tabs">
   <button data-tab="live" class="on">Live metrics</button>
   <button data-tab="arch">Architecture &amp; layers</button>
+  <button data-tab="cmp">Compare models</button>
   <button data-tab="ckpt">Checkpoints</button>
   <button data-tab="eval">Recommendation comparison</button>
   <button data-tab="log">Run log</button>
@@ -283,6 +302,13 @@ body.network-display { overflow:hidden; background:#080a0f; }
     <div class="detail" id="detail"><div class="empty">Click a block or a LoRA cell.</div></div>
   </div>
 </section>
+<section class="tab" id="tab-cmp">
+  <div class="explain" style="margin-bottom:10px"><b>Two models side by side.</b> Pick any two runs. The table compares size, layer design and training numbers; the layer map lines the decoder layers up row by row (gold = LoRA adapter, grey = frozen). Structure and measurements only, not a quality judgement.</div>
+  <div class="path-control" style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+    <label>A <select id="cmpA"></select></label><label>B <select id="cmpB"></select></label>
+  </div>
+  <div id="cmpOut"><div class="empty">Loading…</div></div>
+</section>
 <section class="tab" id="tab-ckpt">
   <p style="margin-top:0"><span class="badge meas">Measurement</span> Offline adapter-weight comparison between two saved checkpoints (computed by the monitor server from the files, never inside the training step). A weight change says <b>where</b> the adapter moved, not <b>what</b> was learned.</p>
   <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
@@ -293,19 +319,18 @@ body.network-display { overflow:hidden; background:#080a0f; }
   <div id="ckOut" style="margin-top:12px"></div>
 </section>
 <section class="tab" id="tab-eval">
-  <div class="three">
-    <div class="panel"><div class="tag" style="color:var(--s1)">Measurements</div><h3>Automated metrics</h3>
-      <p class="na">Not implemented yet. Planned: base vs selected checkpoint on the locked <code>portrait_v1</code> benchmark (<code>photo-ai bench</code>) and the held-out scene-eval harness (PR #25), identical images, prompts, preprocessing and decoding, run offline between training stages so two models are never resident together.</p></div>
-    <div class="panel"><div class="tag" style="color:var(--s3)">Human evaluation</div><h3>Reviewer decisions</h3>
-      <p class="na">Not implemented yet. Will show blind reviewer decisions from the #6/#21 rubric flow, per case and aggregate, with uncertainty.</p></div>
-    <div class="panel"><div class="tag" style="color:var(--s2)">Interpretation</div><h3>Inferred, not measured</h3>
-      <p class="na">Nothing to interpret yet. Rule: a weight-norm change or falling loss is never labelled as evidence that a layer “learned posing”, “understands XHS” or caused a quality change.</p></div>
-  </div>
+  <div class="explain" style="margin-bottom:10px"><b>Speed against quality.</b> Held-out Scene Director test (20 scenes nobody trained on), the 8 scenery photos, and the mood-cue test, all on this Mac. These are automated checks only: the blind human review is not done, so none of this is a judgement of whether the advice is good.</div>
+  <div id="evalOut"><div class="empty">Loading…</div></div>
 </section>
 <section class="tab" id="tab-log"><div id="logOut"></div></section>
 </main>
+<div id="cmpDisplay" aria-label="Two models side by side">
+  <div class="cmp-pane"><canvas id="dispNetA" tabindex="0" aria-label="Model A network"></canvas><div class="tip" id="dispTipA"></div><div class="cmp-label" id="dispLabelA"></div><div class="cmp-cap" id="dispCapA"></div></div>
+  <div class="cmp-pane"><canvas id="dispNetB" tabindex="0" aria-label="Model B network"></canvas><div class="tip" id="dispTipB"></div><div class="cmp-label" id="dispLabelB"></div><div class="cmp-cap" id="dispCapB"></div></div>
+</div>
+<div class="display-switch" role="group" aria-label="Choose which model to show"><button id="dispShowA" aria-pressed="false" title="Show model A (key 1)">A</button><button id="dispShowB" aria-pressed="false" title="Show model B (key 2)">B</button><button id="dispShowBoth" aria-pressed="false" title="Show both side by side (key 3 or C)">A + B</button></div>
 <div class="display-hud"><div><div class="observatory-brand">Digi<span>.</span></div><div class="observatory-label">Model observatory</div></div><div class="display-meta"><div id="displayModel">Loading architecture…</div><div id="displayRunState"></div><div id="displayProvenance"></div></div></div>
-<div class="display-controls" role="group" aria-label="Observatory display controls"><button id="displayMotion" aria-pressed="true">Idle orbit on</button><button id="displayReset">Reset view</button><button id="displayInspect" aria-pressed="false">Inspector</button><button id="displayCycle" aria-pressed="false" title="During idle orbit, inspect the next node every 5 seconds. Off keeps the current node.">Cycle nodes off</button><button id="displayFullscreen">Full screen</button><button id="displayExit">Dashboard ↗</button></div>
+<div class="display-controls" role="group" aria-label="Observatory display controls"><label class="dsel">A <select id="dispA" aria-label="Model A run"></select></label><label class="dsel">B <select id="dispB" aria-label="Model B run"></select></label><button id="dispSwap" title="Swap A and B (key X)">⇄ Swap</button><button id="displayMotion" aria-pressed="true">Idle orbit on</button><button id="displayReset">Reset view</button><button id="displayInspect" aria-pressed="false">Inspector</button><button id="displayCycle" aria-pressed="false" title="During idle orbit, inspect the next node every 5 seconds. Off keeps the current node.">Cycle nodes off</button><button id="displayFullscreen">Full screen</button><button id="displayExit">Dashboard ↗</button></div>
 <script>
 "use strict";
 const $ = (s) => document.querySelector(s);
@@ -343,12 +368,20 @@ async function loadRuns(selectPath) {
   }
   const want = selectPath || new URLSearchParams(location.search).get("run") || (runs[0] && runs[0].path);
   if (want) { sel.value = want; if (sel.value !== want) { try { await api("/api/open", { path: want }); return loadRuns(want); } catch (e) {} } openRun(sel.value); }
+  if (document.body.classList.contains("network-display") && typeof dcInit === "function") dcInit();
 }
 $("#runSel").onchange = () => openRun($("#runSel").value);
 $("#openBtn").onclick = async () => {
   const p = $("#pathIn").value.trim(); if (!p) return;
   try { const r = await api("/api/open", { path: p }); await loadRuns(r.path); $("#pageError").hidden = true; $(".path-control").open = false; } catch (e) { const box = $("#pageError"); box.textContent = e.message; box.hidden = false; }
 };
+
+function modelName(r) {
+  const b = r && r.manifest && r.manifest.base_model;
+  const repo = typeof b === "string" ? b : (b && (b.repo || b.repo_id || b.name)) || "";
+  return repo ? repo.split("/").pop() : ((r && r.architecture && r.architecture.model_type) || "model");
+}
+function setHeaderNote(r) { $("#headerNote").textContent = `${modelName(r)} · local MLX instrumentation · read-only`; }
 
 async function openRun(path) {
   if (!path) return;
@@ -360,7 +393,7 @@ async function openRun(path) {
   const r = await api("/api/run", { path });
   if(generation!==S.runGeneration)return;
   S.run = r; S.readyGeneration=generation; S.net=null; S.state = r.state; S.status = r.status || {};
-  renderBanners(); renderLog(); renderArchShell(); fillCkptSelects(r.checkpoints);
+  setHeaderNote(r); renderBanners(); renderLog(); renderArchShell(); fillCkptSelects(r.checkpoints);
   await poll();
 }
 
@@ -421,12 +454,194 @@ function stopPlay() { if (S.playing) clearInterval(S.playing); S.playing = null;
 document.querySelectorAll("#tabs button").forEach((b) => b.onclick = () => {
   document.querySelectorAll("#tabs button").forEach((x) => x.classList.toggle("on", x === b));
   document.querySelectorAll("section.tab").forEach((s) => s.classList.toggle("on", s.id === "tab-" + b.dataset.tab));
+  if (b.dataset.tab === "cmp") initCompare();
+  if (b.dataset.tab === "eval") renderEval();
   render();
 });
 
+
+// ---------------------------------------------------------------- compare two models side by side
+const CMP = { cache: {}, open: null };
+async function cmpLoad(path) {
+  if (CMP.cache[path] && CMP.cache[path].state !== "running") return CMP.cache[path];
+  const r = await api("/api/run", { path });
+  let events = [], offset = 0;
+  for (let i = 0; i < 40; i++) { const e = await api("/api/events", { path, offset }); events = events.concat(e.events || []); if (!e.events || !e.events.length || e.offset === offset) break; offset = e.offset; }
+  const steps = events.filter((e) => e.kind === "step"), evals = events.filter((e) => e.kind === "eval" && e.val_loss != null);
+  const lastStep = steps[steps.length - 1] || {};
+  const best = evals.reduce((m, e) => (m == null || e.val_loss < m.val_loss ? e : m), null);
+  const secs = steps.map((e) => e.step_s).filter((x) => x != null).sort((x, y) => x - y);
+  const samples = {};
+  events.filter((e) => e.kind === "layer_sample").forEach((e) => Object.entries(e.modules || {}).forEach(([name, v]) => (samples[name] = v)));
+  return (CMP.cache[path] = { path, r, samples, state: r.state, step: lastStep.step, iters: lastStep.iters, loss: lastStep.train_loss, best, peak: Math.max(0, ...steps.map((e) => e.peak_memory_gb || 0)),
+    mins: lastStep.elapsed_s ? lastStep.elapsed_s / 60 : null, stepS: secs.length ? secs[Math.floor(secs.length / 2)] : null });
+}
+async function initCompare() {
+  const opts = [...$("#runSel").options].filter((o) => o.value);
+  for (const id of ["cmpA", "cmpB"]) { const sel = $("#" + id); if (sel.options.length !== opts.length) { sel.innerHTML = ""; opts.forEach((o) => sel.add(new Option(o.textContent, o.value))); sel.onchange = renderCompare; } }
+  if (!CMP.init) {
+    CMP.init = true;
+    const q35 = opts.find((o) => /q35/.test(o.value)), vl = opts.find((o) => /zoom3-UNREVIEWED/.test(o.value) && !/q35/.test(o.value));
+    $("#cmpA").value = (vl || opts[0] || {}).value; $("#cmpB").value = (q35 || opts[1] || opts[0] || {}).value;
+  }
+  renderCompare();
+}
+const lmUnitsOf = (a) => (a.units || []).filter((u) => u.group === "language_model" && /\.layers\.\d+\./.test(u.name));
+const stripLayer = (n) => n.replace(/^.*\.layers\.\d+\./, "");
+function layerKind(a, b) { const us = lmUnitsOf(a).filter((u) => u.block === b); return us.some((u) => u.name.includes(".linear_attn.")) ? "linear" : "full"; }
+function cmpFacts(d) {
+  const a = d.r.architecture || {}, t = a.totals || {}, g = a.groups || {};
+  const layers = [...new Set(lmUnitsOf(a).map((u) => u.block))].sort((x, y) => x - y);
+  const kinds = layers.map((b) => layerKind(a, b)), nLin = kinds.filter((k) => k === "linear").length;
+  return { name: modelName(d.r), type: a.model_type, quant: a.quantization ? `${a.quantization.bits || "?"}-bit, group ${a.quantization.group_size || "?"}` : "none recorded", total: t.total_params, train: t.trainable_params,
+    lora: t.lora_units, units: t.units, layers: layers.length, pattern: nLin ? `${nLin} linear + ${kinds.length - nLin} full attention` : `${kinds.length} full attention`,
+    vis: (g.vision_encoder || {}).blocks, deepstack: ((a.dataflow || {}).deepstack_visual_indexes || []).length, layersList: layers, kinds };
+}
+function cmpRow(label, x, y) { const same = String(x) === String(y); return `<tr><td>${label}</td><td class="mono">${esc(x)}</td><td class="mono" style="${same ? "" : "color:var(--seq5,#f5a)"}">${esc(y)}</td></tr>`; }
+function layerMapHtml(d, f) {
+  const a = d.r.architecture, byLayer = {};
+  lmUnitsOf(a).forEach((u) => (byLayer[u.block] = byLayer[u.block] || []).push(u));
+  const ATT = f.kinds.includes("linear") ? ["linear_attn.in_proj_qkv", "linear_attn.in_proj_z", "linear_attn.in_proj_a", "linear_attn.in_proj_b", "linear_attn.conv1d", "linear_attn.norm", "linear_attn.out_proj", "self_attn.q_proj", "self_attn.k_proj", "self_attn.v_proj", "self_attn.o_proj"] : ["self_attn.q_proj", "self_attn.k_proj", "self_attn.v_proj", "self_attn.o_proj"];
+  const MLP = ["mlp.gate_proj", "mlp.up_proj", "mlp.down_proj"];
+  const cell = (us, name) => { const u = us.find((x) => stripLayer(x.name) === name); if (!u) return `<div class="cell frozen" style="opacity:.18" title="${esc(name)}: not in this layer"></div>`;
+    const bg = u.lora ? "background:var(--seq4,#e0b050)" : ""; return `<div class="cell ${u.lora ? "" : "frozen"}" style="${bg}" title="${esc(name)}\n${big(u.total_params)} params${u.lora ? ` · LoRA r=${u.lora.rank}` : " · frozen"}"></div>`; };
+  const rows = f.layersList.map((b, i) => `<div class="rowlab" data-cmp="${b}" style="cursor:pointer" title="open layer ${b} on both sides">L${b} <span class="na">${f.kinds[i] === "linear" ? "lin" : "attn"}</span></div>${ATT.map((n) => cell(byLayer[b] || [], n)).join("")}<div></div>${MLP.map((n) => cell(byLayer[b] || [], n)).join("")}`).join("");
+  return `<div class="grp"><h4>${esc(f.name)}</h4><div class="sub">${esc(f.pattern)} · ${big(f.train)} trainable of ${big(f.total)}</div>
+    <div class="cells" style="grid-template-columns:auto repeat(${ATT.length}, 14px) 8px repeat(3, 14px);gap:2px">${rows}</div></div>`;
+}
+function layerDetailHtml(d, f, b) {
+  const us = lmUnitsOf(d.r.architecture).filter((u) => u.block === +b);
+  return `<div class="grp"><h4>${esc(f.name)} · layer ${b}</h4><div class="sub">${us.length ? esc(layerKind(d.r.architecture, +b)) + " attention" : "no layer " + b + " in this model"}</div><table>${us.map((u) => `<tr><td class="mono">${esc(stripLayer(u.name))}</td><td class="num">${big(u.total_params)}</td><td>${u.lora ? `<span class="badge trainable">LoRA r=${u.lora.rank}</span>` : `<span class="badge frozen">frozen</span>`}</td></tr>`).join("")}</table></div>`;
+}
+
+// ---- two 3D networks, one camera (linked) or two (unlinked)
+const CMP3D = { link: true, panels: [] };
+function cmp3dDraw(p) {
+  const cv = p.cv, W = cv.clientWidth || 400, H = cv.clientHeight || 420, dpr = window.devicePixelRatio || 1;
+  if (cv.width !== W * dpr || cv.height !== H * dpr) { cv.width = W * dpr; cv.height = H * dpr; }
+  const ctx = cv.getContext("2d"), cam = p.camera(); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = "#080b12"; ctx.fillRect(0, 0, W, H);
+  const nodes = p.net.nodes, metric = S.metric;
+  for (const n of nodes) { const v = n.kind === "lora" ? p.d.samples[n.key] : null; n.v = v ? v[metric] : null; }
+  const ranges = {};
+  for (const n of nodes) if (n.kind === "lora" && Number.isFinite(n.v)) { const r = ranges[n.group] || (ranges[n.group] = { lo: Infinity, hi: -Infinity }); r.lo = Math.min(r.lo, n.v); r.hi = Math.max(r.hi, n.v); }
+  const amount = (n) => { const r = ranges[n.group]; return r && r.hi > r.lo ? Math.max(0, Math.min(1, (n.v - r.lo) / (r.hi - r.lo))) : 0.5; };
+  for (const n of nodes) {
+    const pr = Network3D.project(n, cam, W, H); n.px = pr.x; n.py = pr.y; n.depth = pr.depth; n.scale = pr.scale;
+    n.screenR = Math.max(n.kind === "frozen" ? 1.2 : 2, (n.kind === "lora" && Number.isFinite(n.v) ? 2 + 3 * Math.sqrt(amount(n)) : n.r) * pr.scale);
+  }
+  const items = p.net.edges.map((edge) => ({ edge, depth: (edge[0].depth + edge[1].depth) / 2 })); items.push(...nodes.map((node) => ({ node, depth: node.depth })));
+  items.sort((x, y) => y.depth - x.depth);
+  for (const it of items) {
+    if (it.edge) { const [a, b, color, width] = it.edge; ctx.globalAlpha = Math.max(.3, Math.min(.9, .7 - it.depth / 900)); ctx.strokeStyle = color; ctx.lineWidth = width || .65; ctx.beginPath(); ctx.moveTo(a.px, a.py); ctx.lineTo(b.px, b.py); ctx.stroke(); ctx.globalAlpha = 1; continue; }
+    const n = it.node, measured = n.kind === "lora" && n.v != null && Number.isFinite(n.v), fade = Math.max(.4, Math.min(1, 1 - n.depth / 1000));
+    if (measured) { const t = amount(n), R = n.screenR * (3 + 2 * Math.sqrt(t)), g = ctx.createRadialGradient(n.px, n.py, 0, n.px, n.py, R);
+      g.addColorStop(0, rgba(n.rgb, .65 + .25 * t)); g.addColorStop(.3, rgba(n.rgb, .35 + .25 * t)); g.addColorStop(.65, rgba(n.rgb, .08 + .12 * t)); g.addColorStop(1, rgba(n.rgb, 0)); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(n.px, n.py, R, 0, Math.PI * 2); ctx.fill(); }
+    ctx.globalAlpha = fade; ctx.beginPath(); ctx.arc(n.px, n.py, n.screenR, 0, Math.PI * 2);
+    if (n.kind === "lora" && !measured) { ctx.strokeStyle = "#c9c7c0"; ctx.lineWidth = 1; ctx.stroke(); }
+    else { const fill = n.kind === "frozen" ? rgba(n.rgb, .5) : rgba(n.rgb); ctx.shadowColor = fill; ctx.shadowBlur = measured ? 8 : n.kind === "frozen" ? 0 : 5; ctx.fillStyle = fill; ctx.fill(); ctx.shadowBlur = 0; }
+    ctx.globalAlpha = 1;
+    if (p.picked === n.key) { ctx.strokeStyle = "#fff"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(n.px, n.py, n.screenR + 5, 0, Math.PI * 2); ctx.stroke(); }
+  }
+  const sampled = nodes.filter((n) => n.kind === "lora" && n.v != null).length, total = nodes.filter((n) => n.kind === "lora").length;
+  p.cap.textContent = `${p.label} · ${(p.d.r.architecture.units || []).length} units · ${p.net.edges.length} connections · ${sampled}/${total} LoRA sampled · ${cam.zoom.toFixed(1)}×`;
+}
+function cmp3dRepaint() { CMP3D.panels.forEach((p) => cmp3dDraw(p)); }
+function cmp3dInit(A, B, opt = {}) {
+  const ids = opt.ids || ["cmpNetA", "cmpTipA", "cmpCapA", "cmpNetB", "cmpTipB", "cmpCapB"], touch = opt.onTouch || (() => {});
+  const shared = Network3D.camera(); let camB = Network3D.camera();
+  const camA = opt.camera || (() => shared), camBf = opt.camera || (() => (CMP3D.link ? shared : camB));
+  CMP3D.panels = [[A, ids[0], ids[1], ids[2], camA], [B, ids[3], ids[4], ids[5], camBf]].map(([d, cvId, tipId, capId, camera]) => ({
+    d, camera, cv: $("#" + cvId), tip: $("#" + tipId), cap: $("#" + capId), label: modelName(d.r), net: buildNet(1000, 600, d.r.architecture), picked: null }));
+  CMP3D.panels.forEach((p) => {
+    const cv = p.cv, ptr = new Map(); let dragged = false;
+    cv.onpointerdown = (ev) => { if (ev.button !== 0 && ev.button !== 2) return; touch(); cv.setPointerCapture(ev.pointerId); ptr.set(ev.pointerId, { x: ev.clientX, y: ev.clientY, sx: ev.clientX, sy: ev.clientY }); dragged = false; p.tip.style.display = "none"; };
+    cv.onpointermove = (ev) => {
+      const o = ptr.get(ev.pointerId);
+      if (o) { const dx = ev.clientX - o.x, dy = ev.clientY - o.y; if (Math.hypot(ev.clientX - o.sx, ev.clientY - o.sy) > 4) dragged = true; ptr.set(ev.pointerId, { ...o, x: ev.clientX, y: ev.clientY });
+        if (dragged) { if (ev.shiftKey || ev.buttons === 2) Network3D.pan(p.camera(), dx, dy, cv.clientWidth, cv.clientHeight); else Network3D.orbit(p.camera(), dx, dy); touch(); cmp3dRepaint(); } return; }
+      const r = cv.getBoundingClientRect(), n = Network3D.pick(p.net.nodes, ev.clientX - r.left, ev.clientY - r.top);
+      if (!n) { p.tip.style.display = "none"; return; }
+      p.tip.innerHTML = `<b>${esc(n.label)}</b>` + (n.kind === "lora" ? `<br>${esc(S.metric)}: ${n.v == null ? "unavailable (not sampled yet)" : shortNum(n.v)}` : "");
+      p.tip.style.display = "block"; p.tip.style.left = Math.max(4, Math.min(r.width - 250, ev.clientX - r.left + 12)) + "px"; p.tip.style.top = Math.min(r.height - 60, ev.clientY - r.top + 12) + "px";
+    };
+    cv.onpointerup = (ev) => { if (ptr.size === 1 && !dragged && ev.button === 0) { const r = cv.getBoundingClientRect(), n = Network3D.pick(p.net.nodes, ev.clientX - r.left, ev.clientY - r.top); p.picked = n ? n.key : null; cmp3dRepaint(); } ptr.delete(ev.pointerId); };
+    cv.onpointercancel = (ev) => ptr.delete(ev.pointerId); cv.onpointerleave = () => { p.tip.style.display = "none"; }; cv.oncontextmenu = (ev) => ev.preventDefault();
+    cv.addEventListener("wheel", (ev) => { ev.preventDefault(); Network3D.zoom(p.camera(), Math.exp(-Math.max(-300, Math.min(300, ev.deltaY * (ev.deltaMode === 1 ? 16 : 1))) * .0015)); touch(); cmp3dRepaint(); }, { passive: false });
+  });
+  if (!opt.camera) {
+    $("#cmpLink").onchange = (ev) => { CMP3D.link = ev.target.checked; if (!CMP3D.link) camB = { ...shared }; cmp3dRepaint(); };
+    $("#cmpNetReset").onclick = () => { Object.assign(shared, Network3D.camera()); camB = Network3D.camera(); cmp3dRepaint(); };
+  }
+  requestAnimationFrame(cmp3dRepaint);
+}
+
+async function renderCompare() {
+  const out = $("#cmpOut"), pa = $("#cmpA").value, pb = $("#cmpB").value; if (!pa || !pb) return;
+  out.innerHTML = `<div class="empty">Reading both runs…</div>`;
+  let A, B; try { [A, B] = await Promise.all([cmpLoad(pa), cmpLoad(pb)]); } catch (e) { out.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+  const fa = cmpFacts(A), fb = cmpFacts(B), pct = (f) => (f.total ? (100 * f.train / f.total).toFixed(2) + "%" : "–");
+  const fmt = (v, n = 3) => (v == null ? "–" : Number(v).toFixed(n));
+  const setA = new Set(lmUnitsOf(A.r.architecture).map((u) => stripLayer(u.name))), setB = new Set(lmUnitsOf(B.r.architecture).map((u) => stripLayer(u.name)));
+  const onlyA = [...setA].filter((n) => !setB.has(n)), onlyB = [...setB].filter((n) => !setA.has(n));
+  const adaptedKinds = (d) => [...new Set(lmUnitsOf(d.r.architecture).filter((u) => u.lora).map((u) => stripLayer(u.name)))];
+  const table = `<table><tr><th>measure</th><th>A · ${esc(fa.name)}</th><th>B · ${esc(fb.name)}</th></tr>
+    ${cmpRow("architecture", fa.type, fb.type)}${cmpRow("quantization", fa.quant, fb.quant)}${cmpRow("total parameters", big(fa.total), big(fb.total))}
+    ${cmpRow("trainable (LoRA)", `${big(fa.train)} (${pct(fa)})`, `${big(fb.train)} (${pct(fb)})`)}${cmpRow("LoRA modules", fa.lora, fb.lora)}${cmpRow("instrumented units", fa.units, fb.units)}
+    ${cmpRow("decoder layers", fa.layers, fb.layers)}${cmpRow("layer design", fa.pattern, fb.pattern)}${cmpRow("vision blocks", fa.vis, fb.vis)}${cmpRow("DeepStack mergers", fa.deepstack, fb.deepstack)}
+    ${cmpRow("state", A.state, B.state)}${cmpRow("steps", `${A.step ?? "–"} / ${A.iters ?? "–"}`, `${B.step ?? "–"} / ${B.iters ?? "–"}`)}
+    ${cmpRow("last train loss", fmt(A.loss), fmt(B.loss))}${cmpRow("best validation loss", A.best ? `${fmt(A.best.val_loss)} @ ${A.best.step}` : "–", B.best ? `${fmt(B.best.val_loss)} @ ${B.best.step}` : "–")}
+    ${cmpRow("peak memory (GB)", fmt(A.peak, 1), fmt(B.peak, 1))}${cmpRow("minutes", fmt(A.mins, 0), fmt(B.mins, 0))}${cmpRow("median step (s)", fmt(A.stepS, 1), fmt(B.stepS, 1))}</table>
+    <div class="sub" style="margin:6px 0 12px">Losses come from different data and different base models, so they are not directly comparable. Differences are shown in pink.</div>`;
+  const diff = `<div class="grp"><h4>Nodes that differ</h4><div class="sub">Unit types (layer number removed) found in one model's decoder layers and not the other's.</div>
+    <div class="kv"><div>only in A</div><div class="mono">${onlyA.length ? esc(onlyA.join(", ")) : "none"}</div><div>only in B</div><div class="mono">${onlyB.length ? esc(onlyB.join(", ")) : "none"}</div>
+    <div>A adapts</div><div class="mono">${esc(adaptedKinds(A).join(", ") || "none")}</div><div>B adapts</div><div class="mono">${esc(adaptedKinds(B).join(", ") || "none")}</div></div></div>`;
+  const netBox = (cv, tip, cap) => `<div style="position:relative;flex:1 1 340px;min-width:300px;height:430px;background:#080b12;border:1px solid var(--line,#2a303c);border-radius:8px;overflow:hidden"><canvas id="${cv}" tabindex="0" style="width:100%;height:100%;display:block;touch-action:none;cursor:grab"></canvas><div class="tip" id="${tip}" style="display:none;position:absolute"></div><div id="${cap}" style="position:absolute;left:8px;top:6px;font-size:11px;color:#aab3c5;pointer-events:none"></div></div>`;
+  const nets = `<div class="grp" style="margin-top:12px"><h4>3D networks side by side</h4><div class="sub">Drag to orbit, shift- or right-drag to pan, scroll to zoom, click a node to ring it. Glow shows the metric chosen on the Architecture tab, from each run's latest layer sample.</div>
+    <div style="display:flex;gap:14px;align-items:center;margin:6px 0"><label><input type="checkbox" id="cmpLink" ${CMP3D.link ? "checked" : ""}> link both views</label><button id="cmpNetReset">Reset views</button></div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap">${netBox("cmpNetA", "cmpTipA", "cmpCapA")}${netBox("cmpNetB", "cmpTipB", "cmpCapB")}</div></div>`;
+  out.innerHTML = table + diff + nets + `<div style="display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start;margin-top:12px">${layerMapHtml(A, fa)}${layerMapHtml(B, fb)}</div>
+    <div class="sub" style="margin-top:6px">rows: decoder layers · left block: attention parts · right block: MLP gate, up, down · click a layer label to open it on both sides</div><div id="cmpDetail" style="display:flex;gap:18px;flex-wrap:wrap;margin-top:10px"></div>`;
+  cmp3dInit(A, B);
+  out.querySelectorAll("[data-cmp]").forEach((el) => (el.onclick = () => { $("#cmpDetail").innerHTML = layerDetailHtml(A, fa, el.dataset.cmp) + layerDetailHtml(B, fb, el.dataset.cmp); }));
+}
+
+
+// ---------------------------------------------------------------- speed versus quality (Recommendation comparison tab)
+async function renderEval() {
+  const out = $("#evalOut");
+  let d; try { d = await api("/api/evals"); } catch (e) { out.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+  const sc = d.scene || [], f1 = (v, n = 2) => (v == null ? "–" : Number(v).toFixed(n));
+  const col = { "Qwen3.5": "#ff9b4a", "Qwen3-VL": "#6aa5ff" };
+  const W = 640, H = 340, L = 52, R = 24, T = 20, B = 44;
+  const xs = sc.map((r) => r.seconds).filter((v) => v != null), ys = sc.map((r) => r.recall).filter((v) => v != null);
+  const x0 = Math.floor(Math.min(...xs, 20) / 5) * 5, x1 = Math.ceil(Math.max(...xs, 40) / 5) * 5, y0 = Math.min(0.6, ...ys) - 0.03, y1 = Math.max(0.95, ...ys) + 0.02;
+  const X = (v) => L + (W - L - R) * (v - x0) / (x1 - x0), Y = (v) => T + (H - T - B) * (1 - (v - y0) / (y1 - y0));
+  let svg = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:${W}px;background:var(--surface-1,#141820);border-radius:8px" role="img" aria-label="Seconds per scene against scene recall">`;
+  for (let t = Math.ceil(x0 / 10) * 10; t <= x1; t += 10) svg += `<line x1="${X(t)}" x2="${X(t)}" y1="${T}" y2="${H - B}" stroke="#ffffff14"/><text x="${X(t)}" y="${H - B + 16}" fill="#9aa3b6" font-size="11" text-anchor="middle">${t}s</text>`;
+  for (let t = Math.ceil(y0 * 10) / 10; t <= y1; t += 0.1) svg += `<line y1="${Y(t)}" y2="${Y(t)}" x1="${L}" x2="${W - R}" stroke="#ffffff14"/><text x="${L - 6}" y="${Y(t) + 4}" fill="#9aa3b6" font-size="11" text-anchor="end">${t.toFixed(1)}</text>`;
+  svg += `<text x="${(L + W - R) / 2}" y="${H - 6}" fill="#9aa3b6" font-size="12" text-anchor="middle">seconds per scene (left is faster)</text><text transform="translate(14 ${(T + H - B) / 2}) rotate(-90)" fill="#9aa3b6" font-size="12" text-anchor="middle">scene recall (up is better)</text>`;
+  sc.filter((r) => r.seconds != null && r.recall != null).forEach((r) => {
+    const bad = r.valid_share != null && r.valid_share < 0.8, c = col[r.family] || "#aaa", cx = X(r.seconds), cy = Y(r.recall);
+    svg += `<circle cx="${cx}" cy="${cy}" r="7" fill="${bad ? "none" : c}" stroke="${c}" stroke-width="2" stroke-dasharray="${bad ? "3 2" : ""}"><title>${esc(r.label)}\n${r.valid} valid · recall ${f1(r.recall)} · ${f1(r.seconds, 1)} s</title></circle>`;
+    svg += `<text x="${cx + 10}" y="${cy + 4}" fill="#dbe0eb" font-size="10">${esc(r.label.replace("Qwen3.5-2B-4bit", "Q3.5-2B").replace("Qwen3-VL-2B-Instruct-4bit", "Q3VL-2B").replace("Qwen3-VL-4B-Instruct-4bit", "Q3VL-4B").replace(" + q35-2b-", " + "))}${bad ? " (format fails)" : ""}</text>`;
+  });
+  svg += `</svg><div class="sub" style="margin:6px 0 14px"><span style="color:${col["Qwen3-VL"]}">●</span> Qwen3-VL · <span style="color:${col["Qwen3.5"]}">●</span> Qwen3.5 · dashed ring = fewer than 80% of its answers were valid, so its speed and recall are not comparable.</div>`;
+  const rows = sc.map((r) => `<tr><td>${esc(r.label)}</td><td class="num">${esc(r.valid || "–")}</td><td class="num">${f1(r.recall)}</td><td class="num">${f1(r.distinct)}</td><td class="num">${f1(r.grounded)}</td><td class="num">${r.tilts ?? "–"}</td><td class="num">${esc(r.invented || "–")}</td><td class="num">${esc(r.unsafe || "–")}</td><td class="num">${f1(r.seconds, 1)}</td><td class="num">${f1(r.memory, 1)}</td></tr>`).join("");
+  const table = `<table><tr><th>model</th><th>valid</th><th>recall</th><th>distinct</th><th>grounded</th><th>tilts</th><th>invented</th><th>unsafe</th><th>s / scene</th><th>GB</th></tr>${rows}</table>`;
+  const spd = (d.scenery || []).map((r) => `<tr><td>${esc(r.name)}</td><td class="num">${r.valid}/${r.photos}</td><td class="num">${f1(r.median_s, 1)}</td><td class="num">${r.same_position}/8</td></tr>`).join("");
+  const mood = (d.mood || []).map((r) => `<tr><td>${esc(r.name)}</td><td class="num">${r.valid}/${r.runs}</td><td class="num">${f1(r.median_s, 1)}</td><td class="num">${r.lighting_differs}/${r.photos}</td><td class="num">${r.height_differs}/${r.photos}</td></tr>`).join("");
+  out.innerHTML = `<div class="panel"><h3>Held-out Scene Director test</h3>${svg}${table}</div>
+    <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:12px">
+      <div class="panel" style="flex:1 1 320px"><h3>Scenery mode, 8 photos</h3><table><tr><th>model</th><th>valid</th><th>median s</th><th>same spot on all 3 looks</th></tr>${spd}</table></div>
+      <div class="panel" style="flex:1 1 320px"><h3>Does a mood cue steer the shots?</h3><table><tr><th>model</th><th>valid</th><th>median s</th><th>light differs by mood</th><th>height differs by mood</th></tr>${mood || '<tr><td colspan="5" class="na">no mood runs yet</td></tr>'}</table><div class="sub" style="margin-top:6px">Counts the photos where calm, awe and moody all got a different plan. It does not check that the difference fits the mood.</div></div></div>
+${(d.phone || []).length ? `<div class="panel" style="margin-top:12px"><h3>Phone runtime check (Swift, run on the Mac)</h3><table><tr><th>model</th><th>tokens / s</th><th>valid JSON</th><th>load s</th><th>GB</th><th>note</th></tr>${d.phone.map((r) => `<tr><td>${esc(r.name)}</td><td class="num">${f1(r.tok_s, 1)}</td><td class="num">${r.json_valid ? "yes" : "no"}</td><td class="num">${f1(r.load_s)}</td><td class="num">${f1(r.memory_gb)}</td><td>${esc(r.note || "")}</td></tr>`).join("")}</table><div class="sub" style="margin-top:6px">Not yet timed on the iPhone itself.</div></div>` : ""}
+    <div class="panel" style="margin-top:12px"><div class="tag" style="color:var(--s2)">Interpretation</div><p>${esc(d.note || "")}</p></div>`;
+}
+
 // ---------------------------------------------------------------- render
 function render() {
-  $("#viewTitle").textContent = ({live:"Training overview",arch:"Inside the model",ckpt:"Checkpoint comparison",eval:"Photography evaluation",log:"Run provenance"})[document.querySelector("nav button.on")?.dataset.tab] || "Training overview";
+  $("#viewTitle").textContent = ({live:"Training overview",arch:"Inside the model",cmp:"Compare models",ckpt:"Checkpoint comparison",eval:"Photography evaluation",log:"Run provenance"})[document.querySelector("nav button.on")?.dataset.tab] || "Training overview";
   cur.max = S.maxStep; cur.value = S.cursor;
   $("#cursorLab").textContent = S.maxStep ? `${S.cursor} / ${S.maxStep}${S.follow ? " (latest)" : ""}` : "–";
   const b = $("#stateBadge"); const st = S.state || "no run";
@@ -553,6 +768,8 @@ function shortNum(v) { const a = Math.abs(v); return a === 0 ? "0" : a >= 1000 |
 
 // ---------------------------------------------------------------- architecture
 const LORA_COLS = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"];
+const LIN_COLS = ["in_proj_qkv", "in_proj_z", "out_proj"];
+const colPath = (c) => ["gate_proj", "up_proj", "down_proj"].includes(c) ? "mlp" : LIN_COLS.includes(c) ? "linear_attn" : "self_attn";
 const METRICS = [
   ["effective_delta_norm", "‖ΔW‖ effective weight change from base"], ["effective_delta_rel", "‖ΔW‖ / ‖W₀‖ (relative)"],
   ["adapter_norm_b", "‖B‖ adapter up-projection"], ["adapter_norm_a", "‖A‖ adapter down-projection"],
@@ -585,6 +802,7 @@ function architectureRange(units=unitsBy(u=>u.group==="language_model"&&u.lora))
 function renderArch() {
   const a = S.run && S.run.architecture; if (!a) return;
   const lmUnits = unitsBy((u) => u.group === "language_model" && u.lora);
+  LORA_COLS.length = 7; if (lmUnits.some((u) => u.name.includes(".linear_attn."))) LORA_COLS.push(...LIN_COLS);
   const {lo,hi,count}=architectureRange(lmUnits);
   $("#rampLab").textContent = count ? `${shortNum(lo)} → ${shortNum(hi)} (at step ≤ ${S.cursor})` : "no samples yet";
   const color = (v) => { if (v == null || !isFinite(v)) return null; const t = hi > lo ? (v - lo) / (hi - lo) : 0.5; return `var(--seq${Math.min(6, Math.floor(t * 6.999))})`; };
@@ -617,18 +835,18 @@ function renderArch() {
     <div class="arrow">→</div>
     <div class="grp"><h4>Language model <span class="badge trainable">LoRA trainable</span></h4><div class="sub">${big(lG.total_params)} params (base frozen, 4-bit) · ${big(lG.trainable_params)} trainable in ${lG.lora_units} LoRA modules</div>
     <div class="cells" style="grid-template-columns:auto repeat(${LORA_COLS.length}, 18px)"><div></div>${LORA_COLS.map((c) => `<div class="collab" title="${c}">${c[0]}${c.includes("_") ? c.split("_")[0].slice(-1) : ""}</div>`).join("")}`;
-  html = html.replace(/<div class="collab" title="([^"]+)">[^<]*<\/div>/g, (m, c) => `<div class="collab" title="${c}">${{ q_proj: "q", k_proj: "k", v_proj: "v", o_proj: "o", gate_proj: "g", up_proj: "u", down_proj: "d" }[c]}</div>`);
+  html = html.replace(/<div class="collab" title="([^"]+)">[^<]*<\/div>/g, (m, c) => `<div class="collab" title="${c}">${{ q_proj: "q", k_proj: "k", v_proj: "v", o_proj: "o", gate_proj: "g", up_proj: "u", down_proj: "d", in_proj_qkv: "Q", in_proj_z: "Z", out_proj: "O" }[c]}</div>`);
   const byName = Object.fromEntries(lmUnits.map((u) => [u.name, u]));
   for (const b of lb) {
     html += `<div class="rowlab" data-sel="block:language_model:${b}" style="cursor:pointer" title="decoder layer ${b}">L${b}</div>`;
     for (const c of LORA_COLS) {
-      const n = Object.keys(byName).find((k) => k.endsWith(`layers.${b}.${c.includes("proj") && ["gate_proj", "up_proj", "down_proj"].includes(c) ? "mlp" : "self_attn"}.${c}`));
+      const n = Object.keys(byName).find((k) => k.endsWith(`layers.${b}.${colPath(c)}.${c}`));
       if (!n) { html += `<div class="cell frozen" title="no adapter"></div>`; continue; }
       const s = lastSampleFor(n), v = s ? s.v[S.metric] : null, col = color(v);
       html += `<div class="cell ${col ? "" : "na"} ${S.selected === n ? "sel" : ""}" data-sel="${n}" style="${col ? `background:${col}` : ""}" title="${n}\n${S.metric}: ${v == null ? "unavailable" : shortNum(v)}${s ? ` (step ${s.step})` : ""}"></div>`;
     }
   }
-  html += `</div><div class="sub" style="margin-top:6px">rows: decoder layers · columns: q k v o (attention), g u d (MLP gate/up/down)</div></div>`;
+  html += `</div><div class="sub" style="margin-top:6px">rows: decoder layers · columns: q k v o (full attention), Q Z O (linear attention, Qwen3.5 only), g u d (MLP gate/up/down)</div></div>`;
   const focusedCell=$("#flow").contains(document.activeElement)?document.activeElement.dataset.sel:null;
   $("#flow").innerHTML = html;
   $("#flow").querySelectorAll("[data-sel]").forEach(el => {
@@ -730,12 +948,13 @@ function rampAt(stops,t){t=Math.max(0,Math.min(1,t));const seg=(stops.length-1)*
 function rgba(c,a=1){return `rgba(${c[0]},${c[1]},${c[2]},${a})`;}
 // Real sub-units of one block, in forward order, with the real paths between them.
 const VISION_PARTS=["norm1","attn.qkv","attn.proj","norm2","mlp.linear_fc1","mlp.linear_fc2"];
+const LM_LINEAR_PARTS=["input_layernorm","linear_attn.in_proj_qkv","linear_attn.in_proj_z","linear_attn.in_proj_a","linear_attn.in_proj_b","linear_attn.conv1d","linear_attn.norm","linear_attn.out_proj","post_attention_layernorm","mlp.gate_proj","mlp.up_proj","mlp.down_proj"];
 const LM_PARTS=["input_layernorm","self_attn.q_proj","self_attn.k_proj","self_attn.v_proj","self_attn.q_norm","self_attn.k_norm","self_attn.o_proj","post_attention_layernorm","mlp.gate_proj","mlp.up_proj","mlp.down_proj"];
 function partLabel(name){return name.replace("language_model.model.","").replace("vision_tower.","");}
-function buildNet(W, H) {
+function buildNet(W, H, arch) {
   // Every node is a real unit of the loaded model (architecture.json), except block hubs, which mark the
   // residual stream entering a block. Every edge is a real data path of the forward pass.
-  const a=S.run.architecture,nodes=[],edges=[],byKey={};
+  const a=arch||S.run.architecture,nodes=[],edges=[],byKey={};
   const unit=Object.fromEntries(a.units.map(u=>[u.name,u]));
   const add=n=>{nodes.push(n);byKey[n.key]=n;return n;};
   const link=(x,y,c,w=.65)=>{if(x&&y)edges.push([x,y,c,w]);};
@@ -784,9 +1003,18 @@ function buildNet(W, H) {
     const hub=add({key:`block:language_model:${b}`,x:hx,y:hy,z:hz,r:3,kind:"hub",rgb:col,group:"language_model",depth:t,label:`decoder layer ${b} · residual stream in`});
     link(prevOut,hub,rgba(col,.5),1);if(prevHub)link(prevHub,hub,"rgba(255,235,225,.16)",.45);
     if(ds[i])link(ds[i].out,hub,"rgba(221,188,116,.45)",.8);
-    const P=Object.fromEntries(LM_PARTS.map((p,j)=>{const [dx,dy,dz]=ring(LM_PARTS.length,j,38,i*.35);return [p,nodeFor(`language_model.model.layers.${b}.${p}`,hx+dx,hy+dy,hz+dz,col,"language_model",t)];}));
-    const c=rgba(col,.32),q=P["self_attn.q_proj"],k=P["self_attn.k_proj"],v=P["self_attn.v_proj"],qn=P["self_attn.q_norm"],kn=P["self_attn.k_norm"],o=P["self_attn.o_proj"],n1=P.input_layernorm,n2=P.post_attention_layernorm,g=P["mlp.gate_proj"],u=P["mlp.up_proj"],d=P["mlp.down_proj"];
-    link(hub,n1,c);for(const m of [q,k,v])link(n1,m,c);link(q,qn,c);link(k,kn,c);for(const m of [qn||q,kn||k,v])link(m,o,c);
+    // Qwen3.5 mixes two block kinds: gated delta-net ("linear_attn") layers and ordinary self-attention layers.
+    const lin=!!unit[`language_model.model.layers.${b}.linear_attn.in_proj_qkv`];
+    const parts=lin?LM_LINEAR_PARTS:LM_PARTS;
+    const P=Object.fromEntries(parts.map((p,j)=>{const [dx,dy,dz]=ring(parts.length,j,38,i*.35);return [p,nodeFor(`language_model.model.layers.${b}.${p}`,hx+dx,hy+dy,hz+dz,col,"language_model",t)];}));
+    const c=rgba(col,.32),n1=P.input_layernorm,n2=P.post_attention_layernorm,g=P["mlp.gate_proj"],u=P["mlp.up_proj"],d=P["mlp.down_proj"];let o;
+    if(lin){
+      const qkv=P["linear_attn.in_proj_qkv"],z=P["linear_attn.in_proj_z"],ga=P["linear_attn.in_proj_a"],gb=P["linear_attn.in_proj_b"],cv=P["linear_attn.conv1d"],nm=P["linear_attn.norm"];o=P["linear_attn.out_proj"];
+      link(hub,n1,c);for(const m of [qkv,z,ga,gb])link(n1,m,c);link(qkv,cv,c);link(cv,nm,c);for(const m of [z,ga,gb])link(m,nm,c);link(nm,o,c);
+    }else{
+      const q=P["self_attn.q_proj"],k=P["self_attn.k_proj"],v=P["self_attn.v_proj"],qn=P["self_attn.q_norm"],kn=P["self_attn.k_norm"];o=P["self_attn.o_proj"];
+      link(hub,n1,c);for(const m of [q,k,v])link(n1,m,c);link(q,qn,c);link(k,kn,c);for(const m of [qn||q,kn||k,v])link(m,o,c);
+    }
     link(o,n2,c);link(hub,n2,"rgba(255,235,225,.14)",.4);link(n2,g,c);link(n2,u,c);link(g,d,c);link(u,d,c);
     prevHub=hub;prevOut=d||hub;
   });
@@ -798,10 +1026,11 @@ function buildNet(W, H) {
   return {nodes,edges};
 }
 function drawNet(lo, hi) {
+  if(document.body.classList.contains("compare-display")){cmp3dRepaint();return;}
   if(S.view!=="net"||!S.run?.architecture) return;
   const cv=$("#net"),W=cv.clientWidth||800,H=cv.clientHeight||560,dpr=window.devicePixelRatio||1;
   if(cv.width!==W*dpr||cv.height!==H*dpr){cv.width=W*dpr;cv.height=H*dpr;}
-  if(!S.net||S.net.path!==S.path||S.net.architecture!==S.run.architecture){S.net=buildNet(1000,600);S.net.path=S.path;S.net.architecture=S.run.architecture;S.netCamera=Network3D.camera();}
+  if(!S.net||S.net.path!==S.path||S.net.architecture!==S.run.architecture){S.net=buildNet(1000,600);S.net.path=S.path;S.net.architecture=S.run.architecture;S.netCamera=S.keepCamera&&S.netCamera?S.netCamera:Network3D.camera();}
   const camera=S.netCamera;
   S.netRange=[lo,hi];
   const ctx=cv.getContext("2d");ctx.setTransform(dpr,0,0,dpr,0,0);
@@ -917,10 +1146,11 @@ function drawNet(lo, hi) {
     set(enabled){
       displayState.display=Boolean(enabled);document.body.classList.toggle("network-display",displayState.display);document.body.classList.remove("display-inspector");$("#displayInspect").setAttribute("aria-pressed","false");
       const u=new URL(location.href);if(enabled)u.searchParams.set("display","network");else u.searchParams.delete("display");history.replaceState(null,"",u);
-      if(enabled){document.querySelector('[data-tab="arch"]').click();$("#vNet").click();}
+      if(enabled){document.querySelector('[data-tab="arch"]').click();$("#vNet").click();setTimeout(()=>typeof dcInit==="function"&&dcInit(),0);}else document.body.classList.remove("compare-display");
       activity();render();repaint();
     },
     setVisible(visible){displayState.visible=Boolean(visible);lastOrbit=null;if(visible)repaint();},
+    touch(){activity();},
     isVisible(){return displayState.visible&&!document.hidden;}
   };
   $("#netDisplay").onclick=()=>window.DigiDisplay.set(true);
@@ -1010,12 +1240,56 @@ function renderLog() {
 }
 
 function renderDisplayStatus(){
+  if(document.body.classList.contains("compare-display")){$("#displayModel").textContent=DC.label||"Comparing two models";$("#displayRunState").textContent="Linked views · drag to orbit · scroll to zoom · 1 / 2 / 3 to switch";$("#displayProvenance").textContent="Measured weights · schematic layout";return;}
   const manifest=S.run?.manifest;
   $("#displayModel").textContent=manifest?.base_model?.repo?.split("/").pop()||"Loading architecture…";
   document.body.classList.toggle("display-offline",Boolean(S.pollErr));
   $("#displayRunState").textContent=S.pollErr?`Offline · retrying · last recorded step ${S.cursor}`:S.run?`${S.state||""} · step ${S.cursor} / ${S.maxStep} · ${S.run.architecture?.totals?.lora_units||0} LoRA modules`:"Connecting to local monitor";
   $("#displayProvenance").textContent=manifest?.data?.includes_unapproved_drafts?"Smoke data · unreviewed labels · measurements only":S.run?"Measured weights · schematic layout":"";
 }
+
+// ---------------------------------------------------------------- display mode: switch between models and compare them
+const DC = { which: null, label: "" };
+function dcShort(text) { return (text || "").split(" · ")[0].replace(/^bootstrap-r16-/, "").replace(/-UNREVIEWED$/, ""); }
+async function dcInit() {
+  const opts = [...$("#runSel").options].filter((o) => o.value);
+  for (const id of ["dispA", "dispB"]) { const sel = $("#" + id); if (sel.options.length !== opts.length) { sel.innerHTML = ""; opts.forEach((o) => sel.add(new Option(dcShort(o.textContent), o.value))); sel.onchange = () => dcShow(DC.which || "A"); } }
+  if (!DC.init && opts.length) {
+    DC.init = true;
+    const cur = S.path && opts.find((o) => o.value === S.path) ? S.path : opts[0].value, curIsQ35 = /q35/.test(cur);
+    const other = opts.find((o) => (curIsQ35 ? !/q35/.test(o.value) && /zoom3-UNREVIEWED/.test(o.value) : /q35/.test(o.value)) && o.value !== cur) || opts.find((o) => o.value !== cur) || opts[0];
+    $("#dispA").value = cur; $("#dispB").value = other.value;
+    DC.which = "A";
+  }
+  dcMarks(); dcNames();
+}
+function dcMarks() { for (const [id, w] of [["dispShowA", "A"], ["dispShowB", "B"], ["dispShowBoth", "both"]]) $("#" + id).setAttribute("aria-pressed", String(w === DC.which)); }
+async function dcNames() {
+  try { const [a, b] = await Promise.all([cmpLoad($("#dispA").value), cmpLoad($("#dispB").value)]);
+    $("#dispShowA").textContent = "A · " + modelName(a.r); $("#dispShowB").textContent = "B · " + modelName(b.r); DC.label = `A ${modelName(a.r)}  ·  B ${modelName(b.r)}`; } catch (_) { /* labels stay A / B */ }
+}
+async function dcShow(which) {
+  DC.which = which; S.keepCamera = true; dcMarks();
+  const pa = $("#dispA").value, pb = $("#dispB").value;
+  document.body.classList.toggle("compare-display", which === "both");
+  if (which === "both") {
+    let dA, dB; try { [dA, dB] = await Promise.all([cmpLoad(pa), cmpLoad(pb)]); } catch (e) { document.body.classList.remove("compare-display"); return; }
+    if (!S.netCamera) S.netCamera = Network3D.camera();
+    cmp3dInit(dA, dB, { ids: ["dispNetA", "dispTipA", "dispCapA", "dispNetB", "dispTipB", "dispCapB"], camera: () => S.netCamera || (S.netCamera = Network3D.camera()), onTouch: () => window.DigiDisplay.touch() });
+    $("#dispLabelA").textContent = "A · " + modelName(dA.r); $("#dispLabelB").textContent = "B · " + modelName(dB.r);
+    DC.label = `A ${modelName(dA.r)}  ·  B ${modelName(dB.r)}`; renderDisplayStatus(); requestAnimationFrame(cmp3dRepaint);
+  } else {
+    const path = which === "A" ? pa : pb; if (S.path !== path) await openRun(path); render();
+  }
+}
+$("#dispShowA").onclick = () => dcShow("A"); $("#dispShowB").onclick = () => dcShow("B"); $("#dispShowBoth").onclick = () => dcShow("both");
+$("#dispSwap").onclick = () => { const a = $("#dispA").value; $("#dispA").value = $("#dispB").value; $("#dispB").value = a; dcNames(); dcShow(DC.which || "A"); };
+document.addEventListener("keydown", (ev) => {
+  if (!document.body.classList.contains("network-display") || ev.metaKey || ev.ctrlKey || ev.altKey || (ev.target.closest && ev.target.closest("input,select,textarea"))) return;
+  const k = ev.key.toLowerCase();
+  if (k === "1") dcShow("A"); else if (k === "2") dcShow("B"); else if (k === "3" || k === "c") dcShow("both"); else if (k === "x") $("#dispSwap").click(); else return;
+  ev.preventDefault();
+});
 window.addEventListener("resize", () => render());
 loadRuns().catch((e) => { $("#banners").innerHTML = `<div class="banner crit">${esc(e.message)}</div>`; });
 </script>

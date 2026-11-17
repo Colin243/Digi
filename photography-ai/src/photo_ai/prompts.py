@@ -132,6 +132,8 @@ SCENE_SHOT_FIELDS = {
     **COMPOSITION_FIELDS_V2,
     "title": "a short name for this look",
     "uses_principle": "which part of the style brief this look puts into practice",
+    "room_to_step_back": "yes if the photographer can safely stand about twice as far back as this look says (open ground, no wall, water edge, drop or traffic behind them), otherwise no",
+    "background_worth_enlarging": "yes if a distant landmark or clutter in the background is worth enlarging or cropping with a 2x zoom (a tower, bridge, arch, skyline, peaks), otherwise no",
 }
 DIRECTOR_TARGET_FIELDS = {
     **TARGET_FIELDS,
