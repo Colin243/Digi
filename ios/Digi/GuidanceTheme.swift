@@ -15,21 +15,28 @@ struct GuidanceTheme: Equatable {
     var cueLowercase: Bool
     /// Top-bar labels (AUTO, 3:4 JPEG) in monospaced type. Full info only.
     var monospacedLabels: Bool
+    /// Accent for chrome and controls: blue for Full info, pink for Minimal.
+    var accent: Color
+    /// The palette: screen background, panel fill, tint under the glass, and the text colour.
+    var body: Color
+    var panel: Color
+    var glass: Color
+    var silver: Color
 
     static func make(_ style: GuidanceStyle) -> GuidanceTheme {
         switch style {
         case .full:
-            return GuidanceTheme(style: .full, hint: nil, ok: .green, subject: .cyan, cueDesign: .default,
-                                 cueWeight: .semibold, cueLowercase: false, monospacedLabels: true)
+            return GuidanceTheme(style: .full, hint: nil, ok: .green, subject: Color(red: 0.46, green: 0.64, blue: 0.90), cueDesign: .default,
+                                 cueWeight: .semibold, cueLowercase: false, monospacedLabels: true, accent: Color(red: 0.27, green: 0.49, blue: 0.86), body: Color(red: 0.02, green: 0.035, blue: 0.07), panel: Color(red: 0.055, green: 0.08, blue: 0.14), glass: Color(red: 0.02, green: 0.04, blue: 0.09), silver: Color(red: 0.80, green: 0.86, blue: 0.94))
         case .soft:
             return GuidanceTheme(style: .soft, hint: Color(red: 0.95, green: 0.73, blue: 0.70),
                                  ok: Color(red: 0.73, green: 0.89, blue: 0.66),
                                  subject: Color(red: 0.95, green: 0.73, blue: 0.70), cueDesign: .rounded,
-                                 cueWeight: .medium, cueLowercase: false, monospacedLabels: false)
+                                 cueWeight: .medium, cueLowercase: false, monospacedLabels: false, accent: Color(red: 0.95, green: 0.73, blue: 0.70), body: Color(red: 0.075, green: 0.08, blue: 0.08), panel: Color(red: 0.13, green: 0.14, blue: 0.14), glass: Color(red: 0.07, green: 0.08, blue: 0.07), silver: Color(red: 0.90, green: 0.91, blue: 0.88))
         case .minimal:
             return GuidanceTheme(style: .minimal, hint: .white, ok: Color(red: 0.84, green: 0.94, blue: 0.72),
                                  subject: .white, cueDesign: .default, cueWeight: .regular,
-                                 cueLowercase: true, monospacedLabels: false)
+                                 cueLowercase: true, monospacedLabels: false, accent: Color(red: 0.95, green: 0.73, blue: 0.70), body: Color(red: 0.075, green: 0.08, blue: 0.08), panel: Color(red: 0.13, green: 0.14, blue: 0.14), glass: Color(red: 0.07, green: 0.08, blue: 0.07), silver: Color(red: 0.90, green: 0.91, blue: 0.88))
         }
     }
 }

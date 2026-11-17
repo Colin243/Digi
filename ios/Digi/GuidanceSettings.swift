@@ -35,6 +35,8 @@ final class GuidanceSettings: ObservableObject {
             prefs = .migrated(liveSubjectCues: d.bool(forKey: LiveGuidance.subjectCuesKey),
                               guidanceDebug: d.bool(forKey: "digi.guidanceDebug"))
         }
+        // Minimal and Soft became one style: the Soft features under the Minimal name.
+        if prefs.style == .minimal { prefs.select(.soft) }
         #if DEBUG
         // Debug only: `simctl launch … -digiGuidanceStyle soft -digiGuidanceLevel 1` to look at a preset.
         if let s = d.string(forKey: "digiGuidanceStyle"), let style = GuidanceStyle(rawValue: s) {

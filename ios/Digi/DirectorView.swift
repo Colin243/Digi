@@ -23,7 +23,7 @@ struct DirectorView: View {
     @State private var inspirationItems: [PhotosPickerItem] = []
     @State private var inspirationImages: [UIImage] = []
 
-    private var accent: Color { theme.hint ?? CameraStyle.accent }
+    private var accent: Color { theme.hint ?? theme.accent }
 
     private var canRun: Bool {
         guard targetImage != nil, model.phase != .running else { return false }
@@ -44,8 +44,8 @@ struct DirectorView: View {
                 advanced
             }.padding(20)
         }
-        .background(CameraStyle.body.ignoresSafeArea())
-        .foregroundStyle(CameraStyle.silver).tint(accent)
+        .background(theme.body.ignoresSafeArea())
+        .foregroundStyle(theme.silver).tint(accent)
         .fontDesign(theme.cueDesign)
         .preferredColorScheme(.dark)
         .onChange(of: targetItem) { _, item in load(item) { targetImage = $0 } }
@@ -100,7 +100,7 @@ struct DirectorView: View {
                     }.frame(maxWidth: .infinity).frame(height: 150)
                 }
             }
-            .background(CameraStyle.panel)
+            .background(theme.panel)
             .clipShape(RoundedRectangle(cornerRadius: 18))
             .overlay(RoundedRectangle(cornerRadius: 18)
                 .stroke(.white.opacity(0.12), style: StrokeStyle(lineWidth: 1, dash: targetImage == nil ? [6, 5] : [])))
@@ -115,8 +115,8 @@ struct DirectorView: View {
                     ForEach(DirectorStyle.allCases, id: \.self) { s in
                         Button { style = s } label: {
                             Text(s.label).font(.subheadline.weight(.medium)).padding(.horizontal, 14).padding(.vertical, 9)
-                                .background(style == s ? accent : CameraStyle.panel, in: Capsule())
-                                .foregroundStyle(style == s ? Color.black : CameraStyle.silver)
+                                .background(style == s ? accent : theme.panel, in: Capsule())
+                                .foregroundStyle(style == s ? Color.black : theme.silver)
                         }.buttonStyle(.plain)
                     }
                 }
@@ -129,7 +129,7 @@ struct DirectorView: View {
             PhotosPicker(selection: $inspirationItems, maxSelectionCount: 5, matching: .images) {
                 Label("Choose 3 to 5 inspiration photos (\(inspirationImages.count) picked)", systemImage: "photo.stack")
                     .font(.subheadline.weight(.medium)).frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(14).background(CameraStyle.panel, in: RoundedRectangle(cornerRadius: 14))
+                    .padding(14).background(theme.panel, in: RoundedRectangle(cornerRadius: 14))
             }.buttonStyle(.plain)
             if !inspirationImages.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -146,7 +146,7 @@ struct DirectorView: View {
         TextField(mode == .scene ? "Optional note, e.g. she prefers seated poses" :
                   mode == .scenery ? "Optional note, e.g. calm and minimal" : "Optional note",
                   text: $brief)
-            .padding(14).background(CameraStyle.panel, in: RoundedRectangle(cornerRadius: 14))
+            .padding(14).background(theme.panel, in: RoundedRectangle(cornerRadius: 14))
     }
 
     private var runButton: some View {
@@ -171,12 +171,12 @@ struct DirectorView: View {
         if let notice = model.notice {
             Label(notice, systemImage: "arrow.triangle.2.circlepath").font(.footnote)
                 .padding(12).frame(maxWidth: .infinity, alignment: .leading)
-                .background(CameraStyle.panel, in: RoundedRectangle(cornerRadius: 12))
+                .background(theme.panel, in: RoundedRectangle(cornerRadius: 12))
         }
         if case .failed(let message) = model.phase {
             Label(message, systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
                 .padding(12).frame(maxWidth: .infinity, alignment: .leading)
-                .background(CameraStyle.panel, in: RoundedRectangle(cornerRadius: 12))
+                .background(theme.panel, in: RoundedRectangle(cornerRadius: 12))
         }
         if !model.shots.isEmpty {
             HStack {
@@ -196,7 +196,7 @@ struct DirectorView: View {
             Button { model.refresh() } label: {
                 Label(refreshTitle, systemImage: "arrow.clockwise").font(.subheadline.weight(.medium))
                     .frame(maxWidth: .infinity, minHeight: 44)
-                    .background(CameraStyle.panel, in: RoundedRectangle(cornerRadius: 14))
+                    .background(theme.panel, in: RoundedRectangle(cornerRadius: 14))
             }.buttonStyle(.plain).disabled(!model.deck.canRefresh || model.phase == .running)
                 .accessibilityIdentifier("director-refresh")
             Text("Star the shots you like, then refresh to replace the rest.")
@@ -235,12 +235,12 @@ struct DirectorView: View {
                     Text("Director server").font(.footnote.weight(.semibold)).foregroundStyle(.white.opacity(0.55)).padding(.top, 6)
                     TextField("Server address, e.g. 192.168.1.20:8787", text: $serverURL)
                         .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
-                        .padding(14).background(CameraStyle.panel, in: RoundedRectangle(cornerRadius: 12))
+                        .padding(14).background(theme.panel, in: RoundedRectangle(cornerRadius: 12))
                         .accessibilityIdentifier("director-server")
                     SecureField("Client key from `photo-ai server keygen`", text: $apiKey)
                         .textInputAutocapitalization(.never).autocorrectionDisabled()
                         .onChange(of: apiKey) { _, v in DirectorKeychain.write(v) }
-                        .padding(14).background(CameraStyle.panel, in: RoundedRectangle(cornerRadius: 12))
+                        .padding(14).background(theme.panel, in: RoundedRectangle(cornerRadius: 12))
                         .accessibilityIdentifier("director-key")
                     Picker("When online", selection: $preferenceRaw) {
                         Text("Send photos").tag(UserEnginePreference.automatic.rawValue)
@@ -297,7 +297,7 @@ private struct ShotCard: View {
     let onUse: () -> Void
     @State private var open = false
 
-    private var accent: Color { theme.hint ?? CameraStyle.accent }
+    private var accent: Color { theme.hint ?? theme.accent }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -336,7 +336,7 @@ private struct ShotCard: View {
             }.buttonStyle(.plain).accessibilityIdentifier("director-use-shot-\(index)")
         }
         .padding(16)
-        .background(CameraStyle.panel, in: RoundedRectangle(cornerRadius: theme.style == .soft ? 22 : 16))
+        .background(theme.panel, in: RoundedRectangle(cornerRadius: theme.style == .soft ? 22 : 16))
         .opacity(rewriting ? 0.35 : 1)
         .overlay { if rewriting { ProgressView("Rewriting…") } }
         .animation(.easeOut(duration: 0.2), value: rewriting)

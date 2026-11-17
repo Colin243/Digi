@@ -528,6 +528,7 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
                 DispatchQueue.main.async {
                     self.busy = false
                     if saved {
+                        AppPhotoStore.shared.add(data)
                         self.pendingData = nil; self.pending = false
                         self.status = self.flashSuppressed ? "Saved to Photos. Flash did not fire; try again when available." : self.captureWithLook && !self.photoLookApplied ? "Saved original to Photos. G12 look could not be applied." : self.studyForCapture && !self.studyFeedback.hasPrefix("Recording") ? "Saved to Photos. \(self.studyFeedback)" : "Saved to Photos"
                     }
@@ -671,6 +672,8 @@ enum CameraStyle {
     static let panel = Color(red: 0.13, green: 0.14, blue: 0.14)
     static let accent = Color(red: 0.88, green: 0.74, blue: 0.48)
     static let silver = Color(red: 0.90, green: 0.91, blue: 0.88)
+    /// The pink accent of the glass controls.
+    static let rose = Color(red: 0.95, green: 0.73, blue: 0.70)
 }
 
 /// What the app just changed for a pinned shot, and what it replaced.
@@ -683,6 +686,7 @@ struct PresetNote: Identifiable, Equatable {
 
 /// "Set for you" line over the viewfinder with a one-tap Undo.
 struct PresetChip: View {
+    @Environment(\.guidanceTheme) private var theme
     let note: PresetNote
     let style: GuidanceStyle
     var undo: () -> Void
@@ -692,7 +696,7 @@ struct PresetChip: View {
         HStack(spacing: 8) {
             Image(systemName: "slider.horizontal.3").font(.footnote)
             Text(text).font(.footnote).lineLimit(2)
-            Button("Undo", action: undo).font(.footnote.weight(.semibold)).foregroundStyle(CameraStyle.accent)
+            Button("Undo", action: undo).font(.footnote.weight(.semibold)).foregroundStyle(theme.accent)
                 .frame(minHeight: 32).accessibilityIdentifier("preset-undo")
         }
         .foregroundStyle(.white).padding(.horizontal, 12).padding(.vertical, 6)
@@ -704,6 +708,7 @@ struct PresetChip: View {
 }
 
 struct CameraView: View {
+    @Environment(\.guidanceTheme) private var theme
     @StateObject private var camera = CameraController()
     @State private var pinchStartZoom: CGFloat?
     @Environment(\.scenePhase) private var phase
@@ -715,6 +720,7 @@ struct CameraView: View {
     @ObservedObject private var pinnedShot = PinnedShotStore.shared
     @ObservedObject private var guidanceSettings = GuidanceSettings.shared
     @State private var options = false
+    @State private var moreOpen = false
     @State private var guidanceSheet = false
     @State private var guidanceFirstRun = false
     @AppStorage("digi.autoCameraSettings") private var autoSettings = true
@@ -767,189 +773,159 @@ struct CameraView: View {
 
     private var canShoot: Bool { camera.ready && !camera.busy && !camera.pending }
 
+    /// The live preview with its overlays (grid, focus box, subject marks, hints, pinned shot card).
+    @ViewBuilder private func viewfinder(portrait: Bool) -> some View {
+                            ZStack {
+                                CameraPreview(session: camera.session, focusPoint: camera.focusPoint,
+                                              orientationChanged: { previewOrientation = $0 },
+                                              focusRequested: { camera.focus(at: $0, lock: $1) },
+                                              focusPositionChanged: { focusDisplayPoint = $0 },
+                                              hardwareCaptureEnabled: canShoot && countdown.remaining == nil && !options && !review && !cameraPicker && !directorOpen && phase == .active,
+                                              captureRequested: takePhoto)
+                                if camera.lookEnabled, let frame = camera.renderedPreview {
+                                    Image(uiImage: UIImage(cgImage: frame, scale: 1, orientation: previewOrientation == .portrait ? .right : previewOrientation == .landscapeLeft ? .down : .up))
+                                        .resizable().scaledToFit().allowsHitTesting(false)
+                                }
+                                if grid {
+                                    GeometryReader { area in
+                                        Path { path in
+                                            for fraction in [CGFloat(1.0 / 3), CGFloat(2.0 / 3)] {
+                                                path.move(to: CGPoint(x: area.size.width * fraction, y: 0))
+                                                path.addLine(to: CGPoint(x: area.size.width * fraction, y: area.size.height))
+                                                path.move(to: CGPoint(x: 0, y: area.size.height * fraction))
+                                                path.addLine(to: CGPoint(x: area.size.width, y: area.size.height * fraction))
+                                            }
+                                        }.stroke(.white.opacity(0.38), lineWidth: 0.5)
+                                    }.allowsHitTesting(false).accessibilityHidden(true)
+                                }
+                                if camera.focusPoint != nil, let point = focusDisplayPoint {
+                                    GeometryReader { area in
+                                        Rectangle().stroke(theme.accent, lineWidth: 1.5)
+                                            .frame(width: 54, height: 54)
+                                            .overlay(alignment: .top) {
+                                                Text(camera.exposureLocked ? "AE/AF LOCK" : "AF/AE").font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                                    .foregroundStyle(theme.accent).offset(y: -16)
+                                            }
+                                            .position(x: point.x * area.size.width, y: point.y * area.size.height)
+                                    }.allowsHitTesting(false).accessibilityLabel("Selected focus point")
+                                }
+                                if pinnedShot.shot != nil {
+                                    SubjectOverlay(live: LiveGuidance.shared, debug: guidanceSettings.display.detectionBoxes,
+                                                   readout: guidanceSettings.display.debugReadout,
+                                                   brackets: guidanceSettings.display.subjectBrackets,
+                                                   corners: guidanceSettings.prefs.style != .full,
+                                                   okColor: GuidanceTheme.make(guidanceSettings.prefs.style).ok)
+                                    LevelIndicator(live: LiveGuidance.shared, style: guidanceSettings.display.levelIndicator)
+                                }
+                                if camera.zoomSupported || pinnedShot.shot != nil {
+                                    // One bottom column, so the hint, the chosen-person chip and the zoom never overlap.
+                                    VStack(spacing: 8 * deviceScale) {
+                                        Spacer().allowsHitTesting(false)
+                                        if pinnedShot.shot != nil {
+                                            FloatingCue(live: LiveGuidance.shared)
+                                            SubjectChip(live: LiveGuidance.shared)
+                                        }
+                                        if camera.zoomSupported {
+                                            ZoomReadout(zoom: camera.zoom, detail: guidanceSettings.display.zoomDetail).allowsHitTesting(false)
+                                        }
+                                    }.padding(.bottom, 12)
+                                }
+                                if let note = presetNote, !pinnedShot.expanded {
+                                    VStack {
+                                        PresetChip(note: note, style: guidanceSettings.prefs.style) { undoPreset(note) }
+                                            .padding(.top, guidanceSettings.prefs.style == .full ? 128 : 64)
+                                        Spacer()
+                                    }.transition(.opacity)
+                                }
+                                VStack {
+                                    PinnedShotCard(store: pinnedShot).padding(.trailing, portrait ? 0 : 58)
+                                    Spacer()
+                                }
+                                if showStatus && !camera.status.isEmpty {
+                                    VStack {
+                                        Spacer()
+                                        VStack(spacing: 8) {
+                                            Text(camera.status).font(.subheadline).multilineTextAlignment(.center)
+                                            if camera.pending && !camera.busy {
+                                                Button("Retry save") { camera.save() }
+                                                    .buttonStyle(.borderedProminent).tint(theme.accent).foregroundStyle(.black)
+                                            }
+                                        }.padding(12).background(.black.opacity(0.8), in: RoundedRectangle(cornerRadius: 12)).padding(12)
+                                    }
+                                }
+                                if let remaining = countdown.remaining {
+                                    VStack(spacing: 16) {
+                                        Text("\(remaining)").font(.system(size: 80, weight: .medium, design: .rounded))
+                                            .shadow(color: .black, radius: 5)
+                                            .accessibilityLabel("Photo in \(remaining) seconds")
+                                        Button("Cancel timer") { cancelCountdown() }
+                                            .padding(.horizontal, 18).padding(.vertical, 10)
+                                            .background(.black.opacity(0.75), in: Capsule())
+                                    }
+                                }
+                            }
+                            // Two-finger pinch anywhere on the viewfinder zooms, like the iPhone camera.
+                            .simultaneousGesture(
+                                MagnifyGesture()
+                                    .onChanged { value in
+                                        let start = pinchStartZoom ?? camera.zoom
+                                        if pinchStartZoom == nil { pinchStartZoom = start }
+                                        camera.setZoom(start * value.magnification)
+                                    }
+                                    .onEnded { _ in pinchStartZoom = nil }
+                            )
+                            .aspectRatio(portrait ? 3.0 / 4 : 4.0 / 3, contentMode: .fit)
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                            .overlay(RoundedRectangle(cornerRadius: 10).stroke(.white.opacity(0.12), lineWidth: 1))
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: portrait ? .top : .center)
+    }
+
     var body: some View {
         GeometryReader { geometry in
             let portrait = geometry.size.height > geometry.size.width
-            let cameraLayout = portrait ? AnyLayout(VStackLayout(spacing: 16)) : AnyLayout(HStackLayout(spacing: 16))
-            let railLayout = portrait ? AnyLayout(HStackLayout(spacing: 12)) : AnyLayout(VStackLayout(spacing: 12))
             ZStack {
-                CameraStyle.body.ignoresSafeArea()
-                cameraLayout {
-                    (portrait ? AnyLayout(HStackLayout(spacing: 12)) : AnyLayout(VStackLayout(alignment: .leading, spacing: 6))) {
-                        Button {
-                            options = false
-                            withAnimation(.easeOut(duration: 0.22)) { cameraPicker = true }
-                        } label: {
-                            Image(systemName: "line.3.horizontal").font(.system(size: 20))
-                                .frame(minWidth: 44, minHeight: 44)
-                        }.buttonStyle(.plain)
-                            .accessibilityLabel("Menu")
-                            .accessibilityIdentifier("camera-picker")
-                        Button {
-                            options = false
-                            directorOpen = true
-                        } label: {
-                            Image(systemName: "wand.and.stars").font(.system(size: 18))
-                                .frame(minWidth: 44, minHeight: 44)
-                        }.buttonStyle(.plain)
-                            .accessibilityLabel("Photography director")
-                            .accessibilityIdentifier("director-open")
-                        if !portrait { Rectangle().fill(CameraStyle.accent).frame(width: 22, height: 2).padding(.top, 5) }
+                theme.body.ignoresSafeArea()
+                viewfinder(portrait: portrait)
+                    .padding(.top, portrait ? 54 : 12).padding(.bottom, portrait ? 150 : 12)
+                    .padding(.leading, portrait ? 0 : 12).padding(.trailing, portrait ? 0 : 128)
+
+                VStack { ReadoutBar(camera: camera, menu: { options = false; moreOpen = false; withAnimation(.easeOut(duration: 0.22)) { cameraPicker = true } },
+                                    timerSeconds: timerSeconds).padding(.horizontal, 12).padding(.top, 6); Spacer() }
+
+                if !portrait {
+                    GlassRail(grid: $grid, timerSeconds: $timerSeconds, moreOpen: moreOpen,
+                              more: { withAnimation(.easeOut(duration: 0.18)) { moreOpen.toggle() } })
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+                        .padding(.trailing, 132)
+                }
+
+                if portrait {
+                    VStack(spacing: 10) {
                         Spacer()
-                        if camera.captureStudyEnabled {
-                            Text("STUDY").font(.system(size: 10, weight: .semibold, design: .monospaced))
-                                .foregroundStyle(CameraStyle.accent).fixedSize()
+                        if moreOpen {
+                            OptionsCard(camera: camera, haptics: $haptics, toggleFocus: toggleFocusLock, all: { moreOpen = false; options = true })
+                                .padding(.horizontal, 14).transition(.opacity.combined(with: .move(edge: .bottom)))
                         }
-                        Text(camera.exposureLocked ? "LOCK" : "AUTO").font(.system(size: 11, weight: .semibold, design: .monospaced)).foregroundStyle(CameraStyle.accent).fixedSize()
-                        if timerSeconds > 0 {
-                            Label("\(timerSeconds)s", systemImage: "timer").font(.system(size: 11))
-                                .foregroundStyle(CameraStyle.accent)
+                        QuickRow(grid: $grid, timerSeconds: $timerSeconds, moreOpen: moreOpen,
+                                 zoom: camera.zoom, zoomSupported: camera.zoomSupported, setZoom: { camera.setZoom($0) },
+                                 more: { withAnimation(.easeOut(duration: 0.18)) { moreOpen.toggle() } })
+                        ControlStrip(vertical: false, camera: camera, canShoot: canShoot && countdown.remaining == nil,
+                                     bottomInset: geometry.safeAreaInsets.bottom,
+                                     shoot: takePhoto, review: { options = false; moreOpen = false; review = true },
+                                     director: { options = false; moreOpen = false; directorOpen = true })
+                    }.ignoresSafeArea(edges: .bottom)
+                } else {
+                    HStack(spacing: 10) {
+                        Spacer()
+                        if moreOpen {
+                            OptionsCard(camera: camera, haptics: $haptics, toggleFocus: toggleFocusLock, all: { moreOpen = false; options = true })
+                                .frame(width: 250).transition(.opacity)
                         }
-                        Label(camera.flash.rawValue, systemImage: camera.flash.symbol)
-                            .font(.system(size: 10, weight: .medium)).fixedSize()
-                            .foregroundStyle(camera.flash == .off ? CameraStyle.silver : CameraStyle.accent)
-                            .accessibilityLabel("Flash \(camera.flash.rawValue)")
-                        Text(portrait ? "3:4 JPEG" : "4:3\nJPEG").font(.system(size: 10, design: .monospaced)).lineSpacing(5).foregroundStyle(.white.opacity(0.6))
-                    }.frame(width: portrait ? nil : 58, height: portrait ? 44 : nil, alignment: .leading)
-                        .padding(.vertical, portrait ? 0 : 16)
-
-                    ZStack {
-                        CameraPreview(session: camera.session, focusPoint: camera.focusPoint,
-                                      orientationChanged: { previewOrientation = $0 },
-                                      focusRequested: { camera.focus(at: $0, lock: $1) },
-                                      focusPositionChanged: { focusDisplayPoint = $0 },
-                                      hardwareCaptureEnabled: canShoot && countdown.remaining == nil && !options && !review && !cameraPicker && !directorOpen && phase == .active,
-                                      captureRequested: takePhoto)
-                        if camera.lookEnabled, let frame = camera.renderedPreview {
-                            Image(uiImage: UIImage(cgImage: frame, scale: 1, orientation: previewOrientation == .portrait ? .right : previewOrientation == .landscapeLeft ? .down : .up))
-                                .resizable().scaledToFit().allowsHitTesting(false)
-                        }
-                        if grid {
-                            GeometryReader { area in
-                                Path { path in
-                                    for fraction in [CGFloat(1.0 / 3), CGFloat(2.0 / 3)] {
-                                        path.move(to: CGPoint(x: area.size.width * fraction, y: 0))
-                                        path.addLine(to: CGPoint(x: area.size.width * fraction, y: area.size.height))
-                                        path.move(to: CGPoint(x: 0, y: area.size.height * fraction))
-                                        path.addLine(to: CGPoint(x: area.size.width, y: area.size.height * fraction))
-                                    }
-                                }.stroke(.white.opacity(0.38), lineWidth: 0.5)
-                            }.allowsHitTesting(false).accessibilityHidden(true)
-                        }
-                        if camera.focusPoint != nil, let point = focusDisplayPoint {
-                            GeometryReader { area in
-                                Rectangle().stroke(CameraStyle.accent, lineWidth: 1.5)
-                                    .frame(width: 54, height: 54)
-                                    .overlay(alignment: .top) {
-                                        Text(camera.exposureLocked ? "AE/AF LOCK" : "AF/AE").font(.system(size: 10, weight: .semibold, design: .monospaced))
-                                            .foregroundStyle(CameraStyle.accent).offset(y: -16)
-                                    }
-                                    .position(x: point.x * area.size.width, y: point.y * area.size.height)
-                            }.allowsHitTesting(false).accessibilityLabel("Selected focus point")
-                        }
-                        if pinnedShot.shot != nil {
-                            SubjectOverlay(live: LiveGuidance.shared, debug: guidanceSettings.display.detectionBoxes,
-                                           readout: guidanceSettings.display.debugReadout,
-                                           brackets: guidanceSettings.display.subjectBrackets,
-                                           corners: guidanceSettings.prefs.style != .full,
-                                           okColor: GuidanceTheme.make(guidanceSettings.prefs.style).ok)
-                            LevelIndicator(live: LiveGuidance.shared, style: guidanceSettings.display.levelIndicator)
-                        }
-                        if camera.zoomSupported || pinnedShot.shot != nil {
-                            // One bottom column, so the hint, the chosen-person chip and the zoom never overlap.
-                            VStack(spacing: 8 * deviceScale) {
-                                Spacer().allowsHitTesting(false)
-                                if pinnedShot.shot != nil {
-                                    FloatingCue(live: LiveGuidance.shared)
-                                    SubjectChip(live: LiveGuidance.shared)
-                                }
-                                if camera.zoomSupported {
-                                    ZoomReadout(zoom: camera.zoom, detail: guidanceSettings.display.zoomDetail).allowsHitTesting(false)
-                                }
-                            }.padding(.bottom, 12)
-                        }
-                        if let note = presetNote, !pinnedShot.expanded {
-                            VStack {
-                                PresetChip(note: note, style: guidanceSettings.prefs.style) { undoPreset(note) }
-                                    .padding(.top, guidanceSettings.prefs.style == .full ? 128 : 64)
-                                Spacer()
-                            }.transition(.opacity)
-                        }
-                        VStack {
-                            PinnedShotCard(store: pinnedShot)
-                            Spacer()
-                        }
-                        if showStatus && !camera.status.isEmpty {
-                            VStack {
-                                Spacer()
-                                VStack(spacing: 8) {
-                                    Text(camera.status).font(.subheadline).multilineTextAlignment(.center)
-                                    if camera.pending && !camera.busy {
-                                        Button("Retry save") { camera.save() }
-                                            .buttonStyle(.borderedProminent).tint(CameraStyle.accent).foregroundStyle(.black)
-                                    }
-                                }.padding(12).background(.black.opacity(0.8), in: RoundedRectangle(cornerRadius: 12)).padding(12)
-                            }
-                        }
-                        if let remaining = countdown.remaining {
-                            VStack(spacing: 16) {
-                                Text("\(remaining)").font(.system(size: 80, weight: .medium, design: .rounded))
-                                    .shadow(color: .black, radius: 5)
-                                    .accessibilityLabel("Photo in \(remaining) seconds")
-                                Button("Cancel timer") { cancelCountdown() }
-                                    .padding(.horizontal, 18).padding(.vertical, 10)
-                                    .background(.black.opacity(0.75), in: Capsule())
-                            }
-                        }
-                    }
-                    // Two-finger pinch anywhere on the viewfinder zooms, like the iPhone camera.
-                    .simultaneousGesture(
-                        MagnifyGesture()
-                            .onChanged { value in
-                                let start = pinchStartZoom ?? camera.zoom
-                                if pinchStartZoom == nil { pinchStartZoom = start }
-                                camera.setZoom(start * value.magnification)
-                            }
-                            .onEnded { _ in pinchStartZoom = nil }
-                    )
-                    .aspectRatio(portrait ? 3.0 / 4 : 4.0 / 3, contentMode: .fit)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(.white.opacity(0.12), lineWidth: 1))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-                    railLayout {
-                        Button { changePanel() } label: {
-                            Image(systemName: options ? "xmark" : "slider.horizontal.3")
-                                .font(.system(size: 18, weight: .medium)).frame(width: 48, height: 48)
-                                .background(options ? CameraStyle.accent : CameraStyle.panel, in: Circle())
-                                .foregroundStyle(options ? CameraStyle.body : CameraStyle.silver)
-                        }.accessibilityLabel(options ? "Close options" : "Camera options")
-                        Spacer(minLength: 0)
-                        Button(action: takePhoto) {
-                            ZStack {
-                                Circle().stroke(.white.opacity(0.45), lineWidth: 2).frame(width: 78, height: 78)
-                                Circle().fill(LinearGradient(colors: [Color.white, CameraStyle.silver, Color.gray], startPoint: .topLeading, endPoint: .bottomTrailing))
-                                    .frame(width: 66, height: 66)
-                                Circle().stroke(.white.opacity(0.7), lineWidth: 1).frame(width: 59, height: 59)
-                            }.frame(width: 84, height: 84)
-                        }.buttonStyle(ShutterPressStyle())
-                            .disabled(!canShoot || countdown.remaining != nil)
-                            .opacity(camera.ready && !camera.busy && !camera.pending ? 1 : 0.4)
-                            .accessibilityLabel("Take photo")
-                        Spacer(minLength: 0)
-                        Button { options = false; review = true } label: {
-                            ZStack {
-                                RoundedRectangle(cornerRadius: 9).fill(CameraStyle.panel)
-                                if let photo = camera.lastPhoto {
-                                    Image(uiImage: photo).resizable().scaledToFill()
-                                } else {
-                                    Image(systemName: "photo").font(.system(size: 19)).foregroundStyle(.white.opacity(0.55))
-                                }
-                            }.frame(width: 52, height: 44).clipShape(RoundedRectangle(cornerRadius: 9))
-                                .overlay(RoundedRectangle(cornerRadius: 9).stroke(.white.opacity(0.3), lineWidth: 1))
-                        }.accessibilityLabel("Review last photo")
-                    }.frame(width: portrait ? nil : 84, height: portrait ? 84 : nil).padding(.vertical, 10)
-                }.padding(.horizontal, 18).padding(.vertical, 12)
+                        ControlStrip(vertical: true, camera: camera, canShoot: canShoot && countdown.remaining == nil,
+                                     bottomInset: 0, shoot: takePhoto, review: { options = false; moreOpen = false; review = true },
+                                     director: { options = false; moreOpen = false; directorOpen = true })
+                    }.ignoresSafeArea(edges: .trailing)
+                }
 
                 if cameraPicker {
                     Color.black.opacity(0.45).ignoresSafeArea()
@@ -970,7 +946,7 @@ struct CameraView: View {
                             HStack {
                                 Text("Shooting options").font(.headline)
                                 Spacer()
-                                Button("Done") { options = false }.foregroundStyle(CameraStyle.accent).frame(minWidth: 44, minHeight: 44)
+                                Button("Done") { options = false }.foregroundStyle(theme.accent).frame(minWidth: 44, minHeight: 44)
                             }.padding(.horizontal, 20)
                             ScrollView {
                                 VStack(alignment: .leading, spacing: 18) {
@@ -987,7 +963,7 @@ struct CameraView: View {
                                             .font(.footnote).foregroundStyle(.white.opacity(0.7))
                                     }
                                     Divider().overlay(.white.opacity(0.15))
-                                    HStack { Text("Exposure"); Spacer(); Text(camera.exposureLocked ? "Locked" : "Auto").foregroundStyle(CameraStyle.accent) }
+                                    HStack { Text("Exposure"); Spacer(); Text(camera.exposureLocked ? "Locked" : "Auto").foregroundStyle(theme.accent) }
                                     HStack {
                                         Image(systemName: "sun.min")
                                         Slider(value: Binding(get: { camera.exposureBias }, set: { camera.setBrightness($0) }), in: camera.exposureRange, step: 0.1)
@@ -1025,43 +1001,25 @@ struct CameraView: View {
                                     Text("Saves an original, the finished photo, and any skin mask together for local camera testing.")
                                         .font(.footnote).foregroundStyle(.white.opacity(0.7))
                                     if camera.captureStudyEnabled {
-                                        Text(camera.studyFeedback).font(.footnote).foregroundStyle(CameraStyle.accent)
+                                        Text(camera.studyFeedback).font(.footnote).foregroundStyle(theme.accent)
                                             .accessibilityIdentifier("study-result")
                                     }
                                     Label("Photos save automatically", systemImage: "checkmark.circle").font(.footnote).foregroundStyle(.white.opacity(0.7))
-                                    Button("Camera & Photos permissions", action: openSettings).font(.subheadline).foregroundStyle(CameraStyle.accent).frame(minHeight: 44)
+                                    Button("Camera & Photos permissions", action: openSettings).font(.subheadline).foregroundStyle(theme.accent).frame(minHeight: 44)
                                 }.padding(20)
                             }
                         }.frame(width: min(360, geometry.size.width - 48))
-                            .background(CameraStyle.panel, in: RoundedRectangle(cornerRadius: 22))
-                            .overlay(RoundedRectangle(cornerRadius: 22).stroke(.white.opacity(0.14), lineWidth: 1))
+                            .glass(22, strong: true)
                             .frame(maxHeight: portrait ? 360 : .infinity)
                             .padding(.trailing, portrait ? 18 : 112).padding(.vertical, 12)
                     }.transition(.opacity)
                 }
                 if review {
-                    CameraStyle.body.ignoresSafeArea()
-                    VStack(spacing: 8) {
-                        HStack {
-                            Text("Last photo").font(.headline)
-                            Spacer()
-                            Button("Done") { review = false }.foregroundStyle(CameraStyle.accent).frame(minWidth: 44, minHeight: 44)
-                        }
-                        if let photo = camera.lastPhoto {
-                            Image(uiImage: photo).resizable().scaledToFit().frame(maxWidth: .infinity, maxHeight: .infinity)
-                            Text(camera.photoLookApplied ? "G12 Look" : "Original").font(.caption).foregroundStyle(CameraStyle.accent)
-                            Text(camera.pending ? "Not saved yet. Return to the camera to retry." : camera.busy ? "Saving…" : "Saved to Photos")
-                                .font(.footnote).foregroundStyle(.white.opacity(0.7))
-                        } else {
-                            Spacer()
-                            Image(systemName: "photo.on.rectangle").font(.system(size: 32)).foregroundStyle(CameraStyle.accent)
-                            Text("Your next moment starts here.").font(.headline)
-                            Text("Take a photo to see it here.").font(.subheadline).foregroundStyle(.white.opacity(0.65))
-                            Spacer()
-                        }
-                    }.padding(.horizontal, 24).padding(.vertical, 10)
+                    PhotoLibraryView(note: camera.pending ? "Not saved to Photos yet. Return to the camera to retry." : camera.busy ? "Saving…" : nil,
+                                     close: { review = false })
+                        .transition(.opacity)
                 }
-            }.foregroundStyle(CameraStyle.silver).tint(CameraStyle.accent)
+            }.foregroundStyle(theme.silver).tint(theme.accent)
         }
         .sheet(isPresented: $directorOpen) {
             DirectorView()
@@ -1150,6 +1108,18 @@ struct CameraView: View {
         let orientation = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first?.interfaceOrientation
         camera.capture(angle: CameraRotation.angle(for: orientation ?? .portrait))
     }
+    /// AF lock: lock focus and exposure on the centre of the frame, or go back to auto. Tapping the viewfinder locks elsewhere.
+    private func toggleFocusLock() {
+        if haptics { UISelectionFeedbackGenerator().selectionChanged() }
+        if camera.focusPoint != nil {
+            focusDisplayPoint = nil
+            camera.focus(at: nil)
+        } else {
+            let centre = CGPoint(x: 0.5, y: 0.5)
+            focusDisplayPoint = centre
+            camera.focus(at: centre, lock: true)
+        }
+    }
     private func changePanel() {
         if haptics { UISelectionFeedbackGenerator().selectionChanged() }
         withAnimation(reduceMotion ? nil : .easeOut(duration: 0.18)) { options.toggle() }
@@ -1161,6 +1131,7 @@ struct CameraView: View {
 
 /// Side menu: the Digi name, which camera look to use (just G12 for now), and shortcuts.
 private struct SidePanel: View {
+    @Environment(\.guidanceTheme) private var theme
     let width: CGFloat
     let close: () -> Void
     let openGuidance: () -> Void
@@ -1179,31 +1150,32 @@ private struct SidePanel: View {
                 }.accessibilityLabel("Close menu").accessibilityIdentifier("menu-close")
             }.padding(.bottom, 24)
 
-            Text("Your cameras").font(.footnote.weight(.semibold)).foregroundStyle(.white.opacity(0.55)).padding(.bottom, 8)
+            Text("YOUR CAMERAS").font(.system(size: 10, design: .monospaced)).tracking(0.6).foregroundStyle(.white.opacity(0.55)).padding(.bottom, 8)
             VStack(spacing: 8) {
                 cameraRow("G12", detail: "Your everyday classic", available: true)
                 cameraRow("S95", detail: "Coming soon", available: false)
                 cameraRow("G7 X", detail: "Coming soon", available: false)
             }
 
-            Text("Camera guidance").font(.footnote.weight(.semibold)).foregroundStyle(.white.opacity(0.55)).padding(.top, 24).padding(.bottom, 8)
+            Text("CAMERA GUIDANCE").font(.system(size: 10, design: .monospaced)).tracking(0.6).foregroundStyle(.white.opacity(0.55)).padding(.top, 24).padding(.bottom, 8)
             HStack(spacing: 8) {
-                ForEach([GuidanceStyle.soft, .minimal, .full], id: \.self) { style in
+                ForEach([GuidanceStyle.soft, .full], id: \.self) { style in
                     Button { settings.prefs.select(style); settings.hasChosen = true } label: {
                         Text(style == .full ? "Full" : style.title).font(.subheadline.weight(.medium))
                             .frame(maxWidth: .infinity, minHeight: 40)
-                            .background(settings.prefs.style == style ? CameraStyle.accent : CameraStyle.panel, in: Capsule())
-                            .foregroundStyle(settings.prefs.style == style ? Color.black : CameraStyle.silver)
+                            .background(settings.prefs.style == style ? theme.accent : theme.glass.opacity(0.5), in: Capsule())
+                            .overlay(Capsule().stroke(.white.opacity(settings.prefs.style == style ? 0 : 0.22), lineWidth: 0.5))
+                            .foregroundStyle(settings.prefs.style == style ? Color.black.opacity(0.85) : theme.silver)
                     }.buttonStyle(.plain).accessibilityIdentifier("menu-look-\(style.rawValue)")
                 }
             }
             shortcut("slider.horizontal.3", "Fine-tune guidance", id: "menu-guidance", action: openGuidance).padding(.top, 8)
             Spacer()
         }
-        .foregroundStyle(CameraStyle.silver)
+        .foregroundStyle(theme.silver)
         .padding(.horizontal, 20 * scale).padding(.top, 60).padding(.bottom, 24)
         .frame(width: width).frame(maxHeight: .infinity)
-        .background(CameraStyle.body.ignoresSafeArea())
+        .background(theme.body.ignoresSafeArea())
         .overlay(alignment: .trailing) { Rectangle().fill(.white.opacity(0.1)).frame(width: 1).ignoresSafeArea() }
     }
 
@@ -1211,16 +1183,16 @@ private struct SidePanel: View {
         Button { if available { close() } } label: {
             HStack(spacing: 12) {
                 Image(systemName: "camera").font(.system(size: 20 * scale))
-                    .foregroundStyle(available ? CameraStyle.accent : CameraStyle.silver.opacity(0.5))
+                    .foregroundStyle(available ? theme.accent : theme.silver.opacity(0.5))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(name).font(.headline)
                     Text(detail).font(.footnote).foregroundStyle(.secondary)
                 }
                 Spacer()
-                if available { Image(systemName: "checkmark.circle.fill").foregroundStyle(CameraStyle.accent) }
+                if available { Image(systemName: "checkmark.circle.fill").foregroundStyle(theme.accent) }
             }
             .padding(14).frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
-            .background(CameraStyle.panel, in: RoundedRectangle(cornerRadius: 14))
+            .glass(14)
         }.buttonStyle(.plain).disabled(!available)
             .accessibilityLabel(available ? "\(name), selected" : "\(name), coming soon")
             .accessibilityIdentifier("camera-\(name)")
@@ -1234,7 +1206,7 @@ private struct SidePanel: View {
                 Spacer()
                 Image(systemName: "chevron.right").font(.footnote).foregroundStyle(.white.opacity(0.4))
             }.padding(14).frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
-                .background(CameraStyle.panel, in: RoundedRectangle(cornerRadius: 14))
+                .glass(14)
         }.buttonStyle(.plain).accessibilityIdentifier(id)
     }
 }
@@ -1251,6 +1223,7 @@ private struct ShutterPressStyle: ButtonStyle {
 /// equivalent focal length, then shrinks to a small "1.4×" while zoomed in. A light click marks 1x,
 /// 1.5x and 2x without snapping to them; 1x and 2x are the sharpest settings. Not interactive.
 struct ZoomReadout: View {
+    @Environment(\.guidanceTheme) private var theme
     let zoom: CGFloat
     /// `.simple` shows just "1.4×": no ruler, no focal length.
     var detail: ZoomDetail = .ruler
@@ -1265,7 +1238,7 @@ struct ZoomReadout: View {
                 HStack(spacing: 8) {
                     if showDetail && detail == .ruler { ruler.transition(.opacity) }
                     Text(label).font(.system(size: 13, weight: .semibold, design: detail == .ruler ? .monospaced : .default)).monospacedDigit()
-                        .foregroundStyle(zoom > 1.01 && detail == .ruler ? CameraStyle.accent : .white)
+                        .foregroundStyle(zoom > 1.01 && detail == .ruler ? theme.accent : .white)
                 }
                 .padding(.horizontal, 12).padding(.vertical, 7)
                 .background(.black.opacity(0.6), in: Capsule())
@@ -1302,9 +1275,270 @@ struct ZoomReadout: View {
                     .frame(width: 1, height: stop ? 10 : 5)
                     .offset(x: width * CGFloat(i) / 10)
             }
-            Circle().fill(CameraStyle.accent).frame(width: 7, height: 7)
+            Circle().fill(theme.accent).frame(width: 7, height: 7)
                 .offset(x: width * (zoom - 1) - 3)
         }
         .frame(width: width + 1, height: 12, alignment: .leading)
+    }
+}
+
+
+// MARK: - Glass controls (translucent chrome over the viewfinder)
+
+/// Smoked, see-through panel: a dark tint over a thin material, with a fine light edge.
+private struct Glass: ViewModifier {
+    @Environment(\.guidanceTheme) private var theme
+    var radius: CGFloat = 16
+    var strong = false
+    func body(content: Content) -> some View {
+        content
+            .background(RoundedRectangle(cornerRadius: radius).fill(theme.glass.opacity(strong ? 0.72 : 0.5)))
+            .background(RoundedRectangle(cornerRadius: radius).fill(.ultraThinMaterial))
+            .overlay(RoundedRectangle(cornerRadius: radius).stroke(.white.opacity(0.22), lineWidth: 0.5))
+    }
+}
+private extension View { func glass(_ radius: CGFloat = 16, strong: Bool = false) -> some View { modifier(Glass(radius: radius, strong: strong)) } }
+
+/// Top strip: menu, a monospaced readout of what the camera is set to, and the flash state.
+private struct ReadoutBar: View {
+    @Environment(\.guidanceTheme) private var theme
+    @ObservedObject var camera: CameraController
+    var menu: () -> Void
+    var timerSeconds: Int
+
+    var body: some View {
+        HStack {
+            Button(action: menu) { Image(systemName: "line.3.horizontal").font(.system(size: 17)).frame(width: 44, height: 44) }
+                .buttonStyle(.plain).accessibilityLabel("Menu").accessibilityIdentifier("camera-picker")
+            Spacer(minLength: 0)
+            HStack(spacing: 8) {
+                Text(String(format: "EV %+.1f", camera.exposureBias)).foregroundStyle(theme.accent)
+                Text(String(format: "%.1f×", camera.zoom))
+                Text(camera.exposureLocked ? "LOCK" : "AUTO")
+                if camera.captureStudyEnabled { Text("STUDY").foregroundStyle(theme.accent) }
+                if timerSeconds > 0 { Label("\(timerSeconds)s", systemImage: "timer").labelStyle(.titleAndIcon) }
+            }.font(.system(size: 10, weight: .medium, design: .monospaced)).tracking(0.4).lineLimit(1).minimumScaleFactor(0.8)
+            Spacer(minLength: 0)
+            Image(systemName: camera.flash.symbol).font(.system(size: 15))
+                .foregroundStyle(camera.flash == .off ? .white.opacity(0.7) : theme.accent)
+                .frame(width: 44, height: 44).accessibilityLabel("Flash \(camera.flash.rawValue)")
+        }
+        .padding(.horizontal, 2).frame(height: 40).glass(14).foregroundStyle(.white)
+    }
+}
+
+/// Slim rail on the right edge: framing grid, self-timer, look, and the button that opens the compact options card.
+private struct GlassRail: View {
+    @Environment(\.guidanceTheme) private var theme
+    @Binding var grid: Bool
+    @Binding var timerSeconds: Int
+    var moreOpen: Bool
+    var more: () -> Void
+
+    var body: some View {
+        VStack(spacing: 14) {
+            item("grid", "GRID", on: grid) { grid.toggle() }
+            item("timer", timerSeconds > 0 ? "\(timerSeconds)S" : "TIMER", on: timerSeconds > 0) {
+                timerSeconds = timerSeconds == 0 ? 3 : timerSeconds == 3 ? 10 : 0
+            }.accessibilityIdentifier("self-timer")
+            Button(action: more) {
+                VStack(spacing: 2) {
+                    Image(systemName: moreOpen ? "xmark" : "slider.horizontal.3").font(.system(size: 16, weight: .medium))
+                    Text(moreOpen ? "LESS" : "MORE").font(.system(size: 8, design: .monospaced))
+                }.frame(width: 38, height: 40)
+                    .background(moreOpen ? theme.accent : .clear, in: RoundedRectangle(cornerRadius: 13))
+                    .foregroundStyle(moreOpen ? Color.black.opacity(0.8) : .white)
+            }.buttonStyle(.plain).accessibilityLabel(moreOpen ? "Close options" : "Camera options")
+        }
+        .padding(.vertical, 10).padding(.horizontal, 3).glass(22).foregroundStyle(.white.opacity(0.9))
+    }
+
+    private func item(_ symbol: String, _ label: String, on: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 2) {
+                Image(systemName: symbol).font(.system(size: 16, weight: .medium))
+                Text(label).font(.system(size: 8, design: .monospaced))
+            }.frame(width: 38, height: 40).foregroundStyle(on ? theme.accent : .white.opacity(0.9))
+        }.buttonStyle(.plain).accessibilityLabel(label)
+    }
+}
+
+/// The compact options card: exposure, flash, focus/exposure lock, shutter feedback, and a way to the full list.
+private struct OptionsCard: View {
+    @Environment(\.guidanceTheme) private var theme
+    @ObservedObject var camera: CameraController
+    @Binding var haptics: Bool
+    var toggleFocus: () -> Void
+    var all: () -> Void
+
+    var body: some View {
+        VStack(spacing: 10) {
+            HStack(spacing: 10) {
+                Text("EV").font(.system(size: 10, design: .monospaced))
+                Slider(value: Binding(get: { camera.exposureBias }, set: { camera.setBrightness($0) }), in: camera.exposureRange, step: 0.1)
+                    .tint(theme.accent).accessibilityLabel("Brightness")
+                    .disabled(!camera.ready || !camera.exposureSupported || camera.exposureLocked || camera.busy || camera.pending)
+                Text(String(format: "%+.1f", camera.exposureBias)).font(.system(size: 10, design: .monospaced)).foregroundStyle(theme.accent)
+            }
+            HStack(spacing: 6) {
+                tile(camera.flash.symbol, "FLASH", on: camera.flash != .off) { cycleFlash() }
+                    .accessibilityIdentifier("flash-mode")
+                tile(camera.focusPoint == nil ? "lock.open" : "lock", camera.focusPoint == nil ? "AF AUTO" : "AF LOCK",
+                     on: camera.focusPoint != nil, action: toggleFocus)
+                tile("hand.tap", "HAPTIC", on: haptics) { haptics.toggle() }
+                tile("ellipsis", "ALL", on: false, action: all)
+            }
+        }
+        .padding(10).glass(16, strong: true).foregroundStyle(.white)
+    }
+
+    private func cycleFlash() {
+        let modes = PhotoFlash.allCases.filter { camera.supportedFlash.contains($0) }
+        guard modes.count > 1, let i = modes.firstIndex(of: camera.flash) else { return }
+        camera.flash = modes[(i + 1) % modes.count]
+    }
+
+    private func tile(_ symbol: String, _ label: String, on: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 3) {
+                Image(systemName: symbol).font(.system(size: 15))
+                Text(label).font(.system(size: 8, design: .monospaced))
+            }.frame(maxWidth: .infinity).padding(.vertical, 7)
+                .overlay(RoundedRectangle(cornerRadius: 9).stroke(on ? theme.accent : .white.opacity(0.3), lineWidth: on ? 1 : 0.5))
+                .foregroundStyle(on ? theme.accent : .white)
+        }.buttonStyle(.plain).accessibilityLabel(label)
+    }
+}
+
+/// Bottom (or, in landscape, right-hand) strip: last photo, the shutter, and the Director.
+private struct ControlStrip: View {
+    @ObservedObject private var store = AppPhotoStore.shared
+    @Environment(\.guidanceTheme) private var theme
+    var vertical: Bool
+    @ObservedObject var camera: CameraController
+    var canShoot: Bool
+    var bottomInset: CGFloat
+    var shoot: () -> Void
+    var review: () -> Void
+    var director: () -> Void
+
+    var body: some View {
+        let layout = vertical ? AnyLayout(VStackLayout(spacing: 0)) : AnyLayout(HStackLayout(spacing: 0))
+        layout {
+            if !vertical { Spacer(minLength: 0) }
+            labelled("PHOTOS", .white.opacity(0.7)) { thumbnail }
+            Spacer(minLength: 0)
+            shutter
+            Spacer(minLength: 0)
+            labelled("DIRECTOR", theme.accent) { directorButton }
+            if !vertical { Spacer(minLength: 0) }
+        }
+        .padding(.horizontal, vertical ? 8 : 12).padding(.top, vertical ? 14 : 12)
+        .padding(.bottom, (vertical ? 14 : 8) + bottomInset)
+        .frame(width: vertical ? 120 : nil, height: vertical ? nil : 96 + bottomInset)
+        .frame(maxWidth: vertical ? nil : .infinity, maxHeight: vertical ? .infinity : nil)
+        .background(theme.glass.opacity(0.62))
+        .background(.ultraThinMaterial)
+        .overlay(alignment: vertical ? .leading : .top) {
+            Rectangle().fill(.white.opacity(0.22)).frame(width: vertical ? 0.5 : nil, height: vertical ? nil : 0.5)
+        }
+    }
+
+    private func labelled<V: View>(_ text: String, _ color: Color, @ViewBuilder _ content: () -> V) -> some View {
+        VStack(spacing: 4) {
+            content()
+            Text(text).font(.system(size: 8, design: .monospaced)).foregroundStyle(color)
+        }
+    }
+
+    private var thumbnail: some View {
+        Button(action: review) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.08))
+                if let photo = camera.lastPhoto ?? store.photos.first.flatMap({ store.thumbnail($0) }) { Image(uiImage: photo).resizable().scaledToFill() }
+                else { Image(systemName: "photo").font(.system(size: 19)).foregroundStyle(.white.opacity(0.55)) }
+            }.frame(width: 50, height: 50).clipShape(RoundedRectangle(cornerRadius: 10))
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(.white.opacity(0.6), lineWidth: 1))
+        }.accessibilityLabel("Review last photo")
+    }
+
+    private var shutter: some View {
+        Button(action: shoot) {
+            ZStack {
+                Circle().stroke(.white.opacity(0.75), lineWidth: 1.5).frame(width: 76, height: 76)
+                Circle().fill(Color(red: 0.95, green: 0.95, blue: 0.94)).frame(width: 62, height: 62)
+                    .overlay(Circle().stroke(.black.opacity(0.18), lineWidth: 2))
+                Circle().stroke(.black.opacity(0.2), lineWidth: 1).frame(width: 40, height: 40)
+            }.frame(width: 84, height: 84)
+        }.buttonStyle(ShutterPressStyle())
+            .disabled(!canShoot).opacity(canShoot ? 1 : 0.4)
+            .accessibilityLabel("Take photo")
+    }
+
+    private var directorButton: some View {
+        Button(action: director) {
+            Image(systemName: "wand.and.stars").font(.system(size: 20))
+                .frame(width: 50, height: 50)
+                .background(Circle().fill(Color.black.opacity(0.35)))
+                .overlay(Circle().stroke(theme.accent, lineWidth: 1))
+                .foregroundStyle(theme.accent)
+        }.accessibilityLabel("Photography director").accessibilityIdentifier("director-open")
+    }
+}
+
+/// Portrait: grid, self-timer, zoom stops and the options button in one glass row above the shutter strip.
+private struct QuickRow: View {
+    @Environment(\.guidanceTheme) private var theme
+    @Binding var grid: Bool
+    @Binding var timerSeconds: Int
+    var moreOpen: Bool
+    var zoom: CGFloat
+    var zoomSupported: Bool
+    var setZoom: (CGFloat) -> Void
+    var more: () -> Void
+    private let stops: [CGFloat] = [1, 1.5, 2]
+
+    var body: some View {
+        HStack(spacing: 6) {
+            button("grid", "GRID", on: grid) { grid.toggle() }
+            button("timer", timerSeconds > 0 ? "\(timerSeconds)S" : "TIMER", on: timerSeconds > 0) {
+                timerSeconds = timerSeconds == 0 ? 3 : timerSeconds == 3 ? 10 : 0
+            }.accessibilityIdentifier("self-timer")
+            Spacer(minLength: 4)
+            if zoomSupported {
+                HStack(spacing: 2) {
+                    ForEach(stops, id: \.self) { z in
+                        let active = abs(zoom - z) < 0.06
+                        Button { setZoom(z) } label: {
+                            Text(z == 1 || z == 2 ? String(format: "%.0f×", z) : "1.5")
+                                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                                .padding(.horizontal, 11).padding(.vertical, 7)
+                                .background(active ? theme.accent : .clear, in: Capsule())
+                                .foregroundStyle(active ? Color.black.opacity(0.8) : .white)
+                        }.buttonStyle(.plain).accessibilityLabel("Zoom \(z) times")
+                    }
+                }
+            }
+            Spacer(minLength: 4)
+            Button(action: more) {
+                VStack(spacing: 2) {
+                    Image(systemName: moreOpen ? "xmark" : "slider.horizontal.3").font(.system(size: 15, weight: .medium))
+                    Text(moreOpen ? "LESS" : "MORE").font(.system(size: 8, design: .monospaced))
+                }.frame(width: 46, height: 40)
+                    .background(moreOpen ? theme.accent : .clear, in: RoundedRectangle(cornerRadius: 12))
+                    .foregroundStyle(moreOpen ? Color.black.opacity(0.8) : .white)
+            }.buttonStyle(.plain).accessibilityLabel(moreOpen ? "Close options" : "Camera options")
+        }
+        .padding(.horizontal, 10).padding(.vertical, 4).glass(22).foregroundStyle(.white.opacity(0.9))
+        .padding(.horizontal, 14)
+    }
+
+    private func button(_ symbol: String, _ label: String, on: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 2) {
+                Image(systemName: symbol).font(.system(size: 15, weight: .medium))
+                Text(label).font(.system(size: 8, design: .monospaced))
+            }.frame(width: 44, height: 40).foregroundStyle(on ? theme.accent : .white.opacity(0.9))
+        }.buttonStyle(.plain).accessibilityLabel(label)
     }
 }

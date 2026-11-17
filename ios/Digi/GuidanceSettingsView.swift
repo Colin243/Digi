@@ -3,17 +3,17 @@ import DirectorKit
 
 extension GuidanceStyle {
     var title: String {
-        switch self { case .full: return "Full info"; case .soft: return "Soft"; case .minimal: return "Minimal" }
+        switch self { case .full: return "Full info"; case .soft: return "Minimal"; case .minimal: return "Quiet" }
     }
     var blurb: String {
         switch self {
         case .full: return "Every number and detail, for people who want them."
-        case .soft: return "One friendly hint at a time, in plain words."
+        case .soft: return "Quiet by default: one friendly hint at a time, in plain words."
         case .minimal: return "Nearly nothing on screen until something is off."
         }
     }
     var next: GuidanceStyle {
-        switch self { case .full: return .soft; case .soft: return .minimal; case .minimal: return .full }
+        switch self { case .full: return .soft; case .soft, .minimal: return .full }
     }
 }
 
@@ -33,6 +33,7 @@ extension GuidanceLevel {
 
 /// Pick a look, set how much help, fine-tune. Also used as the first-run "pick your look" step.
 struct GuidanceSettingsView: View {
+    @Environment(\.guidanceTheme) private var theme
     @ObservedObject private var settings = GuidanceSettings.shared
     var firstRun = false
     var done: () -> Void
@@ -64,7 +65,7 @@ struct GuidanceSettingsView: View {
                 }
 
                 VStack(spacing: 10) {
-                    ForEach([GuidanceStyle.soft, .minimal, .full], id: \.self) { style in
+                    ForEach([GuidanceStyle.soft, .full], id: \.self) { style in
                         StyleCard(style: style, selected: prefs.style == style) {
                             settings.prefs.select(style)
                             settings.hasChosen = true
@@ -89,8 +90,8 @@ struct GuidanceSettingsView: View {
 
             }.padding(.horizontal, 20 * scale).padding(.vertical, 20)
         }
-        .background(CameraStyle.body.ignoresSafeArea())
-        .foregroundStyle(.white).tint(CameraStyle.accent)
+        .background(theme.body.ignoresSafeArea())
+        .foregroundStyle(.white).tint(theme.accent)
         .preferredColorScheme(.dark)
     }
 
@@ -131,9 +132,9 @@ struct GuidanceSettingsView: View {
                 Toggle("Buzz when it looks right", isOn: flag(d.haptics) { o, v in o.haptics = v })
                 if prefs.isCustom {
                     Button("Reset to \(prefs.style.title)") { settings.prefs.resetOverrides() }
-                        .font(.subheadline).foregroundStyle(CameraStyle.accent)
+                        .font(.subheadline).foregroundStyle(theme.accent)
                 }
-        }.padding(.top, 6).tint(CameraStyle.accent)
+        }.padding(.top, 6).tint(theme.accent)
     }
 
     private var developer: some View {
@@ -162,6 +163,7 @@ enum DEBUGBuild {
 }
 
 private struct StyleCard: View {
+    @Environment(\.guidanceTheme) private var theme
     let style: GuidanceStyle
     let selected: Bool
     let action: () -> Void
@@ -177,11 +179,11 @@ private struct StyleCard: View {
                 }
                 Spacer()
                 Image(systemName: selected ? "checkmark.circle.fill" : "circle").font(.title3)
-                    .foregroundStyle(selected ? CameraStyle.accent : .white.opacity(0.35))
+                    .foregroundStyle(selected ? theme.accent : .white.opacity(0.35))
             }
             .padding(12)
             .background(.white.opacity(selected ? 0.12 : 0.06), in: RoundedRectangle(cornerRadius: 16))
-            .overlay(RoundedRectangle(cornerRadius: 16).stroke(selected ? CameraStyle.accent : .clear, lineWidth: 1.5))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(selected ? theme.accent : .clear, lineWidth: 1.5))
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("guidance-style-\(style.rawValue)")
@@ -191,6 +193,7 @@ private struct StyleCard: View {
 
 /// A tiny stand-in viewfinder showing how each style's hint looks.
 private struct StyleSample: View {
+    @Environment(\.guidanceTheme) private var theme
     let style: GuidanceStyle
     var body: some View {
         let theme = GuidanceTheme.make(style)
@@ -201,7 +204,7 @@ private struct StyleSample: View {
                 Spacer()
                 switch style {
                 case .full:
-                    Text("Tilt up 14° +1").font(.system(size: 7, weight: .semibold)).foregroundStyle(CameraStyle.accent)
+                    Text("Tilt up 14° +1").font(.system(size: 7, weight: .semibold)).foregroundStyle(theme.accent)
                         .padding(3).background(.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 3))
                 case .soft:
                     HStack(spacing: 2) {

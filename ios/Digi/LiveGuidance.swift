@@ -235,7 +235,7 @@ struct LiveCueRow: View {
                 Text(words(cue)).font(.system(.subheadline, design: theme.cueDesign, weight: theme.cueWeight))
                 if style == .topPlusCount && g.cues.count > 1 { Text("+\(g.cues.count - 1)").font(.caption2).foregroundStyle(.white.opacity(0.6)) }
             }
-            .foregroundStyle(theme.hint ?? accent)
+            .foregroundStyle(theme.hint ?? theme.accent)
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("live-cue")
         } else if live.running && !g.hasTargets && g.pitchDegrees != nil {

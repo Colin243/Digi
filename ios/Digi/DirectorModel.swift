@@ -236,7 +236,7 @@ struct PinnedShotCard: View {
     @ObservedObject private var settings = GuidanceSettings.shared
     @Environment(\.guidanceTheme) private var theme
     /// The card's highlight colour follows the look: gold in Full info, pink in Soft, white in Minimal.
-    private var accent: Color { theme.hint ?? Color(red: 1.0, green: 0.78, blue: 0.2) }
+    private var accent: Color { theme.hint ?? theme.accent }
     /// Soft and Minimal keep the card small: just the title, with the live hint floating lower.
     private var compact: Bool { settings.prefs.style != .full }
     @Environment(\.deviceScale) private var scale
@@ -282,7 +282,7 @@ struct PinnedShotCard: View {
                             line("Pose", shot.bodyPose); line("Head", shot.headDirection); line("Gaze", shot.gaze)
                             line("Expression", shot.expressionCue)
                         }
-                    }.frame(maxHeight: 120)
+                    }.frame(maxHeight: 175)
                     if !shot.steps.isEmpty {
                         let i = min(store.stepIndex, shot.steps.count - 1)
                         HStack(alignment: .top, spacing: 8) {
