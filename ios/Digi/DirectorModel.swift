@@ -96,7 +96,9 @@ final class DirectorModel: ObservableObject {
                     case .stage(let stage, let engine):
                         self.engineUsed = engine
                         self.stageText = Self.describe(stage, engine)
-                    case .shot(let shot, let engine):
+                    case .shot(let rawShot, let engine):
+                        // Zoom and distance come from a rule, not from the model (it kept writing 2x looks with 1x distances).
+                        let shot = ZoomPlan.resolved(rawShot)
                         self.engineUsed = engine
                         shotCount += 1; if firstShotAt == nil { firstShotAt = Date() }
                         if refreshing {

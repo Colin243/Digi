@@ -30,6 +30,9 @@ public struct Shot: Codable, Equatable, Sendable, Identifiable {
     public var headDirection: String
     public var gaze: String
     public var expressionCue: String
+    /// Place facts the model reports for the zoom rule: "yes", "no" or empty when the model did not say.
+    public var roomToStepBack: String = ""
+    public var backgroundWorthEnlarging: String = ""
 
     public init(
         title: String, cameraPosition: String, cameraHeight: String, cameraAngle: String,
@@ -61,6 +64,7 @@ public struct Shot: Codable, Equatable, Sendable, Identifiable {
         case visibleEvidence = "visible_evidence", needsOnSiteCheck = "needs_on_site_check", steps
         case bodyPose = "body_pose", headDirection = "head_direction", gaze
         case expressionCue = "expression_cue"
+        case roomToStepBack = "room_to_step_back", backgroundWorthEnlarging = "background_worth_enlarging"
     }
 
     public init(from decoder: Decoder) throws {
@@ -81,6 +85,7 @@ public struct Shot: Codable, Equatable, Sendable, Identifiable {
         visibleEvidence = list(.visibleEvidence); needsOnSiteCheck = list(.needsOnSiteCheck)
         steps = list(.steps); bodyPose = text(.bodyPose); headDirection = text(.headDirection)
         gaze = text(.gaze); expressionCue = text(.expressionCue)
+        roomToStepBack = text(.roomToStepBack); backgroundWorthEnlarging = text(.backgroundWorthEnlarging)
     }
 
     /// The fields every shot must carry to be actionable (schema.py: Composition minimums).
