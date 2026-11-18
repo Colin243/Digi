@@ -83,6 +83,9 @@ class MonitorApp:
                 off = 0
             ev = read_events(d / "events.jsonl", off)
             return 200, {**ev, **st}
+        if route == "/api/evals":
+            from . import evals as EV
+            return 200, EV.collect(PROJECT_ROOT / "runs")
         if route == "/api/compare":
             a, b = g("a", ""), g("b", "")
             for p in (a, b):

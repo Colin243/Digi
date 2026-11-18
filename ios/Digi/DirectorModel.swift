@@ -3,35 +3,38 @@ import SwiftUI
 import UIKit
 import DirectorKit
 
-/// Stand-in until the on-device engine (mlx-swift-lm) is wrapped as a DirectorEngine. It always
-/// declines, so HybridDirector reports a clear error instead of crashing when the server is unreachable.
-struct OfflineEngineUnavailable: DirectorEngine {
-    let kind: EngineKind = .offline
-    func plan(_ request: DirectorRequest) -> AsyncThrowingStream<DirectorEvent, Error> {
-        AsyncThrowingStream { $0.finish(throwing: DirectorError.offlineUnavailable("The on-device director is not installed yet.")) }
-    }
-}
-
 @MainActor
 final class DirectorModel: ObservableObject {
     enum Phase: Equatable { case idle, running, done, failed(String) }
 
     @Published var phase: Phase = .idle
     @Published var stageText = ""
-    @Published var shots: [Shot] = []
+    @Published private(set) var deck = ShotDeck()
+    var shots: [Shot] { deck.shots }
+    /// The request behind the shots on screen, so a refresh asks for the same place and style again.
+    private var lastRequest: DirectorRequest?
     @Published var engineUsed: EngineKind?
     @Published var notice: String?
 
     private var task: Task<Void, Never>?
 
+    #if DEBUG
+    init() {
+        // Debug only: `-digiDebugShots YES` shows sample results so the shot cards can be reviewed without a server.
+        if UserDefaults.standard.bool(forKey: "digiDebugShots") {
+            for i in 0..<3 { var shot = PinnedShotStore.debugSampleShot; shot.title += " \(i + 1)"; deck.append(shot) }
+            engineUsed = .online; phase = .done
+        }
+    }
+    #endif
+
     /// Builds the director from the current Settings each time, so edits apply to the next request.
     private func makeDirector() -> HybridDirector {
-        // The Mac-hosted server needs ~12 s for a first shot and 30-60 s overall; the package defaults
-        // (6 s / 15 s) are for a cloud GPU. Tighten these again when the server moves to the cloud.
-        let config = DirectorConfig(preference: DirectorDefaults.userPreference(),
-                                    onlineFirstShotDeadline: 40, onlineTotalDeadline: 120)
+        // Best results by default: the online model writes better shots, so it gets time to finish.
+        // Waiting limits come from the user's priority (see DirectorPriority).
+        let config = DirectorConfig.make(preference: DirectorDefaults.userPreference(), priority: DirectorDefaults.userPriority())
         let online = DirectorDefaults.configuration().map { OnlineEngine(configuration: $0) }
-        return HybridDirector(online: online, offline: OfflineEngineUnavailable(),
+        return HybridDirector(online: online, offline: OfflineEngine(generator: OnDeviceGenerator.shared),
                               conditions: SystemConditionsProvider(), config: { config })
     }
 
@@ -46,9 +49,46 @@ final class DirectorModel: ObservableObject {
         let request = DirectorRequest(mode: mode, style: mode == .scene ? style : nil,
                                       brief: brief.isEmpty ? nil : brief, images: images)
         cancel()
-        shots = []; engineUsed = nil; notice = nil; stageText = "Starting"; phase = .running
+        lastRequest = request
+        deck.clear()
+        start(request, refreshing: false)
+    }
+
+    /// Keeps the starred shots and rewrites the rest, steering the engine away from every look seen so far.
+    func refresh() {
+        guard phase != .running, let base = lastRequest, let seen = deck.beginRefresh() else { return }
+        let request = DirectorRequest(mode: base.mode, style: base.style,
+                                      brief: ShotDeck.briefAvoiding(seen, base: base.brief), images: base.images)
+        start(request, refreshing: true)
+    }
+
+    func toggleKeep(_ shot: Shot) {
+        deck.toggleKeep(shot)
+        if let id = currentRun { let kept = deck.keptCount; RunLogStore.update(id) { $0.keptCount = kept } }
+    }
+
+    /// The person pinned a shot to the camera: the strongest sign the run was useful.
+    func markUsed() { if let id = currentRun { RunLogStore.update(id) { $0.usedShot = true } } }
+
+    private var currentRun: UUID?
+
+    private func start(_ request: DirectorRequest, refreshing: Bool) {
+        task?.cancel(); task = nil  // not cancel(): that would end the refresh that was just begun
+        engineUsed = nil; notice = nil; stageText = refreshing ? "Rewriting" : "Starting"; phase = .running
         let director = makeDirector()
+        let priority = DirectorDefaults.userPriority()
+        let started = Date()
+        var firstShotAt: Date?, shotCount = 0, fellBack = false
         task = Task { [weak self] in
+            /// Writes the run to the log once it ends with at least one shot.
+            @MainActor func record() {
+                guard let self, shotCount > 0 else { return }
+                let r = RunRecord(engine: self.engineUsed ?? .offline, priority: priority,
+                                  firstShotSeconds: firstShotAt.map { $0.timeIntervalSince(started) },
+                                  totalSeconds: Date().timeIntervalSince(started), shotCount: shotCount, fellBack: fellBack)
+                self.currentRun = r.id
+                RunLogStore.append(r)
+            }
             do {
                 for try await event in director.plan(request) {
                     guard let self else { return }
@@ -56,25 +96,39 @@ final class DirectorModel: ObservableObject {
                     case .stage(let stage, let engine):
                         self.engineUsed = engine
                         self.stageText = Self.describe(stage, engine)
-                    case .shot(let shot, let engine):
+                    case .shot(let rawShot, let engine):
+                        // Zoom and distance come from a rule, not from the model (it kept writing 2x looks with 1x distances).
+                        let shot = ZoomPlan.resolved(rawShot)
                         self.engineUsed = engine
-                        self.shots.append(shot)
+                        shotCount += 1; if firstShotAt == nil { firstShotAt = Date() }
+                        if refreshing {
+                            // Every waiting slot filled: stop early, the rest of the answer is not needed.
+                            if self.deck.fill(shot) { self.phase = .done; record(); self.task?.cancel(); return }
+                        } else {
+                            self.deck.append(shot)
+                        }
                     case .engineSwitched(_, let to, let reason):
-                        self.shots = []; self.engineUsed = to
+                        fellBack = true
+                        if !refreshing { self.deck.resetKeepingFavorites() }
+                        self.engineUsed = to
                         self.notice = "Switched to \(to == .offline ? "the phone" : "online"): \(reason)."
                     case .finished(let engine):
                         self.engineUsed = engine; self.phase = .done
                     }
                 }
                 if self?.phase == .running { self?.phase = .done }
+                record()
+                self?.deck.endRefresh()
             } catch is CancellationError {
+                self?.deck.endRefresh()
             } catch {
+                self?.deck.endRefresh()
                 self?.phase = .failed(Self.message(for: error))
             }
         }
     }
 
-    func cancel() { task?.cancel(); task = nil; if phase == .running { phase = .idle } }
+    func cancel() { task?.cancel(); task = nil; deck.endRefresh(); if phase == .running { phase = .idle } }
 
     // MARK: helpers
 
@@ -137,10 +191,25 @@ final class PinnedShotStore: ObservableObject {
     private init() {
         if let data = UserDefaults.standard.data(forKey: Self.storageKey),
            let saved = try? JSONDecoder().decode(Shot.self, from: data) { shot = saved }
+        #if DEBUG
+        // Debug only: `simctl launch … -digiDebugPinShot YES` pins a sample shot so the pinned-shot UI
+        // can be seen without a Director engine (the simulator has none).
+        if UserDefaults.standard.bool(forKey: "digiDebugPinShot") { shot = Self.debugSampleShot; expanded = false }
+        #endif
     }
 
+    #if DEBUG
+    static let debugSampleShot = Shot(
+        title: "Warm backlit walk", cameraPosition: "Stand about 3 m back, slightly left of the path",
+        cameraHeight: "Chest height", cameraAngle: "Level, tilted slightly up",
+        subjectPosition: "On the path, left third of the frame", steps: ["Crouch a little", "Wait for light between the trees", "Shoot"],
+        bodyPose: "Walk slowly away from the camera, hands relaxed",
+        headDirection: "Turn your head slightly to the right, chin level", gaze: "Look at the light ahead",
+        expressionCue: "Soft smile, as if you just noticed something nice")
+    #endif
+
     func pin(_ shot: Shot) {
-        self.shot = shot; stepIndex = 0; expanded = true; directing = false; cueIndex = 0
+        self.shot = shot; stepIndex = 0; expanded = false; directing = false; cueIndex = 0
         if let data = try? JSONEncoder().encode(shot) { UserDefaults.standard.set(data, forKey: Self.storageKey) }
     }
 
@@ -164,11 +233,29 @@ final class PinnedShotStore: ObservableObject {
 struct PinnedShotCard: View {
     @ObservedObject var store: PinnedShotStore
     @ObservedObject private var live = LiveGuidance.shared
-    @AppStorage("digi.guidanceDebug") private var debugBoxes = false
-    private let accent = Color(red: 1.0, green: 0.78, blue: 0.2)
-
+    @ObservedObject private var settings = GuidanceSettings.shared
+    @Environment(\.guidanceTheme) private var theme
+    /// The card's highlight colour follows the look: gold in Full info, pink in Soft, white in Minimal.
+    private var accent: Color { theme.hint ?? theme.accent }
+    /// Soft and Minimal keep the card small: just the title, with the live hint floating lower.
+    private var compact: Bool { settings.prefs.style != .full }
+    @Environment(\.deviceScale) private var scale
+    private var cardRadius: CGFloat { theme.style == .soft ? 20 : theme.style == .minimal ? 14 : 12 }
+    private var cardStroke: Double { theme.style == .minimal ? 0.3 : theme.style == .soft ? 0.35 : 0.45 }
     var body: some View {
-        if let shot = store.shot {
+        if let shot = store.shot, compact, !store.expanded {
+            // Soft and Minimal: just a small circle that opens the shot guide.
+            HStack {
+                Button { withAnimation(.easeOut(duration: 0.15)) { store.expanded = true } } label: {
+                    Image(systemName: "scope").font(.system(size: 17 * scale)).foregroundStyle(accent)
+                        .frame(width: 40 * scale, height: 40 * scale)
+                        .background(.black.opacity(0.5), in: Circle())
+                }
+                .accessibilityLabel("Open shot guide: \(shot.title)")
+                .accessibilityIdentifier("pinned-shot-toggle")
+                Spacer()
+            }.padding(8).foregroundStyle(.white).accessibilityIdentifier("pinned-shot-card")
+        } else if let shot = store.shot {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 10) {
                     Image(systemName: "scope").foregroundStyle(accent)
@@ -182,8 +269,8 @@ struct PinnedShotCard: View {
                         Image(systemName: "xmark").frame(width: 32, height: 32)
                     }.accessibilityLabel("Remove pinned shot").accessibilityIdentifier("pinned-shot-clear")
                 }
-                LiveCueRow(live: LiveGuidance.shared, accent: accent)
-                controls
+                if !compact { LiveCueRow(live: LiveGuidance.shared, accent: accent, style: settings.display.cueRow) }
+                if store.expanded { controls }
                 if store.expanded && store.directing {
                     subjectCards(shot)
                 } else if store.expanded {
@@ -195,7 +282,7 @@ struct PinnedShotCard: View {
                             line("Pose", shot.bodyPose); line("Head", shot.headDirection); line("Gaze", shot.gaze)
                             line("Expression", shot.expressionCue)
                         }
-                    }.frame(maxHeight: 190)
+                    }.frame(maxHeight: 175)
                     if !shot.steps.isEmpty {
                         let i = min(store.stepIndex, shot.steps.count - 1)
                         HStack(alignment: .top, spacing: 8) {
@@ -209,14 +296,18 @@ struct PinnedShotCard: View {
                                 .disabled(i == shot.steps.count - 1).accessibilityLabel("Next step")
                         }.padding(8).background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
                     }
-                    Toggle("Show detection boxes", isOn: $debugBoxes).font(.caption).tint(accent)
-                        .accessibilityIdentifier("guidance-debug-toggle")
+                    if settings.prefs.style == .full {
+                        Toggle("Show detection boxes", isOn: settings.detectionBoxes).font(.caption).tint(accent)
+                            .accessibilityIdentifier("guidance-debug-toggle")
+                    }
                 }
             }
             .font(.footnote).foregroundStyle(.white)
-            .padding(10)
-            .background(.black.opacity(0.72), in: RoundedRectangle(cornerRadius: 12))
-            .overlay(RoundedRectangle(cornerRadius: 12).stroke(accent.opacity(0.45), lineWidth: 1))
+            .fontDesign(theme.cueDesign)
+            .padding(compact ? 12 : 8)
+            .background(.black.opacity(store.expanded ? 0.72 : 0.55), in: RoundedRectangle(cornerRadius: cardRadius))
+            .overlay { RoundedRectangle(cornerRadius: cardRadius).stroke(accent.opacity(cardStroke), lineWidth: theme.style == .minimal ? 0.5 : 1) }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(8)
             .accessibilityIdentifier("pinned-shot-card")
         }
@@ -243,25 +334,25 @@ struct PinnedShotCard: View {
         if live.subjectCuesEnabled && !head.isEmpty {
             VStack(alignment: .leading, spacing: 3) {
                 if g.subjectSatisfied {
-                    Label("Head looks right", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                    Label(GuidanceWording.text(.headRight, style: settings.prefs.style), systemImage: "checkmark.circle.fill").foregroundStyle(.green)
                 } else if g.subjectCues.isEmpty {
-                    Label("Watching their head…", systemImage: "eye").foregroundStyle(.white.opacity(0.6))
+                    Label(GuidanceWording.text(.watchingHead, style: settings.prefs.style), systemImage: "eye").foregroundStyle(.white.opacity(0.6))
                 } else {
                     ForEach(Array(g.subjectCues.enumerated()), id: \.offset) { _, c in
-                        Label(c.text, systemImage: c.symbol).foregroundStyle(.cyan)
+                        Label(GuidanceWording.text(for: c, style: settings.prefs.style), systemImage: c.symbol).foregroundStyle(.cyan)
                     }
                 }
             }
             .font(.footnote.weight(.semibold))
             .accessibilityIdentifier("subject-live-status")
         } else if live.subjectCuesEnabled {
-            Text("Nothing in this direction the camera can check.").font(.caption).foregroundStyle(.white.opacity(0.6))
+            Text(GuidanceWording.text(.noHeadChecks, style: settings.prefs.style)).font(.caption).foregroundStyle(.white.opacity(0.6))
         }
     }
 
     /// Big, read-aloud cards for directing the person: where to be, pose, head, eyes, expression.
     @ViewBuilder private func subjectCards(_ shot: Shot) -> some View {
-        Toggle(isOn: $live.subjectCuesEnabled) {
+        Toggle(isOn: settings.headCues) {
             Label("Live head cues (experimental)", systemImage: "face.smiling").font(.caption)
         }
         .tint(.cyan).accessibilityIdentifier("live-subject-toggle")

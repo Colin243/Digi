@@ -150,15 +150,40 @@ SCENE_SHOT_FIELDS = {
     **COMPOSITION_FIELDS_V2,
     "title": "a short name for this look",
     "uses_principle": "which part of the style brief this look puts into practice",
+    "room_to_step_back": "yes if the photographer can safely stand about twice as far back as this look says (open ground, no wall, water edge, drop or traffic behind them), otherwise no",
+    "background_worth_enlarging": "yes if a distant landmark or clutter in the background is worth enlarging or cropping with a 2x zoom (a tower, bridge, arch, skyline, peaks), otherwise no",
 }
 DIRECTOR_TARGET_FIELDS = {
     **TARGET_FIELDS,
     "people_in_frame": "who is visible in the photo, where they are and what they are physically doing, or the word none; describe only what can be seen",
 }
 
+SCENERY_TARGET_FIELDS = {
+    "description": "one or two sentences on the view: what it is and what dominates it",
+    "key_elements[]": "3-6 specific things visible that a shot can use (a peak, a tree, a shoreline, a path, clouds, a light source)",
+    "constraints[]": "1-3 things in the photo that limit the shot, e.g. harsh midday light, a bare sky, clutter at the edges",
+    "people_in_frame": "any people visible and where they are, or the word none",
+}
+
+SCENERY_SHOT_FIELDS = {
+    "title": "a short name for this look",
+    "camera_position": "where to stand, relative to named things in the photo, under 14 words",
+    "camera_height": "how high to hold the phone: ground level, knee, chest, eye level or raised overhead",
+    "camera_angle": "tilt up, down or level, and roughly how much",
+    "subject_position": "where the main feature (the peak, tree, sun, shoreline) sits in the frame, e.g. the left third with the horizon on the lower third line",
+    "distance_and_framing": "how much of the view is in the frame: the whole vista, a layered foreground, or a tight crop of one feature",
+    "orientation": "portrait or landscape, and why",
+    "zoom_or_lens": "1x, 0.5x or 2x, and why",
+    "lighting_tip": "how to use the light and sky visible in the photo, under 16 words",
+    "visible_evidence[]": "2-3 things you can actually see in the photo that this look depends on, a few words each",
+    "needs_on_site_check[]": "1-2 things the still photo cannot tell you, under 8 words each",
+    "steps[]": "exactly 2 short actionable steps, under 8 words each",
+}
+
 ALL_FIELD_DESCRIPTIONS = {
     d for f in (AESTHETIC_FIELDS, TARGET_FIELDS, COMPOSITION_FIELDS, DIRECTION_FIELDS, SCENE_SHOT_FIELDS,
-                DIRECTOR_TARGET_FIELDS, REASONING_FIELDS, ZOOM_FIELDS_V4) for d in f.values()
+                DIRECTOR_TARGET_FIELDS, REASONING_FIELDS, ZOOM_FIELDS_V4, SCENERY_TARGET_FIELDS,
+                SCENERY_SHOT_FIELDS) for d in f.values()
 }
 
 # Starter style briefs (XHS / 小红书 portrait vocabulary). Each brief steers camera, light, pose,
@@ -501,6 +526,61 @@ def scene_look(scene: dict, style_key: str | None = None, brief: str = "", subje
         f"{_guide('Fields', SCENE_SHOT_FIELDS)}\n\n"
         f"{SPECIFICITY_RULES}\n{DIRECTION_RULES}\n{_RULES}\n{_answer(shot)}"
     )
+
+
+# --- Scenery Director: one photo of a view, no person in the shot -----------------------
+
+SCENERY_RULES = """Direct the photographer, not a model. There is no person to pose: never write a body pose, a head direction or a gaze, and never ask anyone to stand, lean, climb or sit.
+- Every instruction is about where to stand, how to hold the phone, and what goes where in the frame.
+- Use rule-of-thirds placement, leading lines, a foreground layer, and the horizon line; say which one and where.
+- Keep it safe: never ask the photographer to step toward an edge, a cliff, water, a railing, traffic or a rock face. If a spot is not clearly safe from the photo, say to check it in needs_on_site_check and offer a safer alternative.
+- Only use things visible in the photo. Write new instructions for THIS view; do not reuse example sentences."""
+
+SCENERY_LOOK_PLANS = (
+    "WIDE VISTA: the whole view, the horizon on a third line, the main feature off-centre, nothing cut off at the "
+    "edges, phone at chest height and level.",
+    "LAYERED: a low phone height so a foreground element visible in the photo (rocks, grass, a path, a shoreline) "
+    "fills the lower part of the frame and leads toward the main feature.",
+    "DETAIL: zoom to 2x and isolate one feature of the view (a peak, a tree, a patch of light, a cloud) with "
+    "plenty of empty space around it; a new position from the earlier looks.",
+)
+
+
+def scenery_scene() -> str:
+    return (
+        SCENE_LABEL + "\n"
+        "Describe this view for a photographer who is standing there now and wants to photograph the scenery. "
+        "Say what dominates the view, the sky or light, and which things could serve as a foreground or a focal point.\n\n"
+        f"{_guide('Fields', SCENERY_TARGET_FIELDS)}\n\n{_RULES}\n{_answer(_blank(SCENERY_TARGET_FIELDS))}"
+    )
+
+
+def scenery_look(scene: dict, brief: str = "", look: int = 1, previous: list[dict] | None = None) -> str:
+    """Prompt for ONE scenery look (look = 1..3); earlier looks are listed so this one differs."""
+    shot = _blank(SCENERY_SHOT_FIELDS)
+    avoid = ""
+    if previous:
+        lines = [f"- Look {i}: {p.get('title', '')}: camera {p.get('camera_position', '')}; "
+                 f"{p.get('distance_and_framing', '')}; {p.get('subject_position', '')}"
+                 for i, p in enumerate(previous, 1)]
+        avoid = ("Earlier looks for this view (this one must be clearly different in camera position and framing):\n"
+                 + "\n".join(lines) + "\n\n")
+    note = f"The photographer adds: {brief.strip()}\n\n" if brief.strip() else ""
+    return (
+        SCENE_LABEL + "\n"
+        f"You are a landscape photography director. The photo is described as:\n{_shape(scene)}\n\n"
+        f"{note}{avoid}Propose ONE look, look {look} of 3. Plan for this look: {SCENERY_LOOK_PLANS[look - 1]}\n\n"
+        f"{_guide('Fields', SCENERY_SHOT_FIELDS)}\n\n"
+        f"{SCENERY_RULES}\n{_RULES}\n{_answer(shot)}"
+    )
+
+
+def photographer_asks(prompt: str, brief: str | None) -> str:
+    """Appends the photographer's own note to a compositions prompt. Used in inspiration mode when the
+    app asks for a refresh ("give new ideas, different from ..."). An empty brief changes nothing, so
+    benchmark and training prompts are untouched."""
+    note = (brief or "").strip()
+    return f"{prompt}\n\nThe photographer also asks: {note}" if note else prompt
 
 
 RETRY_SUFFIX = (

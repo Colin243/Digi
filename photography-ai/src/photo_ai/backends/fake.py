@@ -84,6 +84,9 @@ def default_response(prompt: str) -> str:
     return "FAKE: a photo."
 
 
+STREAM_CHUNK = 7  # characters per streamed piece; small and odd so pieces split keys, strings and braces
+
+
 class FakeBackend:
     def __init__(self, spec: ModelSpec, responses: list[str] | None = None):
         self.spec = spec
@@ -103,11 +106,14 @@ class FakeBackend:
         self.load_seconds = 0.0
         return 0.0
 
-    def generate(self, prompt: str, images: list[str], params: GenerationParams) -> Generation:
+    def generate(self, prompt: str, images: list[str], params: GenerationParams, on_text=None) -> Generation:
         self.load()
         self.calls.append((prompt, list(images)))
         t0 = time.perf_counter()
         text = self._responses.pop(0) if self._responses else default_response(prompt)
+        if on_text is not None:  # stream in small pieces, like a real model, so callers see partial output
+            for i in range(0, len(text), STREAM_CHUNK):
+                on_text(text[i:i + STREAM_CHUNK])
         return Generation(text=text, wall_seconds=time.perf_counter() - t0, finish_reason="stop")
 
     def unload(self) -> None:

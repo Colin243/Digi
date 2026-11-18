@@ -12,9 +12,10 @@ AES = {"summary": "s", "principles": ["p"]}
 TGT = {"description": "d", "key_elements": ["k"]}
 
 # sha256[:16] of every pre-v11 prompt, taken before shot-v4 was added. v10 (shot-v3) and older must not move.
+# The scene hashes are the Scene Director look after room_to_step_back and background_worth_enlarging were added.
 FROZEN = {"shape-v1": "bbd57741acb5abcf", "shape-v2": "68eb31e6cdec2c93", "shape-v3": "e1827e678bc1fe35",
-          "shape-scene": "64ca8c883f6917da", "keys-v1": "27b967607840e1c1", "keys-v2": "f6f8c668101cc275",
-          "keys-v3": "fc45bf534ec06a24", "keys-scene": "786338c9dece6226"}
+          "shape-scene": "b438dc1a3e5d52ae", "keys-v1": "27b967607840e1c1", "keys-v2": "f6f8c668101cc275",
+          "keys-v3": "fc45bf534ec06a24", "keys-scene": "8e43ba89e60d840a"}
 
 
 def _h(s: str) -> str:

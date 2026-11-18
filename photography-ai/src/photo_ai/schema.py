@@ -126,11 +126,22 @@ class Composition(_Lenient):
 class ShotV2(Composition):
     """shot-v2: framing, light and subject direction are required; the expression cue stays optional."""
 
+    # Place facts the app's zoom rule reads. Optional so earlier shot-v2 output stays valid.
+    room_to_step_back: str = ""
+    background_worth_enlarging: str = ""
+
     distance_and_framing: str = Field(min_length=1)
     lighting_tip: str = Field(min_length=1)
     body_pose: str = Field(min_length=1)
     head_direction: str = Field(min_length=1)
     gaze: str = Field(min_length=1)
+
+
+class ShotScenery(Composition):
+    """Scenery look: the camera and the framing are required; there is no person, so no pose fields."""
+
+    distance_and_framing: str = Field(min_length=1)
+    lighting_tip: str = Field(min_length=1)
 
 
 class ShotV3(Composition):
@@ -168,6 +179,13 @@ def shot_set(shot_format: str) -> type[BaseModel]:
     if shot_format not in SHOT_FORMATS:
         raise ValueError(f"shot_format must be one of {SHOT_FORMATS}")
     return {"v2": ShotSetV2, "v3": ShotSetV3, "v4": ShotSetV4}.get(shot_format, CompositionSet)
+
+
+def shot_model(shot_format: str) -> type[BaseModel]:
+    """The model for ONE look in `shot_format` (the item type of shot_set's compositions list)."""
+    if shot_format not in SHOT_FORMATS:
+        raise ValueError(f"shot_format must be one of {SHOT_FORMATS}")
+    return {"v2": ShotV2, "v3": ShotV3}.get(shot_format, Composition)
 
 
 def shot_format_of(record: dict) -> str:

@@ -37,6 +37,10 @@ final class LiveGuidance: ObservableObject, @unchecked Sendable {
         }
     }
     static let subjectCuesKey = "digi.liveSubjectCues"
+    #if DEBUG
+    /// Debug only: show a fixed cue so the guidance visuals can be seen without a camera or motion.
+    func debugShow(_ g: Guidance) { guidance = g }
+    #endif
     /// Vision's yaw/pitch signs, mapped to "+ = toward the frame's right" and "+ = chin up".
     /// Check them with the debug readout (turn a face toward the frame's right: yaw should go up).
     static let visionYawSign = 1.0, visionPitchSign = -1.0
@@ -193,35 +197,49 @@ final class LiveGuidance: ObservableObject, @unchecked Sendable {
 /// The top live cue for the pinned shot, shown inside the shot card (also when it is collapsed).
 struct LiveCueRow: View {
     @ObservedObject var live: LiveGuidance
+    @ObservedObject private var settings = GuidanceSettings.shared
+    @Environment(\.guidanceTheme) private var theme
     let accent: Color
+    var style: CueRowStyle = .topPlusCount
+
+    private var look: GuidanceStyle { settings.prefs.style }
+    private func words(_ c: GuidanceCue) -> String {
+        let t = GuidanceWording.text(for: c, style: look)
+        return theme.cueLowercase ? t.lowercased() : t
+    }
 
     var body: some View {
         let g = live.guidance
+        if style != .off {
         VStack(alignment: .leading, spacing: 4) {
             cameraLine(g)
             if live.subjectCuesEnabled, let s = g.subjectCues.first {
-                Label(s.text, systemImage: s.symbol).font(.footnote.weight(.semibold)).foregroundStyle(.cyan)
+                Label(words(s), systemImage: s.symbol).font(.system(.footnote, design: theme.cueDesign, weight: theme.cueWeight))
+                    .foregroundStyle(theme.subject)
                     .accessibilityIdentifier("live-subject-cue")
             }
+        }
         }
     }
 
     @ViewBuilder private func cameraLine(_ g: Guidance) -> some View {
         if g.isSatisfied {
-            Label("In position. Take the shot", systemImage: "checkmark.circle.fill")
-                .font(.subheadline.weight(.semibold)).foregroundStyle(.green)
+            let text = GuidanceWording.text(.satisfied, style: look)
+            Label(text, systemImage: "checkmark.circle.fill")
+                .labelStyle(.automatic)
+                .font(.system(.subheadline, design: theme.cueDesign, weight: theme.cueWeight)).foregroundStyle(theme.ok)
                 .accessibilityIdentifier("live-cue-satisfied")
         } else if let cue = g.top {
             HStack(spacing: 8) {
                 Image(systemName: cue.symbol).frame(width: 20)
-                Text(cue.text).font(.subheadline.weight(.semibold))
-                if g.cues.count > 1 { Text("+\(g.cues.count - 1)").font(.caption2).foregroundStyle(.white.opacity(0.6)) }
+                Text(words(cue)).font(.system(.subheadline, design: theme.cueDesign, weight: theme.cueWeight))
+                if style == .topPlusCount && g.cues.count > 1 { Text("+\(g.cues.count - 1)").font(.caption2).foregroundStyle(.white.opacity(0.6)) }
             }
-            .foregroundStyle(accent)
+            .foregroundStyle(theme.hint ?? theme.accent)
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("live-cue")
         } else if live.running && !g.hasTargets && g.pitchDegrees != nil {
-            Text("No live checks for this shot").font(.caption).foregroundStyle(.white.opacity(0.6))
+            Text(GuidanceWording.text(.noChecks, style: look)).font(.caption).foregroundStyle(.white.opacity(0.6))
         }
     }
 }
@@ -230,24 +248,29 @@ struct LiveCueRow: View {
 /// sits in the centre ring when the camera's tilt matches the shot.
 struct LevelIndicator: View {
     @ObservedObject var live: LiveGuidance
+    @Environment(\.guidanceTheme) private var theme
+    var style: LevelIndicatorStyle = .full
 
     var body: some View {
         let g = live.guidance
-        if live.running, let roll = g.rollDegrees, let pitch = g.pitchDegrees, abs(pitch) < 55 {
+        if style != .off, live.running, let roll = g.rollDegrees, let pitch = g.pitchDegrees, abs(pitch) < 55 {
             let level = abs(roll) < g.levelTolerance
-            let lineColor: Color = level ? .green : .white
+            let lineColor: Color = level ? theme.ok : .white
+            let thickness: CGFloat = theme.style == .minimal ? 1 : 1.5
             ZStack {
-                HStack(spacing: 70) {
-                    Rectangle().frame(width: 18, height: 1.5)
-                    Rectangle().frame(width: 18, height: 1.5)
-                }.foregroundStyle(.white.opacity(0.55))
-                Rectangle().fill(lineColor).frame(width: 120, height: 1.5)
+                if style == .full {
+                    HStack(spacing: 70) {
+                        Rectangle().frame(width: 18, height: 1.5)
+                        Rectangle().frame(width: 18, height: 1.5)
+                    }.foregroundStyle(.white.opacity(0.55))
+                }
+                Rectangle().fill(lineColor).frame(width: 120, height: thickness)
                     .rotationEffect(.degrees(-roll))
-                if let target = live.targetPitch {
+                if style == .full, let target = live.targetPitch {
                     let off = max(-70, min(70, (pitch - target) * 3))
                     let onTarget = abs(pitch - target) < 2.5
                     Circle().stroke(.white.opacity(0.6), lineWidth: 1).frame(width: 22, height: 22)
-                    Circle().fill(onTarget ? Color.green : Color.white).frame(width: 9, height: 9).offset(y: -off)
+                    Circle().fill(onTarget ? theme.ok : Color.white).frame(width: 9, height: 9).offset(y: -off)
                 }
             }
             .shadow(color: .black.opacity(0.6), radius: 2)
@@ -263,7 +286,15 @@ struct LevelIndicator: View {
 /// a person chooses them, and "Auto" goes back. Taps anywhere else fall through to tap-to-focus.
 struct SubjectOverlay: View {
     @ObservedObject var live: LiveGuidance
+    /// Detection boxes (people, faces).
     let debug: Bool
+    /// The raw-number readout. Defaults to following `debug`, as the old single switch did.
+    var readout: Bool? = nil
+    /// The box and label on the subject being directed.
+    var brackets = true
+    /// Four corner marks instead of a labelled box (Soft and Minimal).
+    var corners = false
+    var okColor: Color = .green
 
     var body: some View {
         GeometryReader { area in
@@ -285,9 +316,14 @@ struct SubjectOverlay: View {
                         Rectangle().stroke(.cyan, lineWidth: 1).frame(width: r.width, height: r.height).position(x: r.midX, y: r.midY)
                     }.allowsHitTesting(false)
                 }
-                if let s = d.subject {
+                if brackets, let s = d.subject {
                     let r = rect(s)
-                    let color: Color = d.locked ? .green : .white
+                    let color: Color = d.locked ? okColor : .white
+                    if corners {
+                        CornerMarks().stroke(color.opacity(d.locked ? 1 : 0.85), style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+                            .frame(width: r.width, height: r.height).position(x: r.midX, y: r.midY)
+                            .allowsHitTesting(false)
+                    } else {
                     RoundedRectangle(cornerRadius: 4).stroke(color.opacity(d.locked ? 1 : 0.7), lineWidth: d.locked ? 2 : 1)
                         .frame(width: r.width, height: r.height).position(x: r.midX, y: r.midY)
                         .allowsHitTesting(false)
@@ -296,6 +332,7 @@ struct SubjectOverlay: View {
                         // The shot card covers roughly the top quarter: label the box from below there.
                         .position(x: min(max(r.minX + 40, 40), w - 40), y: r.minY < h * 0.28 ? min(r.maxY + 9, h - 9) : r.minY - 8)
                         .allowsHitTesting(false)
+                    }
                 }
                 if live.running {
                     // Tap a person to direct them. Only the boxes take taps.
@@ -308,32 +345,10 @@ struct SubjectOverlay: View {
                             .accessibilityAddTraits(.isButton)
                     }
                 }
-                if debug { debugReadout(d).position(x: w / 2, y: h - (d.locked ? 138 : 92)).allowsHitTesting(false) }
-                if d.locked { subjectChip(lost: d.lost).position(x: w / 2, y: h - 76) }
+                if readout ?? debug { debugReadout(d).position(x: w / 2, y: h - (d.locked ? 138 : 92)).allowsHitTesting(false) }
             }
             .coordinateSpace(name: "subjectOverlay")
         }
-    }
-
-    /// Shown while a chosen person is being directed: their state, and the way back to automatic.
-    private func subjectChip(lost: Bool) -> some View {
-        HStack(spacing: 10) {
-            Label(lost ? "Lost: tap them to choose again" : "Directing the person you chose",
-                  systemImage: lost ? "person.crop.rectangle.badge.questionmark" : "person.crop.rectangle")
-                .foregroundStyle(lost ? .orange : .green)
-                .accessibilityIdentifier(lost ? "subject-lost" : "subject-locked")
-            Button { live.clearSubject() } label: {
-                Label("Auto", systemImage: "xmark.circle.fill")
-                    .padding(.horizontal, 8).padding(.vertical, 4)
-                    .background(.white.opacity(0.18), in: Capsule())
-            }
-            .foregroundStyle(.white)
-            .accessibilityLabel("Stop following the chosen person and pick automatically")
-            .accessibilityIdentifier("subject-clear")
-        }
-        .font(.caption.weight(.semibold))
-        .padding(.leading, 12).padding(.trailing, 6).padding(.vertical, 6)
-        .background(.black.opacity(0.75), in: Capsule())
     }
 
     private func debugReadout(_ d: LiveGuidance.Detections) -> some View {
@@ -365,5 +380,116 @@ struct SubjectOverlay: View {
         return Text(lines.joined(separator: "\n")).font(.system(size: 10, design: .monospaced))
             .padding(6).background(.black.opacity(0.7), in: RoundedRectangle(cornerRadius: 6)).foregroundStyle(.white)
             .allowsHitTesting(false)
+    }
+}
+
+/// Short corner marks around a rectangle, like a camera's focus frame.
+struct CornerMarks: Shape {
+    func path(in r: CGRect) -> Path {
+        let n = min(16, r.width / 3, r.height / 3)
+        var p = Path()
+        for (x, dx) in [(r.minX, n), (r.maxX, -n)] {
+            for (y, dy) in [(r.minY, n), (r.maxY, -n)] {
+                p.move(to: CGPoint(x: x + dx, y: y)); p.addLine(to: CGPoint(x: x, y: y)); p.addLine(to: CGPoint(x: x, y: y + dy))
+            }
+        }
+        return p
+    }
+}
+
+/// Soft and Minimal show the live hint here, over the lower viewfinder, instead of inside the shot
+/// card. Full info keeps the cue row in the card, so this draws nothing for it.
+struct FloatingCue: View {
+    @ObservedObject var live: LiveGuidance
+    @ObservedObject private var settings = GuidanceSettings.shared
+    @Environment(\.guidanceTheme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    private let haptic = UINotificationFeedbackGenerator()
+
+    var body: some View {
+        let style = settings.prefs.style
+        let rows = settings.display.cueRow
+        let g = live.guidance
+        if style != .full && rows != .off {
+            VStack(spacing: 6) {
+                if g.isSatisfied {
+                    let t = GuidanceWording.text(.satisfied, style: style)
+                    pill(icon: "checkmark", text: t, color: theme.ok, spoken: GuidanceWording.text(.satisfied, style: .soft))
+                } else {
+                    ForEach(Array(g.cues.prefix(rows == .topPlusCount ? 2 : 1).enumerated()), id: \.offset) { _, c in
+                        pill(icon: c.symbol, text: words(c), color: theme.hint ?? .white, spoken: GuidanceWording.text(for: c, style: .soft))
+                    }
+                }
+                if live.subjectCuesEnabled, let s = g.subjectCues.first {
+                    pill(icon: s.symbol, text: words(s), color: theme.subject, spoken: GuidanceWording.text(for: s, style: .soft))
+                }
+            }
+            .allowsHitTesting(false)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: g.top?.kind)
+            .onChange(of: g.isSatisfied) { _, now in
+                if now && settings.display.haptics { haptic.notificationOccurred(.success) }
+            }
+        }
+    }
+
+    private func words(_ c: GuidanceCue) -> String {
+        let t = GuidanceWording.text(for: c, style: settings.prefs.style)
+        return theme.cueLowercase ? t.lowercased() : t
+    }
+
+    /// `spoken` is what VoiceOver reads, in plain words even when Minimal shows an icon or a terse word.
+    @ViewBuilder private func pill(icon: String, text: String, color: Color, spoken: String) -> some View {
+        shape(icon: icon, text: text, color: color)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(spoken)
+            .accessibilityIdentifier("floating-cue")
+    }
+
+    @ViewBuilder private func shape(icon: String, text: String, color: Color) -> some View {
+        let font = Font.system(.footnote, design: theme.cueDesign, weight: theme.cueWeight)
+        if theme.style == .soft {
+            HStack(spacing: 6) {
+                Image(systemName: icon).font(.system(size: 13, weight: .semibold)).foregroundStyle(color)
+                Text(text).font(font)
+            }
+            .foregroundStyle(.white).padding(.horizontal, 12).padding(.vertical, 7)
+            .background(.black.opacity(0.5), in: Capsule())
+        } else if text.isEmpty {
+            Image(systemName: icon).font(.system(size: 14, weight: .regular)).foregroundStyle(color)
+                .shadow(color: .black.opacity(0.6), radius: 2)
+        } else {
+            Text(text).font(font).tracking(0.3).foregroundStyle(color)
+                .shadow(color: .black.opacity(0.6), radius: 2)
+        }
+    }
+}
+
+/// Shown while a chosen person is being directed: their state, and the way back to automatic.
+/// Lives in the camera's bottom column so it never overlaps the hint or the zoom readout.
+struct SubjectChip: View {
+    @ObservedObject var live: LiveGuidance
+
+    var body: some View {
+        if live.detections.locked { chip(lost: live.detections.lost) }
+    }
+
+    private func chip(lost: Bool) -> some View {
+        HStack(spacing: 10) {
+            Label(lost ? "Lost: tap them to choose again" : "Directing the person you chose",
+                  systemImage: lost ? "person.crop.rectangle.badge.questionmark" : "person.crop.rectangle")
+                .foregroundStyle(lost ? .orange : .green)
+                .accessibilityIdentifier(lost ? "subject-lost" : "subject-locked")
+            Button { live.clearSubject() } label: {
+                Label("Auto", systemImage: "xmark.circle.fill")
+                    .padding(.horizontal, 8).padding(.vertical, 4)
+                    .background(.white.opacity(0.18), in: Capsule())
+            }
+            .foregroundStyle(.white)
+            .accessibilityLabel("Stop following the chosen person and pick automatically")
+            .accessibilityIdentifier("subject-clear")
+        }
+        .font(.caption.weight(.semibold))
+        .padding(.leading, 12).padding(.trailing, 6).padding(.vertical, 6)
+        .background(.black.opacity(0.75), in: Capsule())
     }
 }

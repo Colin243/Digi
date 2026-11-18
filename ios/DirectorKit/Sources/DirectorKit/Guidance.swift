@@ -49,6 +49,27 @@ public struct GuidanceCue: Equatable, Sendable {
     public var text: String
     /// SF Symbol name for the cue.
     public var symbol: String
+    /// What the cue means, apart from its words, so `GuidanceWording` can rephrase it per style.
+    /// Nil for cues made without one (they keep `text`).
+    public var variant: CueVariant? = nil
+    public init(kind: Kind, text: String, symbol: String, variant: CueVariant? = nil) {
+        self.kind = kind; self.text = text; self.symbol = symbol; self.variant = variant
+    }
+}
+
+/// The meaning of a cue, with the numbers and sides it needs. Never shown directly.
+public enum CueVariant: Equatable, Sendable {
+    case holdUpright, turnSideways
+    case straighten(rotateLeft: Bool)
+    case tilt(up: Bool, degrees: Int)
+    case findSubject(chosen: Bool)
+    case closer(canZoom: Bool), back(canZoom: Bool)
+    /// `goal` is "center", "left" or "right": the third the subject should sit on.
+    case pan(right: Bool, goal: String)
+    case findFace
+    case headTurn(HeadTurn)
+    case chin(up: Bool)
+    public enum HeadTurn: Equatable, Sendable { case awayFromCamera, towardCamera, subjectLeft, subjectRight }
 }
 
 public struct Guidance: Equatable, Sendable {
@@ -145,14 +166,16 @@ public struct GuidanceTracker: Sendable {
         // Orientation (no smoothing needed: PoseSample only reports it when it is clear).
         if let want = targets.portrait, let have = portrait, want != have {
             cues.append(GuidanceCue(kind: .orientation, text: want ? "Hold the phone upright" : "Turn the phone sideways",
-                                    symbol: want ? "rectangle.portrait.rotate" : "rectangle.landscape.rotate"))
+                                    symbol: want ? "rectangle.portrait.rotate" : "rectangle.landscape.rotate",
+                                    variant: want ? .holdUpright : .turnSideways))
         }
 
         // Level horizon.
         if let r = roll.value, let p = pitch.value, abs(p) < Self.flatPitch,
            gate(.level, error: abs(r), enter: Self.levelEnter, exit: Self.levelExit) {
             cues.append(GuidanceCue(kind: .level, text: r > 0 ? "Straighten: rotate the phone left" : "Straighten: rotate the phone right",
-                                    symbol: r > 0 ? "rotate.left" : "rotate.right"))
+                                    symbol: r > 0 ? "rotate.left" : "rotate.right",
+                                    variant: .straighten(rotateLeft: r > 0)))
         } else { active.remove(.level) }
 
         // Tilt.
@@ -161,7 +184,8 @@ public struct GuidanceTracker: Sendable {
             if gate(.tilt, error: abs(error), enter: targets.pitchTolerance, exit: targets.pitchTolerance * 0.5) {
                 let n = max(2, Int((abs(error) / 2).rounded()) * 2)
                 cues.append(GuidanceCue(kind: .tilt, text: error > 0 ? "Tilt down \(n)°" : "Tilt up \(n)°",
-                                        symbol: error > 0 ? "arrow.down" : "arrow.up"))
+                                        symbol: error > 0 ? "arrow.down" : "arrow.up",
+                                        variant: .tilt(up: error <= 0, degrees: n)))
             }
         }
 
@@ -169,7 +193,7 @@ public struct GuidanceTracker: Sendable {
         if targets.needsSubject {
             if !recent(lastSubjectAt) {
                 active.subtract([.distance, .horizontal])
-                cues.append(GuidanceCue(kind: .findSubject, text: subjectChosen ? "Find the person you chose" : "Point the camera at your subject", symbol: "person.crop.rectangle"))
+                cues.append(GuidanceCue(kind: .findSubject, text: subjectChosen ? "Find the person you chose" : "Point the camera at your subject", symbol: "person.crop.rectangle", variant: .findSubject(chosen: subjectChosen)))
             } else {
                 if let framing = targets.framing, let (error, tooSmall) = distanceError(framing, recent: recent),
                    gate(.distance, error: error, enter: Self.distanceEnter, exit: 0.0001) {
@@ -177,7 +201,8 @@ public struct GuidanceTracker: Sendable {
                     let text = tooSmall ? (canZoom ? "Step closer or zoom in" : "Step closer")
                                         : (canZoom ? "Step back or zoom out" : "Step back")
                     cues.append(GuidanceCue(kind: .distance, text: text,
-                                            symbol: tooSmall ? "figure.walk" : "arrow.uturn.backward"))
+                                            symbol: tooSmall ? "figure.walk" : "arrow.uturn.backward",
+                                            variant: tooSmall ? .closer(canZoom: canZoom) : .back(canZoom: canZoom)))
                 } else { active.remove(.distance) }
 
                 if let side = targets.horizontal, let x = centerX.value {
@@ -187,7 +212,8 @@ public struct GuidanceTracker: Sendable {
                         let pan = dx > 0 ? "right" : "left"
                         let goal = side == .center ? "to center the subject" : "so the subject sits on the \(side.rawValue) third"
                         cues.append(GuidanceCue(kind: .horizontal, text: "Pan \(pan) \(goal)",
-                                                symbol: dx > 0 ? "arrow.right" : "arrow.left"))
+                                                symbol: dx > 0 ? "arrow.right" : "arrow.left",
+                                                variant: .pan(right: dx > 0, goal: side.rawValue)))
                     }
                 }
             }
@@ -219,24 +245,28 @@ public struct GuidanceTracker: Sendable {
         guard subjectCuesEnabled, !head.isEmpty else { active.subtract([.headTurn, .headTilt]); return ([], false) }
         guard recent(lastFacePoseAt) else {
             active.subtract([.headTurn, .headTilt])
-            return ([GuidanceCue(kind: .findFace, text: "Can't see their face yet", symbol: "face.dashed")], false)
+            return ([GuidanceCue(kind: .findFace, text: "Can't see their face yet", symbol: "face.dashed", variant: .findFace)], false)
         }
         var cues: [GuidanceCue] = []
         if let want = head.yaw, let yaw = headYaw.value {
             let error = head.yawEitherSide ? abs(yaw) - want : yaw - want
             if gate(.headTurn, error: abs(error), enter: head.yawTolerance, exit: head.yawTolerance * 0.5) {
                 let say: String
-                if head.yawEitherSide { say = error < 0 ? "Turn your head a little away from me" : "Turn back toward me a little" }
+                let turn: CueVariant.HeadTurn
+                if head.yawEitherSide { say = error < 0 ? "Turn your head a little away from me" : "Turn back toward me a little"
+                    turn = error < 0 ? .awayFromCamera : .towardCamera }
                 // Face needs to turn toward the frame's right = the subject's own left.
-                else { say = error < 0 ? "Turn your head a little to your left" : "Turn your head a little to your right" }
-                cues.append(GuidanceCue(kind: .headTurn, text: "Say: “\(say)”", symbol: "person.bust"))
+                else { say = error < 0 ? "Turn your head a little to your left" : "Turn your head a little to your right"
+                    turn = error < 0 ? .subjectLeft : .subjectRight }
+                cues.append(GuidanceCue(kind: .headTurn, text: "Say: “\(say)”", symbol: "person.bust", variant: .headTurn(turn)))
             }
         } else { active.remove(.headTurn) }
         if let want = head.pitch, let p = headPitch.value {
             let error = p - want
             if gate(.headTilt, error: abs(error), enter: head.pitchTolerance, exit: head.pitchTolerance * 0.5) {
                 cues.append(GuidanceCue(kind: .headTilt, text: error < 0 ? "Say: “Lift your chin a little”" : "Say: “Lower your chin a little”",
-                                        symbol: error < 0 ? "chevron.up" : "chevron.down"))
+                                        symbol: error < 0 ? "chevron.up" : "chevron.down",
+                                        variant: .chin(up: error < 0)))
             }
         } else { active.remove(.headTilt) }
         return (cues, cues.isEmpty)
