@@ -27,9 +27,11 @@ supported with the decomposed strategy).
 from __future__ import annotations
 
 import contextvars
+import hashlib
+import os
 import platform
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 
@@ -76,6 +78,11 @@ class RunConfig:
     style: str | None = None  # scene mode: a prompts.STYLE_BRIEFS key
     brief: str = ""  # scene mode: free-text style notes from the photographer
     n_looks: int = 3  # scene mode: 3 (default) up to len(prompts.ALL_LOOK_PLANS) looks per scene
+    # Decomposed notes stage speed-ups. Both are off unless asked for: batching can change the notes text slightly
+    # (padding changes the numbers), so it has to be benchmarked before it is switched on. The env vars let a
+    # benchmark turn them on without new CLI flags.
+    batch_notes: bool = field(default_factory=lambda: os.environ.get("PHOTO_AI_BATCH_NOTES") == "1")
+    cache_notes: bool = field(default_factory=lambda: os.environ.get("PHOTO_AI_CACHE_NOTES") == "1")
 
     def params(self, max_tokens: int | None = None) -> GenerationParams:
         return GenerationParams(max_tokens or self.max_tokens, self.temperature, self.repetition_penalty, self.seed)
@@ -188,12 +195,71 @@ def _two_stage(backend, run_dir, insp, tgt, cfg):
     return result, {"aesthetic": aesthetic}, [st1, st2]
 
 
-def _decomposed(backend, run_dir, insp, tgt, cfg):
-    stages, notes = [], []
-    for i, path in enumerate(insp, 1):
-        note, st = _run_stage(backend, run_dir, f"notes_inspiration{i}", prompts.image_notes(), [path], None, cfg, 200)
+_NOTES_CACHE: dict[tuple, str] = {}  # (model, adapter, image sha256, prompt, max_tokens, seed) -> notes text
+_NOTES_CACHE_MAX = 256
+
+
+def _notes_key(backend, path: str, prompt: str, max_tokens: int, cfg: RunConfig) -> tuple | None:
+    """Cache key for one photo's notes, or None when the answer is not reproducible (sampling) or the file is unreadable."""
+    if cfg.temperature != 0:
+        return None
+    try:
+        digest = hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    except OSError:
+        return None
+    return (backend.spec.key, backend.spec.adapter_path, digest, prompt, max_tokens, cfg.seed)
+
+
+def _notes_record(run_dir: Path, name: str, prompt: str, path: str, text: str, wall_s: float, gen=None,
+                  extra: dict | None = None) -> tuple[str | None, dict]:
+    """The same stage record `_run_stage` writes for a free-text stage, for notes that were batched or cached."""
+    raw_path = write_raw(run_dir, f"{name}_attempt1", text)
+    attempt = {"attempt": 1, "raw_output": raw_path, "parse_method": "text",
+               "errors": [] if text.strip() else ["empty output"], "wall_s": round(wall_s, 3),
+               "prompt_tokens": getattr(gen, "prompt_tokens", None), "generation_tokens": getattr(gen, "generation_tokens", None),
+               "prompt_tps": getattr(gen, "prompt_tps", None), "generation_tps": getattr(gen, "generation_tps", None),
+               "peak_memory_gb": getattr(gen, "peak_memory_gb", None), "finish_reason": getattr(gen, "finish_reason", None)}
+    note = text.strip() or None
+    return note, {"name": name, "max_tokens": 200, "prompt": prompt, "n_images": 1, "ok": note is not None,
+                  "wall_s": attempt["wall_s"], "attempts": [attempt], **(extra or {})}
+
+
+def _notes_stages(backend, run_dir: Path, insp: list[str], cfg: RunConfig) -> tuple[list[str], list[dict]]:
+    """One free-text notes stage per inspiration photo, in order. Photos already described (cache_notes) are
+    reused; the rest are generated in one batch (batch_notes) when the backend can, else one at a time.
+    Stage records keep the usual layout; cached ones carry "cached": true and batched ones "batched": n."""
+    prompt = prompts.image_notes()
+    names = [f"notes_inspiration{i}" for i in range(1, len(insp) + 1)]
+    keys = [_notes_key(backend, p, prompt, 200, cfg) if cfg.cache_notes else None for p in insp]
+    results: dict[int, tuple[str | None, dict]] = {}
+    for i, k in enumerate(keys):
+        if k is not None and k in _NOTES_CACHE:
+            results[i] = _notes_record(run_dir, names[i], prompt, insp[i], _NOTES_CACHE[k], 0.0, extra={"cached": True})
+    todo = [i for i in range(len(insp)) if i not in results]
+    batcher = getattr(backend, "generate_batch", None)
+    if cfg.batch_notes and batcher is not None and len(todo) > 1:
+        gens = batcher([(prompt, [insp[i]]) for i in todo], cfg.params(200))
+        if gens is not None:  # None means "could not batch": fall through to one at a time
+            for i, gen in zip(todo, gens):
+                results[i] = _notes_record(run_dir, names[i], prompt, insp[i], gen.text, gen.wall_seconds, gen,
+                                           {"batched": len(todo)})
+    for i in todo:
+        if i not in results:
+            results[i] = _run_stage(backend, run_dir, names[i], prompt, [insp[i]], None, cfg, 200)
+    notes, stages = [], []
+    for i in range(len(insp)):
+        note, st = results[i]
+        if keys[i] is not None and note and not st.get("cached"):
+            if len(_NOTES_CACHE) >= _NOTES_CACHE_MAX:
+                _NOTES_CACHE.pop(next(iter(_NOTES_CACHE)))
+            _NOTES_CACHE[keys[i]] = note
         stages.append(st)
         notes.append(note or "")
+    return notes, stages
+
+
+def _decomposed(backend, run_dir, insp, tgt, cfg):
+    notes, stages = _notes_stages(backend, run_dir, insp, cfg)
     target, st = _run_stage(backend, run_dir, "target_scene", prompts.target_scene_only(), [tgt], schema.TargetScene, cfg, 500)
     stages.append(st)
     aesthetic, st = _run_stage(backend, run_dir, "aesthetic_from_notes", prompts.aesthetic_from_notes(notes), [], schema.Aesthetic, cfg, 900)
