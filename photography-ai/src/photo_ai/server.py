@@ -3,6 +3,10 @@
     photo-ai server keygen --label colin-iphone     # prints a key once; only its hash is stored
     photo-ai server serve --host 0.0.0.0 --port 8787
 
+POST /v1/references (multipart: 3-5 inspiration photos) reads the inspiration photos ahead of time and returns their
+notes and aesthetic as JSON. The app holds that and sends it back as the `references` field of /v1/plan, which then
+skips straight to the target scene: those two stages do not depend on the target photo, and the server keeps nothing.
+
 POST /v1/plan (multipart) runs the Scene Director or Inspiration Director and streams newline-delimited
 JSON events that mirror DirectorKit's DirectorEvent:
 
@@ -113,6 +117,33 @@ def create_app(backend, keys: dict[str, dict], model_name: str, per_hour: int = 
     async def health():
         return {"ok": True, "api": API_VERSION, "model": state.model_name, "busy": state.lock.locked()}
 
+    @app.post("/v1/references")
+    async def prepare_references(who: str = Depends(authed), inspiration: list[UploadFile] = File(default=[])):
+        if not 3 <= len(inspiration) <= 5:
+            raise HTTPException(422, "Send 3 to 5 inspiration photos.")
+        workdir = Path(tempfile.mkdtemp(prefix="digi-refs-"))
+        try:
+            paths = [await _save(f, workdir / f"inspiration_{i}.jpg") for i, f in enumerate(inspiration, 1)]
+        except HTTPException:
+            shutil.rmtree(workdir, ignore_errors=True)
+            raise
+        if state.waiting >= state.max_queue:
+            shutil.rmtree(workdir, ignore_errors=True)
+            raise HTTPException(503, "The director is busy. Try again in a moment.")
+        state.waiting += 1
+        cfg = RunConfig(mode="inspiration", json_format="keys", strategy="decomposed", shot_format="v3")
+        try:
+            async with state.lock:
+                state.waiting -= 1
+                try:
+                    refs = await asyncio.get_running_loop().run_in_executor(
+                        None, lambda: pipeline.prepare_references(state.backend, [str(p) for p in paths], cfg, workdir / "runs"))
+                except RuntimeError as exc:
+                    raise HTTPException(502, f"The director {exc}.")
+        finally:
+            shutil.rmtree(workdir, ignore_errors=True)  # photos are never kept
+        return JSONResponse({"references": refs})
+
     @app.post("/v1/plan")
     async def plan(
         who: str = Depends(authed),
@@ -123,6 +154,7 @@ def create_app(backend, keys: dict[str, dict], model_name: str, per_hour: int = 
         upload: str = Form("photos"),
         target: UploadFile = File(...),
         inspiration: list[UploadFile] = File(default=[]),
+        references: str = Form(""),
     ):
         if upload != "photos":
             # Text-only requests (the privacy setting) are not served yet; the app falls back to the phone.
@@ -135,13 +167,19 @@ def create_app(backend, keys: dict[str, dict], model_name: str, per_hour: int = 
             raise HTTPException(422, "Scene mode needs a style or a brief.")
         if mode in ("scene", "scenery") and inspiration:
             raise HTTPException(422, "Scene mode takes one photo and no references.")
-        if mode == "inspiration" and not 3 <= len(inspiration) <= 5:
-            raise HTTPException(422, "Inspiration mode needs 3 to 5 inspiration photos.")
+        prepared = None
+        if references:
+            if mode != "inspiration":
+                raise HTTPException(422, "references only apply to inspiration mode.")
+            prepared = _check_references(references, state.backend)
+        elif mode == "inspiration" and not 3 <= len(inspiration) <= 5:
+            raise HTTPException(422, "Inspiration mode needs 3 to 5 inspiration photos (or prepared references).")
 
         workdir = Path(tempfile.mkdtemp(prefix="digi-plan-"))
         try:
             target_path = await _save(target, workdir / "target.jpg")
-            insp_paths = [await _save(f, workdir / f"inspiration_{i}.jpg") for i, f in enumerate(inspiration, 1)]
+            # With prepared references the photos are not needed, so any that came along are not read at all.
+            insp_paths = [] if prepared else [await _save(f, workdir / f"inspiration_{i}.jpg") for i, f in enumerate(inspiration, 1)]
         except HTTPException:
             shutil.rmtree(workdir, ignore_errors=True)
             raise
@@ -153,7 +191,7 @@ def create_app(backend, keys: dict[str, dict], model_name: str, per_hour: int = 
 
         cfg = RunConfig(
             mode=mode, style=style or None, brief=brief, n_looks=max(3, shot_count), json_format="keys",
-            strategy="decomposed", shot_format="v3",
+            strategy="decomposed", shot_format="v3", references=prepared,
         )
 
         async def events():
@@ -198,6 +236,18 @@ def create_app(backend, keys: dict[str, dict], model_name: str, per_hour: int = 
         return JSONResponse({"error": exc.detail}, status_code=exc.status_code)
 
     return app
+
+
+def _check_references(raw: str, backend) -> dict:
+    cfg = RunConfig(mode="inspiration", json_format="keys", strategy="decomposed", shot_format="v3")
+    try:
+        return pipeline.check_references(json.loads(raw), backend, cfg)
+    except json.JSONDecodeError:
+        raise HTTPException(422, "references must be JSON.")
+    except pipeline.StaleReferences as exc:
+        raise HTTPException(409, str(exc))
+    except pipeline.InputError as exc:
+        raise HTTPException(422, str(exc))
 
 
 def _line(obj: dict) -> bytes:

@@ -27,9 +27,10 @@ supported with the decomposed strategy).
 from __future__ import annotations
 
 import contextvars
+import hashlib
 import platform
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 
@@ -76,6 +77,9 @@ class RunConfig:
     style: str | None = None  # scene mode: a prompts.STYLE_BRIEFS key
     brief: str = ""  # scene mode: free-text style notes from the photographer
     n_looks: int = 3  # scene mode: 3 (default) up to len(prompts.ALL_LOOK_PLANS) looks per scene
+    # Inspiration mode, decomposed strategy: notes + aesthetic prepared earlier by prepare_references() and checked
+    # by check_references(). When set, those two stages are skipped. Left out of the saved run record.
+    references: dict | None = field(default=None, repr=False)
 
     def params(self, max_tokens: int | None = None) -> GenerationParams:
         return GenerationParams(max_tokens or self.max_tokens, self.temperature, self.repetition_penalty, self.seed)
@@ -85,10 +89,16 @@ class InputError(ValueError):
     pass
 
 
-def _check_inputs(inspiration: list[str], target: str | None, mode: str = "inspiration") -> None:
+class StaleReferences(InputError):
+    """Prepared references were made by a different model, prompt or setting; prepare them again."""
+
+
+def _check_inputs(inspiration: list[str], target: str | None, mode: str = "inspiration", prepared: bool = False) -> None:
     if mode in ("scene", "scenery"):
         if inspiration:
             raise InputError("Scene Director takes one scene photo and no reference images.")
+    elif prepared:
+        pass  # the inspiration photos were already read; the notes and aesthetic come with the request
     elif not (MIN_INSPIRATION <= len(inspiration) <= MAX_INSPIRATION):
         raise InputError(
             f"Need {MIN_INSPIRATION}-{MAX_INSPIRATION} inspiration photos, got {len(inspiration)}."
@@ -188,16 +198,30 @@ def _two_stage(backend, run_dir, insp, tgt, cfg):
     return result, {"aesthetic": aesthetic}, [st1, st2]
 
 
-def _decomposed(backend, run_dir, insp, tgt, cfg):
+def _notes_stages(backend, run_dir, insp, cfg):
     stages, notes = [], []
     for i, path in enumerate(insp, 1):
         note, st = _run_stage(backend, run_dir, f"notes_inspiration{i}", prompts.image_notes(), [path], None, cfg, 200)
         stages.append(st)
         notes.append(note or "")
+    return notes, stages
+
+
+def _aesthetic_stage(backend, run_dir, notes, cfg):
+    return _run_stage(backend, run_dir, "aesthetic_from_notes", prompts.aesthetic_from_notes(notes), [], schema.Aesthetic, cfg, 900)
+
+
+def _decomposed(backend, run_dir, insp, tgt, cfg):
+    stages, notes = [], []
+    if cfg.references is None:
+        notes, stages = _notes_stages(backend, run_dir, insp, cfg)
     target, st = _run_stage(backend, run_dir, "target_scene", prompts.target_scene_only(), [tgt], schema.TargetScene, cfg, 500)
     stages.append(st)
-    aesthetic, st = _run_stage(backend, run_dir, "aesthetic_from_notes", prompts.aesthetic_from_notes(notes), [], schema.Aesthetic, cfg, 900)
-    stages.append(st)
+    if cfg.references is None:
+        aesthetic, st = _aesthetic_stage(backend, run_dir, notes, cfg)
+        stages.append(st)
+    else:
+        aesthetic = cfg.references["aesthetic"]
     partial = {k: v for k, v in (("aesthetic", aesthetic), ("target_scene", target)) if v} or None
     if not (aesthetic and target):
         return None, partial, stages
@@ -336,6 +360,66 @@ def _normalize_config(cfg: RunConfig) -> RunConfig:
     return cfg
 
 
+REFERENCES_VERSION = 1
+MAX_NOTE_CHARS = 1500
+
+
+def reference_fingerprint(backend: VLMBackend, cfg: RunConfig) -> str:
+    """Identifies everything the notes and aesthetic depend on besides the photos, so a stale or foreign set of
+    references is refused instead of silently feeding a different model's wording into this one."""
+    with prompts.json_format(cfg.json_format):
+        parts = [str(REFERENCES_VERSION), backend.spec.key, cfg.json_format, str(cfg.max_side),
+                 prompts.image_notes(), prompts.aesthetic_from_notes(["{note}"])]
+    return hashlib.sha256("\x1f".join(parts).encode()).hexdigest()[:16]
+
+
+def prepare_references(backend: VLMBackend, inspiration: list[str], cfg: RunConfig | None = None,
+                       runs_dir: Path | None = None) -> dict:
+    """Read the inspiration photos ahead of time: the per-photo notes and the aesthetic built from them. Neither
+    depends on the target photo, so this can run while the person is still choosing where to shoot. Returns a
+    plain-JSON dict for the client to hold and send back with the plan request; nothing is stored here."""
+    cfg = _normalize_config(cfg or RunConfig(strategy="decomposed"))
+    if cfg.mode != "inspiration" or cfg.strategy != "decomposed":
+        raise InputError("Only the decomposed Inspiration Director has references to prepare.")
+    inspiration = list(inspiration or [])
+    if not (MIN_INSPIRATION <= len(inspiration) <= MAX_INSPIRATION):
+        raise InputError(f"Need {MIN_INSPIRATION}-{MAX_INSPIRATION} inspiration photos, got {len(inspiration)}.")
+    for p in inspiration:
+        if not Path(p).is_file():
+            raise InputError(f"File not found: {p}")
+    run_id, run_dir = new_run_dir(Path(runs_dir or DEFAULT_RUNS_DIR), backend.spec.key)
+    paths = [prepare(p, run_dir / "inputs" / f"inspiration_{i}.jpg", "inspiration", cfg.max_side).saved_as
+             for i, p in enumerate(inspiration, 1)]
+    backend.load()
+    t0 = time.perf_counter()
+    with prompts.json_format(cfg.json_format):
+        notes, stages = _notes_stages(backend, run_dir, paths, cfg)
+        aesthetic, st = _aesthetic_stage(backend, run_dir, notes, cfg)
+    stages.append(st)
+    if aesthetic is None or not all(notes):
+        bad = [s["name"] for s in stages if not s["ok"]] or ["notes"]
+        raise RuntimeError("could not read the inspiration photos (" + ", ".join(bad) + ")")
+    return {"version": REFERENCES_VERSION, "fingerprint": reference_fingerprint(backend, cfg), "notes": notes,
+            "aesthetic": aesthetic, "wall_s": round(time.perf_counter() - t0, 3)}
+
+
+def check_references(refs: object, backend: VLMBackend, cfg: RunConfig) -> dict:
+    """Validate references that came back from a client. Raises StaleReferences when they were made under other
+    settings and InputError when they are malformed; returns the normalized dict to set on RunConfig.references."""
+    if not isinstance(refs, dict):
+        raise InputError("references must be a JSON object.")
+    if refs.get("version") != REFERENCES_VERSION or refs.get("fingerprint") != reference_fingerprint(backend, cfg):
+        raise StaleReferences("These references were made by a different model or prompt. Prepare them again.")
+    notes = refs.get("notes")
+    if (not isinstance(notes, list) or not MIN_INSPIRATION <= len(notes) <= MAX_INSPIRATION
+            or not all(isinstance(n, str) and n.strip() and len(n) <= MAX_NOTE_CHARS for n in notes)):
+        raise InputError(f"references.notes must be {MIN_INSPIRATION}-{MAX_INSPIRATION} short, non-empty texts.")
+    aesthetic, errors = schema.validate(schema.Aesthetic, refs.get("aesthetic"), prompts.ALL_FIELD_DESCRIPTIONS)
+    if errors:
+        raise InputError("references.aesthetic is not valid: " + "; ".join(errors[:3]))
+    return {"notes": [n.strip() for n in notes], "aesthetic": aesthetic}
+
+
 def analyze(
     backend: VLMBackend,
     inspiration: list[str],
@@ -347,7 +431,9 @@ def analyze(
 ) -> dict:
     cfg = _normalize_config(cfg or RunConfig())
     inspiration = list(inspiration or [])
-    _check_inputs(inspiration, target, cfg.mode)
+    if cfg.references is not None and (cfg.mode != "inspiration" or cfg.strategy != "decomposed"):
+        raise InputError("Prepared references only work with the decomposed Inspiration Director.")
+    _check_inputs(inspiration, target, cfg.mode, prepared=cfg.references is not None)
     runs_dir = Path(runs_dir or DEFAULT_RUNS_DIR)
     run_id, run_dir = new_run_dir(runs_dir, backend.spec.key)
 
@@ -379,7 +465,8 @@ def analyze(
         "mode": cfg.mode,
         "shot_format": cfg.shot_format,
         "model": {"key": backend.spec.key, "repo_id": backend.spec.repo_id, "backend": backend.spec.backend},
-        "config": asdict(cfg),
+        "config": {k: v for k, v in asdict(cfg).items() if k != "references"},
+        "references_precomputed": cfg.references is not None,
         "inputs": {
             "inspiration": [p.to_dict() for p in prepared],
             "target": tgt.to_dict(),
@@ -396,7 +483,7 @@ def analyze(
         "result": result,
         "partial_result": None if result else partial,
         "validation": {"ok": result is not None, "errors": errors},
-        "auto_metrics": evaluate_result(result or partial, case, notes_from_stages(stages, run_dir)),
+        "auto_metrics": evaluate_result(result or partial, case, notes_from_stages(stages, run_dir) or (cfg.references or {}).get("notes")),
         "stages": stages,
         "environment": {
             "python": platform.python_version(),
