@@ -83,7 +83,7 @@ function queueCard(q){
     const p = pct(i.done, i.total);
     return `<div class="qrow"><span class="qname">${esc(i.id)}</span>
       <span class="bar ${i.state==='done'?'done':''}"><i style="width:${p}%"></i></span>
-      <span class="pill ${i.state==='running'?'running':(i.state==='done'?'merged':'')}">${i.state==='queued'?'queued':i.done+'/'+i.total}</span></div>`;
+      <span class="pill ${i.state==='running'?'running':(i.state==='done'?'merged':(i.state==='paused'?'paused':''))}">${i.state==='queued'?'queued':(i.state==='paused'?'paused '+i.done+'/'+i.total:i.done+'/'+i.total)}</span></div>`;
   }).join('');
   return `<div class="card"><div class="row"><span class="name">${esc(q.script)}</span><span class="sub">up ${esc(q.up)}</span></div>${rows}</div>`;
 }

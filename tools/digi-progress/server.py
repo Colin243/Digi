@@ -105,7 +105,8 @@ def benches(procs):
         except Exception:
             pass
         out.append({"name": bid.group(1), "done": done, "total": total or max(done, 1),
-                    "state": "running", "elapsed": p["etime"], "suite": suite.group(1) if suite else ""})
+                    "state": "paused" if p["stat"].startswith("T") else "running",
+                    "elapsed": p["etime"], "suite": suite.group(1) if suite else ""})
     return out
 
 
@@ -124,12 +125,12 @@ def _expand(template, env):
 def queue(procs):
     """Benchmark queue read from the shell scripts that are running: every `run <bench-id> ...` line, with simple
     `VAR=value` and `for v in a b c; do ... done` expansion, matched against runs/index.jsonl."""
-    scripts, running_ids = [], set()
+    scripts, running_ids, paused_ids = [], set(), set()
     for p in procs:
         if "photo-ai bench" in p["cmd"] and "grep" not in p["cmd"]:
             m = re.search(r"--bench-id (\S+)", p["cmd"])
             if m:
-                running_ids.add(m.group(1))
+                (paused_ids if p["stat"].startswith("T") else running_ids).add(m.group(1))
         m = re.search(r"(?:^|\s)(/\S+\.sh)$", p["cmd"])
         if m and Path(m.group(1)).exists() and m.group(1) not in [s[0] for s in scripts]:
             scripts.append((m.group(1), p["etime"]))
@@ -161,7 +162,7 @@ def queue(procs):
         rows = []
         for bid in items:
             done = index.count(f'"label": "{bid}"')
-            state = "done" if done >= total else ("running" if bid in running_ids else "queued")
+            state = "done" if done >= total else ("running" if bid in running_ids else ("paused" if bid in paused_ids else "queued"))
             rows.append({"id": bid, "done": min(done, total), "total": total, "state": state})
         out.append({"script": Path(path).name, "up": etime, "items": rows})
     return out
