@@ -2,7 +2,7 @@
 
 Digi is getting a continuous **1x to 2x zoom on the main camera only**. The Director should decide, for each look, whether to zoom in and step back or to stay at 1x and step closer, and say why in one line. The rules are in [annotation-guide.md § Zoom versus distance](annotation-guide.md#zoom-versus-distance-shot-v4). The prompt is **v11 / shot-v4** (`--shot-format v4`), and the check is `framing.zoom_fit`.
 
-Nothing here has been trained. The numbers below come from the label files, the tokenizer, and one base-model bench (see "Base model on v11").
+One UNREVIEWED adapter has been trained (see "First zoom run"). The other numbers come from the label files, the tokenizer and the base-model bench.
 
 ## What changed in the prompt (v11)
 
@@ -116,6 +116,33 @@ The five all-1x scenes are a narrow sidewalk, a forest path, a snowy lane pinned
   ```
 - **Eval:** bench the adapter (unfused; fusing into 4-bit loses most of the adapter's effect) with `--shot-format v4` on `portrait_v1`, then `python -m photo_ai.training.bootstrap_eval <trim bench> <zoom bench>`.
 
+### First zoom run (`bootstrap-r16-zoom-UNREVIEWED`, bench `zoom-r16-v4-20261115`, 2026-11-15)
+
+Trained on the 44 relabelled drafts (233 train / 55 valid rows): 120 iterations, 73 min on the Mac, validation loss 2.17 → 1.48. Benched unfused, with the same settings as the trim and base benches.
+
+| measure | trim (v10) | base v11 | **zoom adapter (v11)** | gate |
+|---|---|---|---|---|
+| runs schema-valid | 14/14 | 14/14 | 14/14 | |
+| amount within 1–2x | 42/42 | 42/42 | 42/42 | pass |
+| zoom reason matches the amount | 3/42 | 8/42 | 42/42 | pass (keyword check; see below) |
+| amounts used (1x / 2x) | – | 6 / 27 (+9 at 1.5x) | **39 / 3** | **fail** (zoomed share 7%, needs 25–75%) |
+| zoomed but kept the 1x distance | – | 35/36 | 1/3 | fail on a tiny sample (1 of 3) |
+| one zoom line on all 3 looks | – | 9/14 | **10/14** | **fail** (≤ 3) |
+| setup contradictions | 4 | 3 | 1 | pass |
+| compositions tokens, median | 982.5 | 1688.5 | 978.5 | pass |
+| projected iPhone full / on-site s | 59.9 / 36.2 | 85.5 / 55.4 | 60.1 / 36.7 | borderline (+0.2 / +0.5 s) |
+
+**The format is learned; the judgement collapsed to 1x.** The adapter copies a formula line: "1x: step closer, more of the place, background smaller" and close variants. 10 of 14 cases use the same line on all three looks. The 42/42 "matches" overstates it. Some lines mix in 2x traits ("1x: … background soft") that the keyword check doesn't catch.
+
+**Why:** in the labels, the zoom mostly follows the setup. Full body is 1x in 27 of 29 looks; seated is 15:8 and creative 16:11 in favour of 1x. Close-up (17:3) and half body (16:7) lean 2x. The adapter, like trim, rarely picks half body or close-up (3/42), so it lands almost entirely on 1x. This is the contrast problem predicted above: one field edit can't teach when to choose 2x *for the same setup*.
+
+**Next, in order:**
+1. **Contrast batch** (10–15 new examples, `assemble --reserve --batch 3`). Each gets a full-body or seated look at 2x and the same setup at 1x in another place, with reasons tied to the photo: a background shape to enlarge, or clutter to crop out, against a place worth keeping. Target about 40% zoomed within each of full body, seated and creative.
+2. Optionally vary the reason wording in the drafts. Of the 77 1x lines, 13 start "1x: step closer" and 25 start "1x: keep/show more of", so the "more of the place" phrasing the adapter copies is common in the data.
+3. Retrain with the same config and re-bench. Gate as below.
+
+This adapter is format-only evidence, like all runs before #2.
+
 **Acceptance gate (format, not quality):**
 
 | measure | gate |
@@ -132,3 +159,113 @@ The five all-1x scenes are a narrow sidewalk, a forest path, a snowy lane pinned
 ## Phone side (not in this PR)
 
 DirectorKit currently shows `zoomOrLens` as text. Once v11 ships, the guidance can read the leading `"<amount>x"` and turn it into a cue ("zoom to 2x, then step back to about 2.4 m"). This needs coordinating with the session building the zoom control.
+
+### Second zoom run: contrast batch (`bootstrap-r16-zoom2-UNREVIEWED`, bench `zoom2-r16-v4-20261115`, 2026-11-15)
+
+**What changed in the data.** Only 5 unused pool photos were left, so `assemble --reserve --batch 3` added 5 examples instead of 13 (3 valid, 2 train). Three drafting passes flipped 9 existing looks to 2x (5 full body, 4 seated) where the photo shows room to step back and a background shape worth enlarging; many candidates were skipped as too narrow. Labels: 49 drafts, 72 of 147 looks at 2x (from 28 of 138), all unreviewed. Backups: `examples.before-zoom-contrast.json`, `labels.before-zoom-contrast`. Same config as the first run apart from the name and data (`configs/lora_bootstrap_r16_zoom2.json`): 120 iterations, 73 min, validation loss 2.16 to 1.483 on a different validation set (3 new validation examples), so it is not comparable with the first run's 1.48.
+
+| measure | trim (v10) | zoom run 1 | **zoom run 2** | gate |
+|---|---|---|---|---|
+| runs schema-valid | 14/14 | 14/14 | 14/14 | |
+| amount within 1-2x | 42/42 | 42/42 | 42/42 | pass |
+| zoom reason matches the amount (keyword check) | 3/42 | 42/42 | 40/42 | pass |
+| amounts used (1x / 2x) | | 39 / 3 | **16 / 26** | pass (zoomed share 62%, needs 25-75%) |
+| zoomed but kept the 1x distance | 0/0 | 1/3 | **7/26 (27%)** | **fail** (needs 10% or less) |
+| one zoom line on all 3 looks | | 10/14 | **4/14** | **fail by 1** (needs 3 or fewer) |
+| setup contradictions | 4 | 1 | **0** | pass |
+| compositions tokens, median | 982.5 | 978.5 | 974.0 | pass |
+| projected iPhone full / on-site s | 59.9 / 36.2 | 60.1 / 36.7 | 59.9 / 36.8 | full pass, on-site +0.6 s over |
+| looks framing a person with a setup | 27 | 26 | **18** (full 5, seated 6) | not gated, see below |
+
+**Reading it.** The collapse to 1x is fixed: the adapter now uses both amounts, and the lines name things in the photo ("step back so the dock and shore blur"). Two gates still fail: 7 of the 26 zoomed looks keep the 1x distance, so the photo would crop the subject, and 4 of 14 cases still repeat one line (the phrase "more of the place, background smaller" appears 6 times). The share of looks framing a person with a setup fell from 26 to 18 (full body 12 to 5, seated 11 to 6), so the adapter now writes fewer full-body and seated looks and more creative ones. Check this by eye before any further training: it may be the cost of teaching 2x. Like every adapter before human review, this is format evidence only.
+
+**Next.** Fix `distance_not_scaled` with a second contrast pass on the 7 failing looks' pattern (2x looks that state a 1x distance), add distance-scaling pairs, and vary the repeated line. Getting to 10-15 new examples needs more pool photos (a `pool fetch`, which downloads licensed images and needs the user's go-ahead).
+
+### Step-back fix: shot-v5 / prompt v12 (2026-11-16)
+
+Every zoomed run so far fails "zoomed but kept the 1x distance" on portrait_v1: run 2 7/26, q35 vismix 3/18,
+qvl mix zoom3 8/10, q35 mix2 fields 5/16. The training labels are not the cause: across `sft-UNREVIEWED-zoom3` /
+`mix2`, no zoomed half/full/seated look keeps the 1x distance (0 of 56 in the shot-v4 rows, 0 of 15 in the
+Scene Director look rows). The cause is key order. shot-v4 kept shot-v3's order, so `distance_and_framing` comes four fields before
+`zoom_or_lens`, and key order is generation order: the model writes the setup's 1x distance (the one printed in
+the prompt's playbook) before it has chosen a zoom.
+
+shot-v5 (prompt v12, `--shot-format v5`) keeps the v11 fields and rules and changes only:
+- `zoom_or_lens` sits directly ahead of `distance_and_framing` (prompt key list and training targets);
+- `distance_and_framing` is described as "About <N> m at <amount>x", and the export writes the labels that way
+  ("About 2.4 m away; ..." -> "About 2.4 m away at 2x; ..."); the label files themselves are unchanged, so review
+  fingerprints (`answer_sha`) stay valid;
+- one rule line: choose the zoom first, then the distance for it (2x: half body ~2.4 m, full body ~4 m, seated ~3 m).
+
+Data: `sft-UNREVIEWED-zoom5` (inspiration only, same 323/94 rows as zoom3) and `sft-UNREVIEWED-mix2-v5` (mix2 with
+its inspiration rows swapped for zoom5's; the 320/64 Scene Director and scenery rows unchanged). 192/192 v5 looks
+have zoom right before distance and a distance naming its zoom; 0 not scaled. Config:
+`configs/lora_bootstrap_r16_q35_2b_mix2_v5.json` (mix2 fields settings, new data). Bench it with
+`--shot-format v5`; v11 benches are not directly comparable on wording, but the gate checks are the same.
+
+Not changed: the Scene Director look prompt (and the iOS copy of it) still lists `distance_and_framing` before
+`zoom_or_lens`, and `room_to_step_back` / `background_worth_enlarging` come after the zoom. The same reorder there
+needs the app prompt changed in step.
+
+**Result** (`bootstrap-r16-q35-2b-mix2-v5-UNREVIEWED`, bench `q35-2b-mix2-v5-20261116`, 2026-11-17; early stop at
+step 210, best val loss 1.169 at step 165). Against mix2 fields (v11) on the same 14 portrait_v1 cases:
+
+| check (gate) | mix2 fields (v11) | mix2-v5 (v12) |
+|---|---|---|
+| zoomed but kept the 1x distance (<= 10%) | 5/16 = 31% fail | **1/17 = 6% pass** |
+| share of looks zoomed (25-75%) | 38% | 40% |
+| zoom reason matches amount (>= 75%) | 39/42 | 42/42 |
+| setup contradictions (<= 4) | 0 | 1 |
+| cases with the same zoom line on all 3 looks (<= 3) | 3 | 4 fail |
+| compositions tokens, median (<= 982.5) | 984 | 1002.5 fail |
+| projected iPhone full / on-site s (<= 60 / 36.2) | 58.0 / 36.0 | 59.5 / 36.9 fail on-site |
+
+The step-back problem is fixed: the one remaining case is a full body at "About 2.4 m at 2x" (should be ~4 m).
+What it costs: ~18 more composition tokens (the "at 2x" in each distance plus longer outputs), which pushes
+on-site time 0.7 s over, and one more case repeating a zoom line. Still UNREVIEWED drafts.
+
+### shot-v6 / prompt v13: v5 order with a plain distance (2026-11-17)
+
+`bootstrap-r16-q35-2b-mix2-v6-UNREVIEWED`, data `sft-UNREVIEWED-mix2-v6`, bench `q35-2b-mix2-v6-20261117` (early stop
+at step 210, best val loss 1.174 at step 165). Same as v5 except distance_and_framing is no longer written "at <amount>x".
+
+| check (gate) | mix2 fields (v11) | mix2-v5 (v12) | mix2-v6 (v13) |
+|---|---|---|---|
+| zoomed but kept the 1x distance (<= 10%) | 31% fail | 6% | 0/9 = 0% |
+| share of looks zoomed (25-75%) | 38% | 40% | **21% fail** (33 at 1x, 9 at 2x) |
+| zoom reason matches amount (>= 75%) | 39/42 | 42/42 | 41/42 |
+| setup contradictions (<= 4) | 0 | 1 | 0 |
+| cases with the same zoom line on all 3 looks (<= 3) | 3 | 4 fail | 3 |
+| compositions tokens, median (<= 982.5) | 984 fail | 1002.5 fail | 990.5 fail |
+| projected iPhone full / on-site s (<= 60 / 36.2) | 58.0 / 36.0 | 59.5 / 36.9 fail | 58.9 / 36.5 fail |
+
+Dropping "at 2x" saved only 12 of v5's ~18 extra tokens and the model zoomed much less (full body went 16 at 1x, 2 at
+2x); "1x: step closer, more of the place" appears 8 times. The order alone keeps distances scaled, but the written
+"at 2x" seems to help the model commit to zooming. One greedy run per adapter, so the 21% vs 40% gap may be partly
+noise. v5 remains the better trade; the length/on-site overrun is shared by all three and needs trimming elsewhere.
+
+### shot-v7 / prompt v14: v5 without `uses_principle` (2026-11-17)
+
+`bootstrap-r16-q35-2b-mix2-v7-UNREVIEWED`, data `sft-UNREVIEWED-mix2-v7`, bench `q35-2b-mix2-v7-20261117` (early stop
+at step 210, best val loss 1.176 at step 165). Same as v5 (zoom before distance, "About N m at Zx") with the
+`uses_principle` field dropped from each look, to pay for v5's extra length.
+
+| check (gate) | mix2-v5 (v12) | mix2-v6 (v13) | mix2-v7 (v14) |
+|---|---|---|---|
+| zoomed but kept the 1x distance (<= 10%) | 1/17 = 6% | 0/9 = 0% | **0/11 = 0% pass** |
+| share of looks zoomed (25-75%) | 40% | 21% fail | **26% pass** (31 at 1x, 11 at 2x) |
+| zoom reason matches amount (>= 75%) | 42/42 | 41/42 | 36/42 = 86% pass |
+| setup contradictions (<= 4) | 1 | 0 | 0 |
+| cases with the same zoom line on all 3 looks (<= 3) | 4 fail | 3 | **2 pass** |
+| compositions tokens, median (<= 982.5) | 1002.5 fail | 990.5 fail | **899.5 pass** |
+| projected iPhone full / on-site s (<= 60 / 36.2) | 59.5 / 36.9 fail | 58.9 / 36.5 fail | **56.5 / 34.1 pass** |
+
+First adapter to pass every gate. Dropping `uses_principle` saved ~100 composition tokens (more than the ~54
+estimated from the labels) and 2.8 s on-site. Watch:
+- zoomed share is 26%, just over the 25% floor, down from v5's 40%; full body went 20 looks, mostly at 1x;
+- the 6 reason mismatches are all "1x: keep the <thing> in the frame", which the matcher doesn't count as a 1x
+  reason; they read fine, so this is a matcher gap more than a model error;
+- "1x: step closer, more of the place" still appears 8 times (spread across cases, so the all-3 check passes);
+- setup cues stated fell 0.65 -> 0.55, possibly because `uses_principle` carried some of them.
+
+One greedy run per adapter. Still UNREVIEWED drafts: format evidence only until a human reviews the labels.

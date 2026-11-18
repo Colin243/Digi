@@ -49,6 +49,18 @@ History
      tilt) because the distance/lens reason now lives in zoom_or_lens, which keeps the output about as long as v10
      (v10 projected 59.9 s full on the iPhone against a 60 s budget). Only shot_format "v4" prompts are new; v10
      (shot-v3) and every older prompt stay byte-identical. shot-v4 runs record PROMPT_VERSION_V11.
+  v12 (2026-11-16.12) shot-v5 = shot-v4 with zoom_or_lens moved directly ahead of distance_and_framing, and the
+     distance written as "About <N> m at <amount>x". Key order is generation order: in v11 the model wrote the
+     distance before it had chosen the zoom, so trained models zoomed to 2x but kept the 1x distance (17-31% of
+     zoomed looks on portrait_v1) although every training label had the scaled distance. Same fields and rules
+     otherwise; v11 and every older prompt stay byte-identical. shot-v5 runs record PROMPT_VERSION_V12.
+  v13 (2026-11-17.13) shot-v6 = shot-v5 without the "at <amount>x" in distance_and_framing: same order (zoom right
+     before distance) and rule line, but the distance is plain again ("About 4 m; full body"). v5 fixed the
+     step-back check but cost ~18 composition tokens; v6 tests whether the order alone does it. shot-v6 runs
+     record PROMPT_VERSION_V13; v12 and older prompts stay byte-identical.
+  v14 (2026-11-17.14) shot-v7 = shot-v5 without uses_principle. v5 fixed the step-back check but ran 1002.5
+     composition tokens (gate 982.5) and 36.9 s projected on-site (gate 36.2); uses_principle was ~18 tokens per
+     look and the app never shows it. shot-v7 runs record PROMPT_VERSION_V14; older prompts stay byte-identical.
 """
 
 from __future__ import annotations
@@ -66,9 +78,18 @@ PROMPT_VERSION_V8 = "2026-11-12.8"  # shot-v3 with short reasoning (run reason-s
 PROMPT_VERSION_V9 = "2026-11-13.9"  # shot-v3, setup_choice names the framing (run reason-choices-r16-v3-20261113)
 PROMPT_VERSION_V10 = "2026-11-13.10"  # shot-v3 with word-limited instruction fields; what version_for returns for v3
 PROMPT_VERSION_V11 = "2026-11-14.11"  # shot-v4: shot-v3 + a 1-2x zoom amount with a reason
+PROMPT_VERSION_V12 = "2026-11-16.12"  # shot-v5: shot-v4 with the zoom chosen before the distance
+PROMPT_VERSION_V13 = "2026-11-17.13"  # shot-v6: shot-v5 order, distance without "at <amount>x"
+PROMPT_VERSION_V14 = "2026-11-17.14"  # shot-v7: shot-v5 without uses_principle
 
 
 def version_for(mode: str = "inspiration", shot_format: str = "v1") -> str:
+    if shot_format == "v7":
+        return PROMPT_VERSION_V14
+    if shot_format == "v6":
+        return PROMPT_VERSION_V13
+    if shot_format == "v5":
+        return PROMPT_VERSION_V12
     if shot_format == "v4":
         return PROMPT_VERSION_V11
     if shot_format == "v3":
@@ -146,6 +167,32 @@ ZOOM_FIELDS_V4 = {
                     "and stepping back, or staying at 1x and stepping closer, does for this look",
 }
 COMPOSITION_FIELDS_V4 = {**COMPOSITION_FIELDS_V3, **ZOOM_FIELDS_V4}  # same key order as shot-v3
+# shot-v5 (prompt v12): the zoom is chosen first, then the distance for it. v4 kept shot-v3's order, so the
+# distance was generated before the zoom and trained models wrote the 1x distance under a 2x zoom.
+ZOOM_FIELDS_V5 = {
+    "zoom_or_lens": ZOOM_FIELDS_V4["zoom_or_lens"],
+    "distance_and_framing": "distance for the zoom above, written \"About <N> m at <amount>x\" (the 1x distance "
+                            "times the zoom), then how much of the subject is in frame",
+}
+
+
+def _v5_fields() -> dict:
+    out = {}
+    for k, v in COMPOSITION_FIELDS_V4.items():
+        if k == "distance_and_framing":
+            out.update(ZOOM_FIELDS_V5)
+        elif k != "zoom_or_lens":
+            out[k] = v
+    return out
+
+
+COMPOSITION_FIELDS_V5 = _v5_fields()  # shot-v4 fields, zoom_or_lens moved directly ahead of distance_and_framing
+# shot-v6 (prompt v13): v5's order with a plain distance description (no "at <amount>x" written out).
+COMPOSITION_FIELDS_V6 = {**COMPOSITION_FIELDS_V5, "distance_and_framing":
+                         "approximate distance for the zoom above and how much of the subject is in frame"}
+# shot-v7 (prompt v14): v5 without uses_principle (~18 tokens a look, not shown in the app).
+DROPPED_V7 = ("uses_principle",)
+COMPOSITION_FIELDS_V7 = {k: v for k, v in COMPOSITION_FIELDS_V5.items() if k not in DROPPED_V7}
 SCENE_SHOT_FIELDS = {
     **COMPOSITION_FIELDS_V2,
     "title": "a short name for this look",
@@ -299,6 +346,12 @@ REASONING_RULES_V4 = (
     f"{framing.zoom_rules()}\n"
     "In zoom_or_lens write the amount first, then the reason for THIS scene: \"<amount>x: <reason>\"."
 )
+# shot-v5 only: v11's rules plus one line tying the distance to the zoom just chosen.
+REASONING_RULES_V5 = (
+    f"{REASONING_RULES_V4}\n"
+    "Choose zoom_or_lens before distance_and_framing, then give the distance for that zoom: at 2x a half body is "
+    "about 2.4 m, a full body about 4 m, a seated look about 3 m."
+)
 
 _RULES = (
     "Answer with ONLY one JSON object, no markdown, no commentary. "
@@ -439,13 +492,17 @@ def aesthetic_from_notes(notes: list[str]) -> str:
 def compositions_from_parts(aesthetic: dict, target: dict, subject: str = DEFAULT_SUBJECT,
                             shot_format: str = "v1") -> str:
     """shot_format "v1" returns exactly the v4 prompt (benchmark and training-template parity); "v3" adds
-    reasoning fields first plus REASONING_RULES; "v4" is v3 plus the 1-2x zoom rules (prompt v11)."""
+    reasoning fields first plus REASONING_RULES; "v4" is v3 plus the 1-2x zoom rules (prompt v11); "v5" is v4 with
+    the zoom chosen before the distance (prompt v12); "v6" is v5 with a plain distance (prompt v13);
+    "v7" is v5 without uses_principle (prompt v14)."""
     style = {k: v for k, v in aesthetic.items() if k != "per_image"}
     fields = {"v2": COMPOSITION_FIELDS_V2, "v3": COMPOSITION_FIELDS_V3,
-              "v4": COMPOSITION_FIELDS_V4}.get(shot_format, COMPOSITION_FIELDS)
+              "v4": COMPOSITION_FIELDS_V4, "v5": COMPOSITION_FIELDS_V5,
+              "v6": COMPOSITION_FIELDS_V6, "v7": COMPOSITION_FIELDS_V7}.get(shot_format, COMPOSITION_FIELDS)
     shape = {"compositions": [_blank(fields)] * 3}
     direction = {"v2": f"\n{DIRECTION_RULES}", "v3": f"\n{REASONING_RULES}",
-                 "v4": f"\n{REASONING_RULES_V4}"}.get(shot_format, "")
+                 "v4": f"\n{REASONING_RULES_V4}", "v5": f"\n{REASONING_RULES_V5}",
+                 "v6": f"\n{REASONING_RULES_V5}", "v7": f"\n{REASONING_RULES_V5}"}.get(shot_format, "")
     return (
         TARGET_LABEL + "\n"
         f"You are a photography director. The TARGET scene photo is described as:\n{_shape(target)}\n\n"

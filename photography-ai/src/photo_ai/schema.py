@@ -34,7 +34,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 SCHEMA_VERSION = 4
-SHOT_FORMATS = ("v1", "v2", "v3", "v4")
+SHOT_FORMATS = ("v1", "v2", "v3", "v4", "v5", "v6", "v7")  # v5-v7: v4 fields, zoom chosen before distance
 
 
 def _as_list(value: Any) -> Any:
@@ -178,7 +178,7 @@ class ShotSetV4(_Lenient):
 def shot_set(shot_format: str) -> type[BaseModel]:
     if shot_format not in SHOT_FORMATS:
         raise ValueError(f"shot_format must be one of {SHOT_FORMATS}")
-    return {"v2": ShotSetV2, "v3": ShotSetV3, "v4": ShotSetV4}.get(shot_format, CompositionSet)
+    return {"v2": ShotSetV2, "v3": ShotSetV3, "v4": ShotSetV4, "v5": ShotSetV4, "v6": ShotSetV4, "v7": ShotSetV4}.get(shot_format, CompositionSet)
 
 
 def shot_model(shot_format: str) -> type[BaseModel]:
