@@ -1,0 +1,154 @@
+#!/usr/bin/env python3
+"""Live Digi progress dashboard. Stdlib only.
+
+Reads real state on every request (processes, training logs, benchmark index,
+git worktrees), so the page updates by itself as work continues.
+Run: python3 tools/digi-progress/server.py  ->  http://localhost:8799
+"""
+import json, os, re, subprocess, time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+
+REPO = Path(os.environ.get("DIGI_REPO", "/Users/colin/Documents/ChatGPT/DIgit"))
+PHOTO = REPO / "photography-ai"
+HERE = Path(__file__).parent
+PORT = int(os.environ.get("PORT", "8799"))
+
+
+def sh(*args, cwd=None):
+    try:
+        return subprocess.run(args, cwd=cwd, capture_output=True, text=True, timeout=10).stdout
+    except Exception:
+        return ""
+
+
+def last_json_line(path, key):
+    """Last JSON line in a jsonl that contains `key`."""
+    try:
+        lines = Path(path).read_text().splitlines()
+    except Exception:
+        return None
+    for line in reversed(lines):
+        try:
+            obj = json.loads(line)
+        except ValueError:
+            continue
+        if key in obj:
+            return obj
+    return None
+
+
+def processes():
+    out = []
+    for line in sh("ps", "-axo", "pid=,stat=,etime=,command=").splitlines():
+        parts = line.strip().split(None, 3)
+        if len(parts) == 4:
+            out.append({"pid": int(parts[0]), "stat": parts[1], "etime": parts[2], "cmd": parts[3]})
+    return out
+
+
+def training(procs):
+    runs = []
+    for p in procs:
+        m = re.search(r"lora train --config (\S+)", p["cmd"])
+        if not m or "grep" in p["cmd"]:
+            continue
+        cfg_path = PHOTO / m.group(1)
+        try:
+            cfg = json.loads(cfg_path.read_text())
+        except Exception:
+            continue
+        iters = cfg.get("iters", 0)
+        log = PHOTO / "data/adapters" / cfg["run_name"] / "train_log.jsonl"
+        step = last_json_line(log, "step")
+        done = step["step"] if step else 0
+        paused = p["stat"].startswith("T")
+        remaining_s = None
+        if step and step.get("step_s") and not paused:
+            remaining_s = (iters - done) * step["step_s"]
+        runs.append({
+            "name": cfg["run_name"], "model": cfg.get("base_model"),
+            "done": done, "total": iters, "state": "paused" if paused else "running",
+            "loss": step.get("train_loss") if step else None,
+            "remaining_s": remaining_s, "elapsed": p["etime"],
+            "note": "Paused (SIGSTOP) until the benchmark finishes" if paused else "",
+        })
+    return runs
+
+
+def benches(procs):
+    out = []
+    idx = PHOTO / "runs/index.jsonl"
+    for p in procs:
+        if " bench " not in p["cmd"] or "grep" in p["cmd"] or "photo-ai" not in p["cmd"]:
+            continue
+        bid = re.search(r"--bench-id (\S+)", p["cmd"])
+        if not bid:
+            continue
+        models = re.search(r"--models (.+?) --", p["cmd"])
+        strategies = re.search(r"--strategies (.+?) --", p["cmd"])
+        suite = re.search(r"--suite (\S+)", p["cmd"])
+        n_models = len(models.group(1).split()) if models else 1
+        n_strat = len(strategies.group(1).split()) if strategies else 1
+        total = None
+        if suite:
+            try:
+                man = json.loads((PHOTO / f"datasets/{suite.group(1)}/manifest.json").read_text())
+                total = len(man["scenarios"]) * n_models * n_strat
+            except Exception:
+                pass
+        done = 0
+        try:
+            for line in idx.read_text().splitlines():
+                if f'"label": "{bid.group(1)}"' in line:
+                    done += 1
+        except Exception:
+            pass
+        out.append({"name": bid.group(1), "done": done, "total": total or max(done, 1),
+                    "state": "running", "elapsed": p["etime"], "suite": suite.group(1) if suite else ""})
+    return out
+
+
+def worktrees():
+    out = []
+    raw = sh("git", "worktree", "list", "--porcelain", cwd=REPO)
+    for block in raw.strip().split("\n\n"):
+        info = dict(l.split(" ", 1) if " " in l else (l, "") for l in block.splitlines())
+        path = info.get("worktree")
+        if not path or "open-dock" in path:
+            continue
+        branch = info.get("branch", "").replace("refs/heads/", "") or "(detached)"
+        ahead = sh("git", "rev-list", "--count", "origin/main..HEAD", cwd=path).strip() or "0"
+        behind = sh("git", "rev-list", "--count", "HEAD..origin/main", cwd=path).strip() or "0"
+        dirty = len([l for l in sh("git", "status", "--short", cwd=path).splitlines() if l.strip()])
+        age = sh("git", "log", "-1", "--format=%cr", cwd=path).strip()
+        out.append({"path": path.replace(str(REPO), "."), "branch": branch,
+                    "ahead": int(ahead), "behind": int(behind), "dirty": dirty, "age": age})
+    return out
+
+
+def status():
+    procs = processes()
+    return {"time": time.time(), "training": training(procs), "benches": benches(procs),
+            "worktrees": worktrees()}
+
+
+class H(BaseHTTPRequestHandler):
+    def log_message(self, *a):
+        pass
+
+    def do_GET(self):
+        if self.path.startswith("/api/status"):
+            body, ctype = json.dumps(status()).encode(), "application/json"
+        else:
+            body, ctype = (HERE / "index.html").read_bytes(), "text/html; charset=utf-8"
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+
+if __name__ == "__main__":
+    print(f"Digi progress on http://localhost:{PORT}")
+    ThreadingHTTPServer(("127.0.0.1", PORT), H).serve_forever()
