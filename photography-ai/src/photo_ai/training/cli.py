@@ -42,8 +42,13 @@ def run_train_data(a) -> int:
         print(f"imported {n} tag records as {a.source!r} (provisional until reviewed)")
         return 0
     if a.action == "assemble":
-        from .assemble import assemble, assemble_reserve
+        from .assemble import assemble, assemble_reserve, assemble_setups
 
+        if a.setups:
+            ex = assemble_setups(a.dataset)
+            print(f"{len(ex)} phone-setup examples; splits {dict(Counter(e['split'] for e in ex))}; "
+                  f"setups {dict(Counter(e['technique']['value'] for e in ex))}")
+            return 0
         if a.reserve:
             ex = assemble_reserve(a.dataset, a.n_train, a.n_valid, batch=a.batch or 2)
             print(f"{len(ex)} reserve examples (batch {a.batch or 2}) appended; "
@@ -107,8 +112,30 @@ def run_train_data(a) -> int:
     if a.action == "export":
         from .export import export_sft
 
-        info = export_sft(a.dataset, include_unapproved=a.include_unapproved)
+        info = export_sft(a.dataset, include_unapproved=a.include_unapproved,
+                          shot_format=getattr(a, "shot_format", "v1"))
         print(json.dumps(info, indent=1))
+        return 0
+    if a.action == "zoom-relabel":
+        from . import zoom_relabel as Z
+
+        if a.step == "backup":
+            print(f"labels copied to {Z.backup(a.dataset)}")
+        elif a.step == "worklist":
+            w = Z.worklist(a.dataset)
+            text = json.dumps(w, indent=1, ensure_ascii=False)
+            if a.out:
+                a.out.write_text(text)
+                print(f"{len(w)} draft labels -> {a.out}")
+            else:
+                print(text)
+        elif a.step == "apply":
+            if not a.file or a.source == "ai-draft":
+                print("pass --file edits.json and --source 'ai-draft:<who>' or 'human:<name>'", file=sys.stderr)
+                return 2
+            print(json.dumps(Z.apply_edits(a.dataset, Z.load_edits(a.file), a.source), indent=1))
+        else:
+            print(json.dumps(Z.report(a.dataset), indent=1, ensure_ascii=False))
         return 0
     print(f"unknown action {a.action}", file=sys.stderr)
     return 2

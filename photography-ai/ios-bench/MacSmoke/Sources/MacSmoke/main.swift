@@ -26,6 +26,25 @@ var t0 = now()
 try await host.load(from: res.appendingPathComponent("Model"))
 print(String(format: "load %.2f s, MLX active %.2f GB", now() - t0, Double(Memory.activeMemory) / 1e9))
 
+// Adapter check (set ADAPTER to a prepare_adapter.py output dir; ADAPTER_FUSE=1 to fuse into the weights).
+// Runs the same short, greedy target-scene call before and after, and says whether the output changed.
+if let adapterDir = ProcessInfo.processInfo.environment["ADAPTER"] {
+    let fuse = ProcessInfo.processInfo.environment["ADAPTER_FUSE"] == "1"
+    let ts = try pack.stage("target_scene")
+    let image = imgDir.appendingPathComponent(manifest.variant(role: "target", index: 1, size: size)!.file)
+    let before = try await host.run(template: ts.prompt, marker: pack.imageMarker, image: image, maxTokens: ts.maxTokens)
+    t0 = now()
+    let layers = try await host.applyAdapter(from: URL(fileURLWithPath: adapterDir), fuse: fuse)
+    print(String(format: "adapter %@ applied in %.2f s (%@), LoRA layers in model: %d (expect %d unfused, 0 fused)",
+                 adapterDir, now() - t0, fuse ? "fused" : "unfused", layers, 196))
+    let after = try await host.run(template: ts.prompt, marker: pack.imageMarker, image: image, maxTokens: ts.maxTokens)
+    print(String(format: "base:    %.1f tok/s, JSON valid %@", before.genTPS, "\(JSONText.isValid(before.text))"))
+    print(String(format: "adapter: %.1f tok/s, JSON valid %@", after.genTPS, "\(JSONText.isValid(after.text))"))
+    print("output changed by the adapter: \(before.text != after.text)")
+    print("--- base ---\n\(before.text.prefix(300))\n--- adapter ---\n\(after.text.prefix(300))")
+    exit(0)
+}
+
 func img(_ role: String, _ i: Int) -> URL {
     imgDir.appendingPathComponent(manifest.variant(role: role, index: i, size: size)!.file)
 }

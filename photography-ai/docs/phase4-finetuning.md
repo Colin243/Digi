@@ -253,3 +253,5 @@ Deploy batch 2 to its own address, separate from batch 1. Answers are saved in t
 - **Fuse the adapter before latency tests.** The unfused adapter runs generation at about 55% of base speed. Fusing ΔW into the weights and re-quantizing should bring speed back to base. Measure before claiming any latency number.
 - **Weight the stages.** If time is tight, oversample `compositions` rows. Most Phase 3 failures are there. But keep `notes` and `target_scene` rows, so scene awareness and hallucination behavior don't regress.
 - **Consider training the vision tower only if the evaluation shows misread angles.** For example, if fine-tuned notes still call low-angle photos "eye level", try `--train-vision` with a lower learning rate.
+
+Zoom versus distance (shot-v4, prompt v11) and how to retrain for it: [zoom-retraining-plan.md](zoom-retraining-plan.md).

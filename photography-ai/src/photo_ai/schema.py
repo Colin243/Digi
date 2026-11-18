@@ -18,6 +18,13 @@ v4 adds the versioned *shot format* shared by the Scene Director and the Inspira
            optional expression_cue; framing and light become required.
   target_scene.people_in_frame  who is visible in the scene photo (observable only), or "none".
 Every v4 field is optional on the base models, so v3 / shot-v1 results still validate and render.
+
+shot-v3 (prompt v7) is shot-v1 with reasoning before the instructions: scene_reading, setup_choice,
+why_each_choice (>= 2 reasons) and fix_if_wrong (>= 1), all required in ShotV3 and optional elsewhere.
+
+shot-v4 (prompt v11) is shot-v3 with zoom_or_lens required: one zoom amount from 1x to 2x (Digi's main camera)
+and a short reason. Whether the amount is in range and the reason fits is scored by framing.zoom_fit, not here,
+so an out-of-range answer still validates and shows up in the check instead of as a failed run.
 """
 
 from __future__ import annotations
@@ -27,7 +34,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 SCHEMA_VERSION = 4
-SHOT_FORMATS = ("v1", "v2")
+SHOT_FORMATS = ("v1", "v2", "v3", "v4", "v5", "v6", "v7")  # v5-v7: v4 fields, zoom chosen before distance
 
 
 def _as_list(value: Any) -> Any:
@@ -83,6 +90,11 @@ class TargetScene(_Lenient):
 
 
 class Composition(_Lenient):
+    # shot-v3 reasoning (optional here; required in ShotV3)
+    scene_reading: str = ""
+    setup_choice: str = ""
+    why_each_choice: list[str] = Field(default_factory=list)
+    fix_if_wrong: list[str] = Field(default_factory=list)
     title: str = Field(min_length=1)
     uses_principle: str = ""
     camera_position: str = Field(min_length=1)
@@ -102,9 +114,10 @@ class Composition(_Lenient):
     gaze: str = ""
     expression_cue: str = ""
 
-    _lists = field_validator("visible_evidence", "needs_on_site_check", "steps", mode="before")(_as_list)
+    _lists = field_validator("visible_evidence", "needs_on_site_check", "steps", "why_each_choice", "fix_if_wrong",
+                             mode="before")(_as_list)
     _texts = field_validator(
-        "title", "uses_principle", "camera_position", "camera_height", "camera_angle", "subject_position",
+        "scene_reading", "setup_choice", "title", "uses_principle", "camera_position", "camera_height", "camera_angle", "subject_position",
         "distance_and_framing", "orientation", "zoom_or_lens", "lighting_tip",
         "body_pose", "head_direction", "gaze", "expression_cue", mode="before",
     )(_as_text)
@@ -113,11 +126,37 @@ class Composition(_Lenient):
 class ShotV2(Composition):
     """shot-v2: framing, light and subject direction are required; the expression cue stays optional."""
 
+    # Place facts the app's zoom rule reads. Optional so earlier shot-v2 output stays valid.
+    room_to_step_back: str = ""
+    background_worth_enlarging: str = ""
+
     distance_and_framing: str = Field(min_length=1)
     lighting_tip: str = Field(min_length=1)
     body_pose: str = Field(min_length=1)
     head_direction: str = Field(min_length=1)
     gaze: str = Field(min_length=1)
+
+
+class ShotScenery(Composition):
+    """Scenery look: the camera and the framing are required; there is no person, so no pose fields."""
+
+    distance_and_framing: str = Field(min_length=1)
+    lighting_tip: str = Field(min_length=1)
+
+
+class ShotV3(Composition):
+    """shot-v3: the shot-v1 composition plus the reasoning that comes before the instructions."""
+
+    scene_reading: str = Field(min_length=1)
+    setup_choice: str = Field(min_length=1)
+    why_each_choice: list[str] = Field(min_length=2)
+    fix_if_wrong: list[str] = Field(min_length=1)
+
+
+class ShotV4(ShotV3):
+    """shot-v4: shot-v3 plus a required zoom amount (1-2x) and reason in zoom_or_lens."""
+
+    zoom_or_lens: str = Field(min_length=1)
 
 
 class CompositionSet(_Lenient):
@@ -128,10 +167,25 @@ class ShotSetV2(_Lenient):
     compositions: list[ShotV2] = Field(min_length=3)
 
 
+class ShotSetV3(_Lenient):
+    compositions: list[ShotV3] = Field(min_length=3)
+
+
+class ShotSetV4(_Lenient):
+    compositions: list[ShotV4] = Field(min_length=3)
+
+
 def shot_set(shot_format: str) -> type[BaseModel]:
     if shot_format not in SHOT_FORMATS:
         raise ValueError(f"shot_format must be one of {SHOT_FORMATS}")
-    return ShotSetV2 if shot_format == "v2" else CompositionSet
+    return {"v2": ShotSetV2, "v3": ShotSetV3, "v4": ShotSetV4, "v5": ShotSetV4, "v6": ShotSetV4, "v7": ShotSetV4}.get(shot_format, CompositionSet)
+
+
+def shot_model(shot_format: str) -> type[BaseModel]:
+    """The model for ONE look in `shot_format` (the item type of shot_set's compositions list)."""
+    if shot_format not in SHOT_FORMATS:
+        raise ValueError(f"shot_format must be one of {SHOT_FORMATS}")
+    return {"v2": ShotV2, "v3": ShotV3}.get(shot_format, Composition)
 
 
 def shot_format_of(record: dict) -> str:

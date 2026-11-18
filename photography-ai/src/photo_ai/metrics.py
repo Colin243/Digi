@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 from itertools import combinations
+from pathlib import Path
 
 from .cases import Case, CaseImage
 
@@ -181,8 +182,29 @@ def direction_checks(result: dict | None) -> dict | None:
     }
 
 
-def evaluate_result(result: dict | None, case: Case | None) -> dict:
-    """Auto metrics for one run's parsed result. Works with partial results."""
+def notes_from_stages(stages: list[dict], run_dir) -> list[str] | None:
+    """The decomposed strategy's per-photo notes (notes_inspiration1..N raw text), in order; None for strategies
+    without a notes stage. Missing or unreadable notes come back as "" so photo order is kept."""
+    named = sorted((s for s in stages or [] if s.get("name", "").startswith("notes_inspiration")),
+                   key=lambda s: int(s["name"].removeprefix("notes_inspiration") or 0))
+    if not named:
+        return None
+    out = []
+    for s in named:
+        raw = (s.get("attempts") or [{}])[-1].get("raw_output")
+        try:
+            out.append((Path(run_dir) / raw).read_text().strip() if raw else "")
+        except OSError:
+            out.append("")
+    return out
+
+
+def evaluate_result(result: dict | None, case: Case | None, inspiration_notes: list[str] | None = None) -> dict:
+    """Auto metrics for one run's parsed result. Works with partial results.
+
+    inspiration_notes: the per-photo notes stage (decomposed strategy). When given, "inspiration identified" is
+    scored on those notes, where the model actually reads each photo; otherwise on aesthetic.per_image, a one-line
+    summary whose wording follows the training labels (terse camera recipes there scored as "not identified")."""
     if not result:
         return {"has_result": False}
     out: dict = {"has_result": True}
@@ -221,8 +243,15 @@ def evaluate_result(result: dict | None, case: Case | None) -> dict:
         target_terms = [t for g in case.target.objects for t in g] + case.target.primary
         out["evidence_grounded_rate"] = round(sum(bool(mentions(e, target_terms)) for e in evidence) / len(evidence), 3)
     per_image = aes.get("per_image") or []
-    if per_image:
-        out["inspiration_primary_hits"] = [
+    texts, source = (inspiration_notes, "notes") if any(inspiration_notes or []) else (per_image, "per_image")
+    if texts:
+        recalls = [image_recall(str(texts[i]) if i < len(texts) else "", img) for i, img in enumerate(case.inspiration)]
+        out["inspiration_source"] = source
+        out["inspiration_primary_hits"] = [r["primary_hit"] for r in recalls]
+        objs = [r["object_recall"] for r in recalls if r["object_recall"] is not None]
+        out["inspiration_object_recall"] = round(sum(objs) / len(objs), 3) if objs else None
+    if per_image:  # kept separately: does the summary line still say what each photo shows?
+        out["per_image_primary_hits"] = [
             image_recall(str(per_image[i]) if i < len(per_image) else "", img)["primary_hit"]
             for i, img in enumerate(case.inspiration)
         ]

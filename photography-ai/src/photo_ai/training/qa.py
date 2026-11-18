@@ -9,11 +9,14 @@ from __future__ import annotations
 
 import re
 
-from .. import metrics
+from .. import framing, metrics
 from .assemble import load_examples
 from .tags import load_tags
 
 POSE_WORDS = r"\b(stand|stands|standing|sit|sits|sitting|seated|walk|walks|walking|lean|leans|leaning|kneel|crouch|step|turn|turns|turned|look|looks|looking|face|faces|facing|hands?|arms?|weight|shoulder|chin|stride|perch)\b"
+SUBJECT_WORDS = (r"\b(?:wom[ae]n|m[ae]n|girl|boy|person|people|couple|child|children|kid|bride|groom|lad(?:y|ies)|guy|model|"
+                 r"singer|dancer|musician|surfer|rider|friend|family|crowd|figure|sister|brother|mother|father|baby|teen|"
+                 r"she|he|they|her|his)s?\b")
 LIGHT_WORDS = r"\b(light|sun|shade|shadow|backlit|backlight|silhouette|window|golden|overcast|neon|lamp|expose|exposure|flare|glow|bright|dark)\b"
 
 
@@ -38,6 +41,7 @@ def check_answer(answer: dict, example: dict | None = None, target_elements: lis
             issues.append(f"shot {i}: no visible_evidence")
         if not c.get("needs_on_site_check"):
             issues.append(f"shot {i}: no needs_on_site_check")
+        issues += [f"shot {i}: {m}" for m in framing.setup_contradictions(c)]
         if target_elements and c.get("visible_evidence"):
             grounded = [e for e in c["visible_evidence"] if metrics.mentions(e, target_elements)]
             if not grounded:
@@ -50,6 +54,12 @@ def check_answer(answer: dict, example: dict | None = None, target_elements: lis
         if not re.search(r"\b(close|half|waist|full|body|head|wide|framed|framing|frame|torso|figure|tight|crop(?:ped)?|"
                          r"portrait|landscape|small in|fills?)\b", n, re.I):
             issues.append(f"inspiration note {i}: framing not stated")
+    per_image = (answer.get("aesthetic") or {}).get("per_image") or []
+    if notes and len(per_image) != len(notes):
+        issues.append(f"aesthetic.per_image has {len(per_image)} line(s) for {len(notes)} inspiration photo(s)")
+    for i, line in enumerate(per_image, 1):
+        if not re.search(SUBJECT_WORDS, str(line), re.I):
+            issues.append(f"per_image {i}: doesn't say who is in the photo (start with who and where, then the camera recipe)")
     return issues
 
 

@@ -2,6 +2,7 @@ import CoreImage
 import Foundation
 import MLX
 import MLXLMCommon
+import MLXNN
 import MLXVLM
 import Tokenizers
 
@@ -150,6 +151,20 @@ final class ModelHost {
 
     func load(from url: URL) async throws {
         container = try await VLMModelFactory.shared.loadContainer(from: url, using: LocalTokenizerLoader())
+    }
+
+    /// Applies a LoRA adapter directory (written by scripts/prepare_adapter.py) to the loaded model.
+    /// `fuse: false` adds the adapter as extra layers (slower decode, easy to remove);
+    /// `fuse: true` bakes it into the 4-bit weights (what a shipped app would do).
+    /// Returns how many adapter layers the model now has, so a caller can tell nothing silently failed.
+    @discardableResult
+    func applyAdapter(from url: URL, fuse: Bool) async throws -> Int {
+        guard let container else { throw HostError.badPrompt("model not loaded") }
+        let adapter = try LoRAContainer.from(directory: url)
+        return try await container.perform { context in
+            if fuse { try adapter.fuse(with: context.model) } else { try adapter.load(into: context.model) }
+            return context.model.namedModules().filter { $0.1 is LoRALayer }.count
+        }
     }
 
     /// Drops the model and returns MLX's buffer cache to the OS.
