@@ -39,6 +39,8 @@ h2{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--mute
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
 .wt{display:flex;flex-direction:column;gap:8px;min-width:0}
 .chips{display:flex;gap:6px;flex-wrap:wrap}
+.qrow{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(60px,1fr) auto;gap:10px;align-items:center}
+.qname{font:12px var(--mono);overflow-wrap:anywhere}
 .empty{color:var(--muted);font-size:13px;padding:6px 0}
 </style>
 </head>
@@ -50,6 +52,8 @@ h2{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--mute
   </header>
 
   <section><h2>Running jobs</h2><div id="jobs" class="grid"></div></section>
+  <section><h2>Benchmark queue</h2><div id="queue" class="grid"></div></section>
+  <section id="svc-wrap" hidden><h2>Services</h2><div id="svc" class="grid"></div></section>
   <section><h2>Worktrees vs main</h2><div id="wts" class="grid"></div></section>
 </main>
 <script>
@@ -74,6 +78,16 @@ function job(kind, j){
   </div>`;
 }
 
+function queueCard(q){
+  const rows = q.items.map(i => {
+    const p = pct(i.done, i.total);
+    return `<div class="qrow"><span class="qname">${esc(i.id)}</span>
+      <span class="bar ${i.state==='done'?'done':''}"><i style="width:${p}%"></i></span>
+      <span class="pill ${i.state==='running'?'running':(i.state==='done'?'merged':'')}">${i.state==='queued'?'queued':i.done+'/'+i.total}</span></div>`;
+  }).join('');
+  return `<div class="card"><div class="row"><span class="name">${esc(q.script)}</span><span class="sub">up ${esc(q.up)}</span></div>${rows}</div>`;
+}
+
 function wt(w){
   const merged = w.ahead===0;
   const chips = [
@@ -92,6 +106,10 @@ async function tick(){
     const s = await r.json();
     const jobs = s.training.map(j=>job('Training',j)).concat(s.benches.map(j=>job('Benchmark',j)));
     $('jobs').innerHTML = jobs.join('') || '<div class="empty">No training or benchmark process is running.</div>';
+    $('queue').innerHTML = s.queue.map(queueCard).join('') || '<div class="empty">No benchmark script is running.</div>';
+    $('svc-wrap').hidden = !s.services.length;
+    $('svc').innerHTML = s.services.map(v => `<div class="card"><div class="row"><span class="name">API server :${esc(v.port)}</span>
+      <span class="pill ${v.paused?'warn':'running'}">${v.paused?'paused (SIGSTOP)':'serving'}</span></div><div class="sub">${esc(v.model)}</div></div>`).join('');
     $('wts').innerHTML = s.worktrees.map(wt).join('');
     $('stamp').textContent = 'live · updated ' + new Date(s.time*1000).toLocaleTimeString() + ' · refreshes every 5s';
     $('dot').classList.remove('stale');

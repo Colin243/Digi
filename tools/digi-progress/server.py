@@ -109,6 +109,74 @@ def benches(procs):
     return out
 
 
+def _suite_size(suite):
+    try:
+        man = json.loads((PHOTO / f"datasets/{suite}/manifest.json").read_text())
+        return len(man["scenarios"])
+    except Exception:
+        return 14
+
+
+def _expand(template, env):
+    return re.sub(r"\$\{?(\w+)\}?", lambda m: env.get(m.group(1), m.group(0)), template)
+
+
+def queue(procs):
+    """Benchmark queue read from the shell scripts that are running: every `run <bench-id> ...` line, with simple
+    `VAR=value` and `for v in a b c; do ... done` expansion, matched against runs/index.jsonl."""
+    scripts, running_ids = [], set()
+    for p in procs:
+        if "photo-ai bench" in p["cmd"] and "grep" not in p["cmd"]:
+            m = re.search(r"--bench-id (\S+)", p["cmd"])
+            if m:
+                running_ids.add(m.group(1))
+        m = re.search(r"(?:^|\s)(/\S+\.sh)$", p["cmd"])
+        if m and Path(m.group(1)).exists() and m.group(1) not in [s[0] for s in scripts]:
+            scripts.append((m.group(1), p["etime"]))
+    try:
+        index = (PHOTO / "runs/index.jsonl").read_text()
+    except Exception:
+        index = ""
+    out = []
+    for path, etime in scripts:
+        text = Path(path).read_text()
+        if "photo-ai bench" not in text:
+            continue
+        suite = re.search(r"--suite (\S+)", text)
+        total = _suite_size(suite.group(1)) if suite else 14
+        env, loop, items = {}, None, []
+        for line in text.splitlines():
+            line = line.strip()
+            assigns = [re.match(r"^(\w+)=(\S+)$", part.strip()) for part in line.split(";")]
+            if line and all(assigns):
+                for a in assigns:
+                    env[a.group(1)] = _expand(a.group(2), env)
+            elif m := re.match(r"for (\w+) in ([^;]+); do", line):
+                loop = (m.group(1), m.group(2).split())
+            elif line == "done":
+                loop = None
+            elif m := re.match(r"^run\s+(\S+)(?:\s+(\S+))?", line):
+                variants = [{**env, loop[0]: v} for v in loop[1]] if loop else [env]
+                items += [_expand(m.group(1), e) for e in variants]
+        rows = []
+        for bid in items:
+            done = index.count(f'"label": "{bid}"')
+            state = "done" if done >= total else ("running" if bid in running_ids else "queued")
+            rows.append({"id": bid, "done": min(done, total), "total": total, "state": state})
+        out.append({"script": Path(path).name, "up": etime, "items": rows})
+    return out
+
+
+def services(procs):
+    out = []
+    for p in procs:
+        if "photo-ai server serve" in p["cmd"] and p["cmd"].lstrip().startswith("/") and "grep" not in p["cmd"]:
+            m = re.search(r"--port (\d+)", p["cmd"])
+            out.append({"port": m.group(1) if m else "?", "paused": p["stat"].startswith("T"),
+                        "model": (re.search(r"--model (\S+)", p["cmd"]) or [None, ""])[1].split("/")[-1][:60]})
+    return out
+
+
 def worktrees():
     out = []
     raw = sh("git", "worktree", "list", "--porcelain", cwd=REPO)
@@ -130,7 +198,7 @@ def worktrees():
 def status():
     procs = processes()
     return {"time": time.time(), "training": training(procs), "benches": benches(procs),
-            "worktrees": worktrees()}
+            "queue": queue(procs), "services": services(procs), "worktrees": worktrees()}
 
 
 class H(BaseHTTPRequestHandler):
