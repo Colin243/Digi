@@ -73,7 +73,7 @@ When a shot frames a person, use the setup that matches its framing. Write the n
 | **Full body** (standing) | low: crouch so the phone is around the subject's waist or below | tilt up about 10°, toward the eyes | about 2 m | feet touch the bottom edge; head on or just above the top grid line |
 | **Seated**, full body | about the subject's stomach height (bend over) | tilt down about 10°, aimed at the stomach | about 1.5 m | whole body along the frame's diagonal; legs crossed and extended toward the subject's better side |
 
-All three use the **1x main lens**. The 0.5x ultra-wide stretches faces and bodies near the frame edges.
+All three use the **1x main lens**. The 0.5x ultra-wide stretches faces and bodies near the frame edges. The distances are for 1x; shot-v4 labels may zoom to 2x and step back (see [Zoom versus distance](#zoom-versus-distance-shot-v4)).
 
 - **Why these work:** a camera just above the head keeps the face in proportion; a low camera tilted up lengthens the legs, and feet on the bottom edge stop them looking cut short; the diagonal is the longest line in the frame.
 - **Contradictions to fix:** "full body" with "tilt down", or "half body" with "tilt up from below". The scene-eval setup check counts these.
@@ -112,6 +112,42 @@ The reasoning adds about 190 generated tokens per analysis, so in shot-v3 labels
 | `steps` | exactly 2, under 8 words each; don't repeat the camera numbers |
 
 Shot-v1 labels keep the longer rules in the table above.
+
+### Zoom versus distance (shot-v4)
+
+Digi's camera zooms continuously from **1x to 2x on the main camera only**. There is no 0.5x and no telephoto. Shot-v4 (prompt v11, `--shot-format v4`) is shot-v3 plus a zoom decision. The prompt text and the check live in `src/photo_ai/framing.py` (`ZOOM_RULES`, `zoom_fit`).
+
+**The trade-off.** Compare two shots where the subject fills the frame by the same amount:
+
+| | step back and zoom toward 2x | stay at 1x and step closer |
+|---|---|---|
+| view | narrower; less of the surroundings | wider; more of the place |
+| background | looks bigger and closer behind the subject (compression) | looks smaller and farther away |
+| faces and bodies | natural proportions | closer than about 1 m, the nose, hands or feet nearest the lens look stretched |
+| sharpness | exactly 2x is a sensor crop and stays sharp; amounts in between are a crop scaled up to 12 MP, a little softer | full sharpness |
+| space needed | about twice the 1x distance behind the camera | little |
+
+**Which side to lean toward.**
+
+- **Lean 1x and step closer** for scenery, travel and environmental looks, where the place is part of the picture. Also lean 1x in tight spaces with no room to step back, and for low full-body shots, because the leg-lengthening effect of a low camera is stronger up close.
+- **Lean toward 2x and step back** for close-ups and half-body portraits, a busy background you want to crop out, a background shape (a tower, a sign, the sun, a wall pattern) that should look large behind the subject, and a background meant to become a soft wash of colour.
+- **Prefer exactly 1x or 2x.** Use an amount in between (1.3x, 1.5x) only when the space stops you standing at the 1x or 2x distance, and say so.
+- **Never above 2x, never 0.5x.**
+
+**How to write it.**
+
+| field | rule |
+|---|---|
+| `zoom_or_lens` | the amount first, then under 10 words of **why for this look**: `"2x: step back so the clock tower fills the gap behind her"`, `"1x: step closer so the whole market stall stays in view"`. Not `"2x"` alone, not `"2x for a nice look"`. |
+| `distance_and_framing` | the distance **for that zoom**. The setups' distances are for 1x; at 2x, double them (half body about 2.4 m, full body about 4 m, seated about 3 m). |
+| `why_each_choice` | exactly **2** reasons in shot-v4: camera height and tilt. The distance or lens reason moves into `zoom_or_lens`, which keeps a v4 look no longer than a v3 one. |
+| `needs_on_site_check` | if stepping back needs room the target photo does not show behind the camera, say so: "room to step back 4 m". |
+
+- **Consistent:** a reason that argues for the other side contradicts the amount. "2x: show more of the street" and "1x: compress the tower" are both wrong. The `zoom_fit` check counts these.
+- **Close-up at 1x** means a phone well under 1 m from the face, which stretches it. Use 2x unless the space is too tight, and say that.
+- **Scenery at 2x** is unusual: zooming in throws away the place. It is fine when the look is about one distant background shape, and the reason says so.
+
+**The check.** `framing.zoom_fit(look)` is informational, like `setup_fit`. It reports whether an amount is stated (`1.5x`, or a focal length such as `48 mm`, read as 2x), whether every amount is within 1x to 2x, whether a reason is given, whether the reason's wording argues for the side the amount is on, and whether a half body, full body or seated look zoomed to 1.5x or more kept about the 1x distance (`distance_not_scaled`). `bootstrap_eval` and scene-eval print "looks with a zoom amount in 1-2x" and "zoom reason matches the amount". `train-data export --shot-format v4` skips labels whose looks fail the range or have no reason. It is keyword matching: it catches missing or reversed reasons, not whether the zoom is right for the photo. Reviewers judge that.
 
 ### Avoid
 

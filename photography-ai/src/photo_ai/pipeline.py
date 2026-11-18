@@ -206,7 +206,8 @@ def _decomposed(backend, run_dir, insp, tgt, cfg):
         backend, run_dir, "compositions",
         prompts.photographer_asks(prompts.compositions_from_parts(aesthetic, target, cfg.subject, cfg.shot_format), cfg.brief),
         [tgt], schema.shot_set(cfg.shot_format), cfg,
-        {"v2": max(cfg.max_tokens, SHOT_V2_TOKENS), "v3": max(cfg.max_tokens, SHOT_V3_TOKENS)}.get(cfg.shot_format),
+        {"v2": max(cfg.max_tokens, SHOT_V2_TOKENS), "v3": max(cfg.max_tokens, SHOT_V3_TOKENS),
+         "v4": max(cfg.max_tokens, SHOT_V3_TOKENS)}.get(cfg.shot_format),
         on_text=_look_streamer(cfg.shot_format, streamed),
     )
     stages.append(st)
@@ -329,7 +330,7 @@ def _normalize_config(cfg: RunConfig) -> RunConfig:
         return cfg
     if cfg.strategy not in STRATEGIES:
         raise InputError(f"strategy must be one of {STRATEGIES}")
-    if cfg.shot_format in ("v2", "v3") and cfg.strategy != "decomposed":
+    if cfg.shot_format in ("v2", "v3", "v4") and cfg.strategy != "decomposed":
         raise InputError(f"shot-{cfg.shot_format} in inspiration mode needs the decomposed strategy")
     return cfg
 

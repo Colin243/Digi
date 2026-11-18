@@ -439,6 +439,7 @@ def auto_checks(fx: dict, record: dict) -> dict:
         "scene_recall": (am.get("target_recall") or {}).get("object_recall"),
         # Informational, outside the frozen criteria: does each look follow the phone setup its framing calls for?
         "setup_fit": framing.summarize_fit(comps),
+        "zoom_fit": framing.summarize_zoom(comps),  # informational: 1-2x amount with a matching reason (shot-v4)
         "evidence_grounded_rate": am.get("evidence_grounded_rate"),
         "people_in_frame": ts.get("people_in_frame"),
         "inference_s": record["timing"]["inference_s"],
@@ -577,6 +578,10 @@ def summarize(rows: list[dict]) -> dict:
     s["setup_looks"] = sum(f.get("with_setup", 0) for f in fits)
     s["setup_cue_score_mean"] = _mean([f.get("setup_cue_score_mean") for f in fits])
     s["setup_conflicts"] = sum(f.get("setup_conflicts", 0) for f in fits)
+    zooms = [r.get("zoom_fit") or {} for r in valid]
+    s["zoom_looks"] = sum(z.get("looks", 0) for z in zooms)
+    s["zoom_in_range"] = sum(z.get("zoom_in_range", 0) for z in zooms)
+    s["zoom_reason_matches"] = sum(z.get("zoom_reason_matches", 0) for z in zooms)
     s["evidence_grounded_mean"] = _mean([r["evidence_grounded_rate"] for r in valid])
     s["inference_s_mean"] = _mean([r["inference_s"] for r in rows])
     s["peak_memory_gb_max"] = max((r["peak_memory_gb"] or 0 for r in rows), default=None)
@@ -604,6 +609,10 @@ def _summary_table(by: dict[str, dict]) -> list[str]:
             ("looks matching a phone setup (informational)", lambda s: str(s.get("setup_looks", "—"))),
             ("setup cues stated, mean (0-1, informational)", lambda s: _fmt(s.get("setup_cue_score_mean"))),
             ("setup contradictions (wrong tilt)", lambda s: str(s.get("setup_conflicts", "—"))),
+            ("looks with a 1-2x zoom amount (informational)",
+             lambda s: f"{s['zoom_in_range']}/{s['zoom_looks']}" if "zoom_looks" in s else "—"),
+            ("zoom reason matches the amount (informational)",
+             lambda s: f"{s['zoom_reason_matches']}/{s['zoom_looks']}" if "zoom_looks" in s else "—"),
             ("seconds per scene (mean)", lambda s: _fmt(s["inference_s_mean"], 1)),
             ("peak memory GB (max)", lambda s: _fmt(s["peak_memory_gb_max"]))]
     out = ["| automated measure | " + " | ".join(keys) + " |", "|---|" + "---|" * len(keys)]

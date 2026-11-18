@@ -21,6 +21,10 @@ Every v4 field is optional on the base models, so v3 / shot-v1 results still val
 
 shot-v3 (prompt v7) is shot-v1 with reasoning before the instructions: scene_reading, setup_choice,
 why_each_choice (>= 2 reasons) and fix_if_wrong (>= 1), all required in ShotV3 and optional elsewhere.
+
+shot-v4 (prompt v11) is shot-v3 with zoom_or_lens required: one zoom amount from 1x to 2x (Digi's main camera)
+and a short reason. Whether the amount is in range and the reason fits is scored by framing.zoom_fit, not here,
+so an out-of-range answer still validates and shows up in the check instead of as a failed run.
 """
 
 from __future__ import annotations
@@ -30,7 +34,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 SCHEMA_VERSION = 4
-SHOT_FORMATS = ("v1", "v2", "v3")
+SHOT_FORMATS = ("v1", "v2", "v3", "v4")
 
 
 def _as_list(value: Any) -> Any:
@@ -149,6 +153,12 @@ class ShotV3(Composition):
     fix_if_wrong: list[str] = Field(min_length=1)
 
 
+class ShotV4(ShotV3):
+    """shot-v4: shot-v3 plus a required zoom amount (1-2x) and reason in zoom_or_lens."""
+
+    zoom_or_lens: str = Field(min_length=1)
+
+
 class CompositionSet(_Lenient):
     compositions: list[Composition] = Field(min_length=3)
 
@@ -161,10 +171,14 @@ class ShotSetV3(_Lenient):
     compositions: list[ShotV3] = Field(min_length=3)
 
 
+class ShotSetV4(_Lenient):
+    compositions: list[ShotV4] = Field(min_length=3)
+
+
 def shot_set(shot_format: str) -> type[BaseModel]:
     if shot_format not in SHOT_FORMATS:
         raise ValueError(f"shot_format must be one of {SHOT_FORMATS}")
-    return {"v2": ShotSetV2, "v3": ShotSetV3}.get(shot_format, CompositionSet)
+    return {"v2": ShotSetV2, "v3": ShotSetV3, "v4": ShotSetV4}.get(shot_format, CompositionSet)
 
 
 def shot_model(shot_format: str) -> type[BaseModel]:
