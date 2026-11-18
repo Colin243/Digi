@@ -208,8 +208,8 @@ The device runs found that compositions decoding dominates the on-site wait: abo
 **What changed**
 
 - **Max-token cap for compositions.**
-  - Set it with the "Compositions max tokens" stepper in the app (default **700**, step 50). 700 leaves room for two complete shots (see below). 0 means the 1600 from `prompts.json`, the old behaviour.
-  - In MacSmoke, it is the 4th argument (default 700; 0 = uncapped).
+  - Set it with the "Compositions max tokens" stepper in the app (default **800**, step 50). 800 leaves room for two complete shots (see below). 0 means the 1600 from `prompts.json`, the old behaviour.
+  - In MacSmoke, it is the 4th argument (default 800; 0 = uncapped).
   - The effective value is recorded in `config.max_tokens.compositions` and `config.compositions_max_tokens_override`.
 - **Valid JSON under the cap.**
   - If the cap stops generation inside the JSON (`stop_reason: "length"`), the output is rebuilt as `{"compositions": [...]}` from the shots that completed. A half-written shot is dropped.
@@ -229,13 +229,18 @@ MacSmoke ran on 2026-11-12, M3 Pro, 1024 px, cafe-window-candid. The Mac was bus
 
 - **Uncapped:** 955 tokens, `stop`. Shot objects closed at tokens **322, 637 and 952**, about 318 tokens per shot.
 - **Cap 600:** stopped at 600 (`length`). **One complete shot**, closed at token 307 in the 768 px run. The output was repaired to valid JSON with 1 shot. The half-written shot 2 was dropped.
-- **Cap 700 (default):** stopped at 700 (`length`). **Two complete shots**, closed at tokens 322 and 637 (1024 px). The output was repaired to valid JSON with 2 shots.
-- So **600 buys one shot**, about 650 the second, and all three need about 960, which is the uncapped length. The default is therefore **700**, which keeps two shots.
+- **Cap 700:** stopped at 700 (`length`). **Two complete shots**, closed at tokens 322 and 637 (1024 px). The output was repaired to valid JSON with 2 shots.
+- So **600 buys one shot**, about 650 the second, and all three need about 960, which is the uncapped length. 700 kept two shots here but with only ~60 tokens to spare.
+- **Default raised to 800 (2026-11-17).** Looks got longer after the zoom work: the v7 adapter writes about
+  330-345 tokens a look (899.5-1030 for three, `zoom-retraining-plan.md`), so its shot 2 closes near 660-690 and
+  700 barely keeps it. 800 keeps two shots for both the v4 bench prompt and the adapter. The base model with the
+  v11 prompt (the on-device fallback) writes about 560 tokens a look (1688 for three), so it needs about 1150
+  for two shots; the cap really belongs per model, and the Digi app sets its own (900 a look).
 
 Projected onto the device numbers above (compositions prefill 2.7 s at 1024 px / 2.0 s at 768, about 37 tok/s), from the compositions request start:
 
 - shot 1 at about 2.7 + 322 / 37 ≈ **11.5 s** (1024 px), whatever the cap;
-- e2e about 19 s with cap 600 and about 22 s with cap 700, against 28.9 s uncapped.
+- e2e about 19 s with cap 600 and about 22 s with cap 700 and about 25 s with cap 800 (100 more tokens at 37 tok/s), against 28.9 s uncapped.
 
 **First token under 2 s is unlikely at 1024 px.** TTFT is prep + prefill, and the measured compositions prefill alone is 2.7 s. Streaming doesn't change prefill. At 768 px, prefill was 2.0 s, so TTFT will be right at the edge. Getting well under 2 s needs a shorter prompt or prefix caching; it doesn't come from streaming or the cap.
 
@@ -243,9 +248,9 @@ Projected onto the device numbers above (compositions prefill 2.7 s at 1024 px /
 
 1. Build and install the Release app as in [`ios-bench/README.md`](../ios-bench/README.md) ("Build and install"). The model can stay where it is.
 2. Set up the phone as in section 1: airplane mode, battery above 50% and unplugged, cool, other apps closed.
-3. In Digi Bench, select **Standard**, keep the default 3 repeats, and leave **Compositions max tokens** at the default **700**. Tap Start.
+3. In Digi Bench, select **Standard**, keep the default 3 repeats, and leave **Compositions max tokens** at the default **800**. Tap Start.
 4. When it finishes, let the phone cool for about 10 minutes. Then run **Standard** again with the cap at **0 (off, 1600)**. This gives a same-day uncapped baseline with the streaming fields.
-5. Optional: let it cool again, then repeat step 3 with the cap at **600**. This checks whether one shot at about 3 s less decode is worth it. 700 is expected to leave two shots and 600 one.
+5. Optional: let it cool again, then repeat step 3 with the cap at **600**. This checks whether one shot at about 3 s less decode is worth it. 800 is expected to leave two shots and 600 one.
 6. AirDrop the JSON files to the Mac and print the table:
 
    ```sh
