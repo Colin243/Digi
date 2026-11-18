@@ -1,6 +1,6 @@
 # iPhone 17 Pro benchmark: offline Qwen3-VL-2B (issue #7)
 
-**Status (2026-11-10): the harness is built and signed, but no device numbers exist yet.** Every iPhone cell below is empty until the app runs on the phone. The Mac numbers come from the same Swift code (`ios-bench/MacSmoke`) and are given only as a reference point.
+**Status (2026-11-12): first device runs are in, and the result is a CONDITIONAL GO (section 2, verdict).** On an iPhone 17 Pro, every hard budget passes with wide margins: memory, camera recovery, stability and JSON validity. Latency misses its soft budgets by less than 2×. The Mac numbers come from the same Swift code (`ios-bench/MacSmoke`) and are given only as a reference point.
 
 - **Runtime check: supported, so no stand-in model.**
   - `mlx-swift-lm` 3.32.3 (released 2026-09-30) registers `qwen3_vl` in `VLMModelFactory` and ships `Libraries/MLXVLM/Models/Qwen3VL.swift`.
@@ -66,55 +66,86 @@
 
 ## 2. Results: iPhone 17 Pro
 
-Fill these in with `python3 ios-bench/scripts/summarize.py <json files>`. Leave a cell empty until a real device produces it.
+Measured on 2026-11-11 across three runs: `bench-20261111-164459-quick`, `-164636-standard` and `-165538-soak`. The runs went back to back with no cooldown, so Soak started at `fair`. Tables come from `python3 ios-bench/scripts/summarize.py <json files>`; GB means GiB, as in the script.
 
 **Run context**
 
 | | value |
 |---|---|
-| Device / iOS version (build) | |
-| RAM / memory available to the app at start | |
-| Entitlement `increased-memory-limit` active (compare the available memory with and without it) | |
+| Device / iOS version (build) | iPhone 17 Pro (`iPhone18,1`), iOS 27.0.1 (24A446), GPU `applegpu_g18p`, Release build |
+| RAM / memory available to the app at start | 11.4 GB / 5.92–5.96 GB |
+| Entitlement `increased-memory-limit` active (compare the available memory with and without it) | Signed with it; not yet compared against a build without it |
 | Runtime (mlx-swift-lm / mlx-swift / swift-transformers) | 3.32.3 / 0.32.3 / 1.4.0 (pinned) |
-| Model | `mlx-community/Qwen3-VL-2B-Instruct-4bit` @ `9c4f5209e57b` |
-| Airplane mode confirmed (network status `unsatisfied`) | |
-| Battery / Low Power Mode / thermal at start | |
+| Model | `mlx-community/Qwen3-VL-2B-Instruct-4bit` @ `9c4f5209e57b`, loaded from the bundle |
+| Airplane mode confirmed (network status `unsatisfied`) | Yes, all three runs |
+| Battery / Low Power Mode / thermal at start | 75% unplugged (65% for Soak) / off / `nominal` (Soak: `fair`) |
 
 **Load**
 
 | | iPhone 17 Pro | Mac M3 Pro (Swift, reference) |
 |---|---|---|
-| Cold load, after reboot (s) | | — |
-| Load, warm file cache (s) | | 1.35–1.70 |
-| Reload after unload (s) | | — |
-| Footprint after load (GB) | | — |
+| Cold load, after reboot (s) | not measured: uptime was about 14.7 days | — |
+| Load, warm file cache (s) | 1.28, 1.28, 0.17 | 1.35–1.70 |
+| Reload after unload (s) | 0.33, 1.22, 0.23 | — |
+| Footprint after load (GB) | 1.78–1.79 | — |
 
 **Single calls (Quick)**
 
 | call | px | TTFT median (s) | e2e median (s) | gen tok/s | prompt tok/s | peak footprint (GB) | camera recovery median / max (s) |
 |---|---|---|---|---|---|---|---|
-| image notes | 768 | | | | | | |
-| image notes | 1024 | | | | | | |
-| target scene | 768 | | | | | | |
-| target scene | 1024 | | | | | | |
+| image notes | 768 | 0.68 | 2.9 | 55.9 | 657 | 2.38 | 0.27 / 0.28 |
+| image notes | 1024 | 1.23 | 4.2 | 54.2 | 601 | 2.53 | 0.27 / 0.28 |
+| target scene | 768 | 0.75 | 3.2 | 55.0 | 757 | 2.38 | 0.26 / 0.27 |
+| target scene | 1024 | 1.39 | 4.2 | 53.5 | 617 | 2.50 | 0.27 / 0.27 |
 
 **Full analysis (Standard)**
 
 | px | first run (s) | warm median (s) | warm max (s) | inspiration prep median (s) | on-site median / max (s) | gen tok/s | peak footprint (GB) | min available (GB) | camera recovery median / max (s) | JSON valid |
 |---|---|---|---|---|---|---|---|---|---|---|
-| 768 | | | | | | | | | | |
-| 1024 | | | | | | | | | | |
+| 768 | 59.7 | 65.2 | 66.6 | 35.0 | 30.2 / 30.7 | 46.1 | 2.45 | 3.55 | 0.28 / 0.28 | 9/9 |
+| 1024 | — | 70.6 | 72.7 | 36.6 | 34.0 / 34.8 | 45.8 | 2.61 | 3.39 | 0.28 / 0.30 | 9/9 |
+
+The first trial after load was at 768 px, so 1024 px has no first-run number. Warm 768 px has n = 2.
 
 "Inspiration prep" = 4 notes + aesthetic. These don't depend on the target, so the product can run them before the user reaches the location. "On site" = target scene + compositions, which is what the user waits for.
+
+**Where the time goes (Standard, warm, medians)**
+
+| stage | px | e2e (s) | prefill (s) | decode (s) | generated tokens | gen tok/s |
+|---|---|---|---|---|---|---|
+| each image note | 1024 | 4.5–5.2 | 1.5–2.1 | 2.7–3.7 | 127–164 | 45–48 |
+| aesthetic (text only) | 1024 | 16.9 | 1.1 | 15.8 | 649 | 41.1 |
+| target scene | 1024 | 5.1 | 1.9 | 3.2 | 149 | 46.8 |
+| compositions | 1024 | 28.9 | 2.7 | 26.2 | 965 | 36.9 |
+| compositions | 768 | 26.1 | 2.0 | 24.1 | 927 | 38.5 |
+
+Decoding dominates. The phone generates at roughly half the Mac's rate: 37–56 tok/s against 75–98. Prefill is 1–3 s per call, so 768 px saves only about 4 s on site.
 
 **Thermal soak (Soak, 10 × 1024 px)**
 
 | | value |
 |---|---|
-| Analysis 1 → 10 inference time (s) | |
-| Gen tok/s, first warm → last | |
-| Thermal states reached, and after which analysis | |
-| Memory warnings / camera recovery failures / terminated runs | |
+| Analysis 1 → 10 inference time (s) | 55.7 (first), 77.6, 80.2, 78.7, 77.3, 77.3, 75.5, 74.8, 74.7, 74.8. Warm median 77.3, max 80.2. On site: median 36.8, max 38.7 |
+| Gen tok/s, first warm → last | 46.1 → 44.8 (97%; lowest 39.8 in analysis 3) |
+| Thermal states reached, and after which analysis | `fair` at start; `serious` 82 s in, during analysis 2, held to the end; never `critical` |
+| Memory warnings / camera recovery failures / terminated runs | 0 / 0 / 0. Peak footprint 2.63 GB, at least 3.37 GB available, JSON 30/30 |
+
+**Budget results**
+
+| budget | kind | result |
+|---|---|---|
+| Peak footprint ≤ 4.0 GB | hard | pass: 2.63 GB max |
+| Min available ≥ 1.0 GB | hard | pass: 3.37 GB min |
+| No terminated runs, crashes or memory warnings | hard | pass: 0 across 36 trials |
+| Camera recovery median ≤ 0.5 s, max ≤ 1.0 s, 0 failures | hard | pass: 0.24–0.30 s, 0 failures |
+| On-site median ≤ 30 s, max ≤ 45 s | soft | **miss**: 30.2 s at 768, 34.0 s at 1024 (36.8 s while `serious`); max pass |
+| Full analysis warm median ≤ 60 s, max ≤ 90 s | soft | **miss** on median: 65.2 s at 768, 70.6 s at 1024 (77.3 s soak); max pass |
+| TTFT ≤ 3 s | soft | pass: 0.68–1.83 s |
+| Sustained speed ≥ 70%, never `critical` | soft | pass: 97%, `serious` at worst |
+| Cold load ≤ 8 s | soft | pass for warm cache (≤ 1.3 s); true cold load not measured |
+| JSON parse rate ≥ 90% | soft | pass: 100% |
+
+**Verdict: CONDITIONAL GO** (section 6). All hard budgets hold at both sizes, and latency misses by well under 2×. The most effective mitigation is shorter compositions output: about 965 tokens at about 37 tok/s takes 26 s, and a cap near 600 tokens would save about 10 s on site. Next come streaming shot 1 (first token in under 2 s) and caching inspiration prep. 768 px helps only a little. Still to measure: a true cold load after a reboot, the entitlement comparison, and a Standard run that starts `nominal` after a cooldown.
 
 **Mac reference (measured 2026-11-10, same Swift code, M3 Pro 18 GB, macOS 26.6.2, warm)**
 
@@ -200,3 +231,67 @@ Then:
 ## 7. Steps on the phone
 
 See [`ios-bench/README.md`](../ios-bench/README.md), sections "Build and install" and "Run". The device runs can't be automated from the Mac: airplane mode, camera permission and tapping Start have to be done on the phone.
+
+## 8. Compositions cap and streaming (mitigations 3 and 4)
+
+The device runs found that compositions decoding dominates the on-site wait: about 965 tokens at about 37 tok/s, roughly 26 s. The harness now has both code mitigations. The prompt is unchanged and still byte-identical to the Python v4 prompt; only generation settings and output handling changed.
+
+**What changed**
+
+- **Max-token cap for compositions.**
+  - Set it with the "Compositions max tokens" stepper in the app (default **800**, step 50). 800 leaves room for two complete shots (see below). 0 means the 1600 from `prompts.json`, the old behaviour.
+  - In MacSmoke, it is the 4th argument (default 800; 0 = uncapped).
+  - The effective value is recorded in `config.max_tokens.compositions` and `config.compositions_max_tokens_override`.
+- **Valid JSON under the cap.**
+  - If the cap stops generation inside the JSON (`stop_reason: "length"`), the output is rebuilt as `{"compositions": [...]}` from the shots that completed. A half-written shot is dropped.
+  - The truncated text is kept in `raw_output`, and `repaired_after_cap` is true.
+  - If no shot completed, the output stays invalid and counts against `json_valid`.
+- **Streaming.**
+  - The compositions call decodes tokens as they arrive. It scans for each shot object in the `compositions` array and parses it when its closing brace arrives. The app logs "shot N ready at X s" at that moment; the product would show the shot then.
+  - The scan only runs on the compositions call. The saved output is still a full decode at the end.
+- **New fields.**
+  - Per compositions call: `first_shot_seconds` and `shot_seconds` (from request start to each shot parsed), `shots_complete`, `repaired_after_cap` and `raw_output`.
+  - Per summary row (warm trials): `compositions_ttft_median`, `compositions_first_shot_median` / `_max`, `on_site_to_first_shot_median` (target-scene e2e + compositions time to shot 1), `compositions_tokens_median` and `compositions_shots_complete_min`.
+  - `ttft_seconds` is unchanged: request start to the first generated token.
+
+**What MacSmoke shows, and what to expect on the phone (estimates, not device measurements)**
+
+MacSmoke ran on 2026-11-12, M3 Pro, 1024 px, cafe-window-candid. The Mac was busy with other work (20–53 tok/s against the usual 75–98), so its timings are not meaningful. Its token counts are, because decoding is greedy:
+
+- **Uncapped:** 955 tokens, `stop`. Shot objects closed at tokens **322, 637 and 952**, about 318 tokens per shot.
+- **Cap 600:** stopped at 600 (`length`). **One complete shot**, closed at token 307 in the 768 px run. The output was repaired to valid JSON with 1 shot. The half-written shot 2 was dropped.
+- **Cap 700:** stopped at 700 (`length`). **Two complete shots**, closed at tokens 322 and 637 (1024 px). The output was repaired to valid JSON with 2 shots.
+- So **600 buys one shot**, about 650 the second, and all three need about 960, which is the uncapped length. 700 kept two shots here but with only ~60 tokens to spare.
+- **Default raised to 800 (2026-11-17).** Looks got longer after the zoom work: the v7 adapter writes about
+  330-345 tokens a look (899.5-1030 for three, `zoom-retraining-plan.md`), so its shot 2 closes near 660-690 and
+  700 barely keeps it. 800 keeps two shots for both the v4 bench prompt and the adapter. The base model with the
+  v11 prompt (the on-device fallback) writes about 560 tokens a look (1688 for three), so it needs about 1150
+  for two shots; the cap really belongs per model, and the Digi app sets its own (900 a look).
+
+Projected onto the device numbers above (compositions prefill 2.7 s at 1024 px / 2.0 s at 768, about 37 tok/s), from the compositions request start:
+
+- shot 1 at about 2.7 + 322 / 37 ≈ **11.5 s** (1024 px), whatever the cap;
+- e2e about 19 s with cap 600, 22 s with cap 700 and 25 s with cap 800 (100 more tokens at 37 tok/s), against 28.9 s uncapped.
+
+**First token under 2 s is unlikely at 1024 px.** TTFT is prep + prefill, and the measured compositions prefill alone is 2.7 s. Streaming doesn't change prefill. At 768 px, prefill was 2.0 s, so TTFT will be right at the edge. Getting well under 2 s needs a shorter prompt or prefix caching; it doesn't come from streaming or the cap.
+
+**Steps on the phone (to do)**
+
+1. Build and install the Release app as in [`ios-bench/README.md`](../ios-bench/README.md) ("Build and install"). The model can stay where it is.
+2. Set up the phone as in section 1: airplane mode, battery above 50% and unplugged, cool, other apps closed.
+3. In Digi Bench, select **Standard**, keep the default 3 repeats, and leave **Compositions max tokens** at the default **800**. Tap Start.
+4. When it finishes, let the phone cool for about 10 minutes. Then run **Standard** again with the cap at **0 (off, 1600)**. This gives a same-day uncapped baseline with the streaming fields.
+5. Optional: let it cool again, then repeat step 3 with the cap at **600**. This checks whether one shot at about 3 s less decode is worth it. 800 is expected to leave two shots and 600 one.
+6. AirDrop the JSON files to the Mac and print the table:
+
+   ```sh
+   python3 photography-ai/ios-bench/scripts/streaming_summary.py ~/Downloads/bench-*.json
+   ```
+
+7. Check:
+   - whether the compositions TTFT median is under 2 s (unlikely at 1024 px, see above);
+   - the shot 1 median, and target + shot 1 (what the user waits for on site);
+   - capped runs keep `json_valid` at 100%;
+   - the minimum shots complete per capped call (`compositions_shots_complete_min`) against the number of shots the product needs.
+
+   Record the numbers in section 2 and update the verdict.

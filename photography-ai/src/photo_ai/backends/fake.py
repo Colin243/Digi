@@ -50,8 +50,17 @@ DIRECTION = {  # shot-v2 fields
 }
 
 
-def _compositions(v2: bool = False) -> list[dict]:
-    return [dict(COMPOSITION, title=f"{COMPOSITION['title']} {i}", **(DIRECTION if v2 else {})) for i in (1, 2, 3)]
+REASONING = {  # shot-v3 fields
+    "scene_reading": "FAKE: a window on the left wall and a chair by it.",
+    "setup_choice": "low and close, with the window as key light",
+    "why_each_choice": ["the window gives soft side light", "the chair gives the subject something to lean on"],
+    "fix_if_wrong": ["if the light is flat, move closer to the window"],
+}
+
+
+def _compositions(v2: bool = False, v3: bool = False) -> list[dict]:
+    extra = {**(DIRECTION if v2 or v3 else {}), **(REASONING if v3 else {})}
+    return [dict(COMPOSITION, title=f"{COMPOSITION['title']} {i}", **extra) for i in (1, 2, 3)]
 
 
 def default_response(prompt: str) -> str:
@@ -65,7 +74,7 @@ def default_response(prompt: str) -> str:
     if "Propose ONE portrait look" in prompt:
         return json.dumps(_compositions(v2=True)[0])
     if "is described as" in prompt:
-        return json.dumps({"compositions": _compositions(v2="gaze" in prompt)})
+        return json.dumps({"compositions": _compositions(v2="gaze" in prompt, v3="setup_choice" in prompt)})
     if "Inspiration photo 1" in prompt and "TARGET scene photo" in prompt:
         return json.dumps({"aesthetic": AESTHETIC, "target_scene": TARGET, "compositions": _compositions()})
     if "TARGET scene photo" in prompt:
@@ -73,6 +82,9 @@ def default_response(prompt: str) -> str:
     if "Inspiration photo 1" in prompt:
         return json.dumps(AESTHETIC)
     return "FAKE: a photo."
+
+
+STREAM_CHUNK = 7  # characters per streamed piece; small and odd so pieces split keys, strings and braces
 
 
 class FakeBackend:
@@ -94,11 +106,14 @@ class FakeBackend:
         self.load_seconds = 0.0
         return 0.0
 
-    def generate(self, prompt: str, images: list[str], params: GenerationParams) -> Generation:
+    def generate(self, prompt: str, images: list[str], params: GenerationParams, on_text=None) -> Generation:
         self.load()
         self.calls.append((prompt, list(images)))
         t0 = time.perf_counter()
         text = self._responses.pop(0) if self._responses else default_response(prompt)
+        if on_text is not None:  # stream in small pieces, like a real model, so callers see partial output
+            for i in range(0, len(text), STREAM_CHUNK):
+                on_text(text[i:i + STREAM_CHUNK])
         return Generation(text=text, wall_seconds=time.perf_counter() - t0, finish_reason="stop")
 
     def unload(self) -> None:

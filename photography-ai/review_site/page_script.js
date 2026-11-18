@@ -1,10 +1,14 @@
 (() => {
   const EX = JSON.parse(document.getElementById("data").textContent);
   const KEY = "shot-review-v1";
-  // the exact answer version each reviewed example showed, so an approval can't carry over to edited text
+  // the exact answer version each reviewed example showed, so an approval can't carry over to edited text.
+  // Each review keeps the version it was last answered on (seen_sha). Only that is exported: a review saved in this
+  // browser before the page was rebuilt with edited text keeps its old version (or none) and imports as stale or
+  // unverified instead of approving text the reviewer never saw.
   const shaOf = Object.fromEntries(EX.map((e) => [e.id, e.answer_sha]));
   const exportDoc = () => ({ name: state.name, reviews: state.reviews, updated_at: state.updated_at,
-    answer_sha: Object.fromEntries(Object.keys(state.reviews).filter((id) => shaOf[id]).map((id) => [id, shaOf[id]])) });
+    answer_sha: Object.fromEntries(Object.entries(state.reviews).filter(([, r]) => r && r.seen_sha).map(([id, r]) => [id, r.seen_sha])) });
+  const outdated = (id) => { const r = state.reviews[id]; return !!(r && (r.overall || r.set || (r.shots || []).some((s) => s.v)) && r.seen_sha !== shaOf[id]); };
   const $ = (id) => document.getElementById(id);
   const el = (tag, attrs = {}, ...kids) => {
     const n = document.createElement(tag);
@@ -38,6 +42,8 @@
   let saveTimer = null, inflight = Promise.resolve();
   function setSave(text, kind) { const s = $("save"); s.textContent = text; s.dataset.kind = kind || ""; }
   function changed() {
+    const cur = current(), r = state.reviews[cur.id];
+    if (r) r.seen_sha = shaOf[cur.id];  // the reviewer just answered on the text shown now
     if (!window.claude) { state.updated_at = new Date().toISOString(); try { localStorage.setItem(KEY, JSON.stringify(state)); setSave("Saved in this browser", "ok"); } catch (e) { setSave("This browser won't save — use Download my review before closing", "warn"); } renderProgress(); return; }
     state.updated_at = new Date().toISOString();
     try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {}
@@ -139,6 +145,8 @@
       el("div", { class: "sheet-head" },
         el("h2", { text: e.technique.charAt(0).toUpperCase() + e.technique.slice(1) }),
         el("span", { class: "label", text: `Example ${i + 1} of ${EX.length} · ${e.short.toUpperCase()}` })),
+      outdated(e.id) ? el("p", { class: "outdated", role: "status",
+        text: "The AI's answer was updated after you reviewed this example. Please check your answers again; any change you make re-confirms them for the new text." }) : null,
       el("div", { class: "strip" },
         el("div", { class: "edge" }, el("span", { text: "INSPIRATION" }), el("span", { text: `${e.inspiration.length} FRAMES` })),
         el("div", { class: "frames" }, e.inspiration.map((img, k) => frame(img, `${k + 1}A`)))),
@@ -147,7 +155,10 @@
         el("p", { text: a.aesthetic.summary }),
         a.aesthetic.principles && a.aesthetic.principles.length ? el("ul", {}, a.aesthetic.principles.map((p) => el("li", { text: p }))) : null,
         el("details", { class: "notes" }, el("summary", { text: "How the AI read each inspiration photo" }),
-          el("ol", {}, (a.inspiration_notes || []).map((n) => el("li", { text: n })))),
+          el("ol", {}, (a.inspiration_notes || []).map((n) => el("li", { text: n }))),
+          a.aesthetic.per_image && a.aesthetic.per_image.length ? [
+            el("span", { class: "label", text: "One-line summary of each photo (also trained on)" }),
+            el("ol", {}, a.aesthetic.per_image.map((n) => el("li", { text: n })))] : null),
         el("div", { class: "q" }, el("span", { class: "label", text: "Do these inspiration photos share one clear look?" }),
           choice([["yes", "Clearly"], ["fix", "Loosely"], ["no", "Not really"]], r.set, (v) => { r.set = v; changed(); render(); }))),
       el("div", { class: "loc" },

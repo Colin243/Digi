@@ -24,6 +24,7 @@ BUDGETS = {
     "peak_footprint_gb": 4.0,
     "min_available_gb": 1.0,
     "camera_recovery_s": 0.5,
+    "sustained_tok_ratio": 0.7,
 }
 
 
@@ -62,6 +63,41 @@ def camera_checks(r: dict) -> list[tuple[str, bool | None]]:
     return out
 
 
+def normalize_summary(s: dict) -> dict:
+    """The app encodes with Swift's .convertToSnakeCase, which writes firstE2E as `first_e_2e`.
+
+    Accept both spellings so the warm-latency columns and budgets are never silently empty.
+    """
+    return {k.replace("_e_2e", "_e2e"): v for k, v in s.items()}
+
+
+def trial_tok_per_sec(t: dict):
+    """Median generation speed of a trial's calls, ignoring very short outputs."""
+    return med([cl["generation_tokens_per_second"] for cl in t["calls"] if cl["generated_tokens"] >= 16])
+
+
+def health_checks(r: dict) -> list[tuple[str, bool | None]]:
+    """Hard budget: no terminated run and no memory warnings. Soft (Soak): sustained speed, never `critical`."""
+    trials = r.get("trials", [])
+    out = [(f"run finished, not terminated (status {r.get('status')})", r.get("status") == "finished")]
+    if trials:
+        warnings = sum(t.get("memory_warnings") or 0 for t in trials)
+        out.append((f"no memory warnings ({warnings})", warnings == 0))
+    if (r.get("config") or {}).get("preset") == "soak":
+        warm = [t for t in trials if not t["first_after_load"] and not t.get("error")]
+        first, last = (trial_tok_per_sec(warm[0]), trial_tok_per_sec(warm[-1])) if len(warm) >= 2 else (None, None)
+        ratio = BUDGETS["sustained_tok_ratio"]
+        if first and last is not None:
+            out.append((f"sustained gen tok/s: last warm >= {ratio:.0%} of first warm ({last:.1f} / {first:.1f} = {last / first:.0%})",
+                        last / first >= ratio))
+        else:
+            out.append(("sustained gen tok/s: two warm trials", None))
+        critical = sum("critical" in (t["thermal_start"], t["thermal_end"]) for t in trials) + sum(
+            e.get("detail") == "critical" for e in r.get("events", []) if e["kind"] == "thermal")
+        out.append(("thermal never critical", critical == 0))
+    return out
+
+
 def med(xs):
     xs = [x for x in xs if x is not None]
     return statistics.median(xs) if xs else None
@@ -88,6 +124,7 @@ def main(paths: list[str]) -> None:
     for p in paths:
         BUDGET_ROWS.clear()
         r = json.loads(Path(p).read_text())
+        r["summary"] = [normalize_summary(s) for s in r.get("summary", [])]
         d, rt, m, c = r["device"], r["runtime"], r.get("model") or {}, r["config"]
         print(f"## {r['id']} ({r['status']}{': ' + r['abort_reason'] if r.get('abort_reason') else ''})\n")
         print(f"- Device: {d.get('model_name') or d['machine']} ({d['machine']}), {d['system_name']} {d['system_version']} "
@@ -141,7 +178,7 @@ def main(paths: list[str]) -> None:
         print("| # | workload | px | inference (s) | gen tok/s (median of calls) | thermal start -> end | peak (GB) | camera back (s) |")
         print("|---|---|---|---|---|---|---|---|")
         for t in r["trials"]:
-            tps = med([cl["generation_tokens_per_second"] for cl in t["calls"] if cl["generated_tokens"] >= 16])
+            tps = trial_tok_per_sec(t)
             cam = (t.get("camera") or {}).get("first_frame_seconds")
             print(f"| {t['index'] + 1}{'*' if t['first_after_load'] else ''} | {t['workload']} | {t['size']} | "
                   f"{t['inference_seconds']:.1f} | {f(tps, '{:.1f}')} | {t['thermal_start']} -> {t['thermal_end']} | "
@@ -156,12 +193,12 @@ def main(paths: list[str]) -> None:
         checks = list(BUDGET_ROWS)
         dec = [s for s in r.get("summary", []) if s["workload"] == "decomposed"]
         for s in dec:
-            if s.get("warm_e2e_median") is not None:
-                checks.append((f"decomposed@{s['size']} warm median <= {BUDGETS['decomposed_warm_e2e_s']} s",
-                               s["warm_e2e_median"] <= BUDGETS["decomposed_warm_e2e_s"]))
-            if s.get("warm_e2e_max") is not None:
-                checks.append((f"decomposed@{s['size']} warm max <= {BUDGETS['decomposed_max_e2e_s']} s",
-                               s["warm_e2e_max"] <= BUDGETS["decomposed_max_e2e_s"]))
+            # A missing warm statistic is "no data", never a silent skip.
+            wm, wx = s.get("warm_e2e_median"), s.get("warm_e2e_max")
+            checks.append((f"decomposed@{s['size']} warm median <= {BUDGETS['decomposed_warm_e2e_s']} s",
+                           None if wm is None else wm <= BUDGETS["decomposed_warm_e2e_s"]))
+            checks.append((f"decomposed@{s['size']} warm max <= {BUDGETS['decomposed_max_e2e_s']} s",
+                           None if wx is None else wx <= BUDGETS["decomposed_max_e2e_s"]))
         for s in r.get("summary", []):
             if s.get("ttft_median") is not None:
                 checks.append((f"{s['workload']}@{s['size']} TTFT median <= {BUDGETS['first_call_ttft_s']} s",
@@ -171,6 +208,7 @@ def main(paths: list[str]) -> None:
             checks.append((f"{s['workload']}@{s['size']} min available >= {BUDGETS['min_available_gb']} GB",
                            s["min_available_min"] / GB >= BUDGETS["min_available_gb"]))
         checks += camera_checks(r)
+        checks += health_checks(r)
         for (wl, size) in sorted({(t["workload"], t["size"]) for t in r.get("trials", [])}):
             ts = [t for t in r["trials"] if (t["workload"], t["size"]) == (wl, size)]
             bad = sum(bool(t.get("error")) for t in ts)
