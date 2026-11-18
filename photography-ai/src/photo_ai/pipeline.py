@@ -80,6 +80,9 @@ class RunConfig:
     # Inspiration mode, decomposed strategy: notes + aesthetic prepared earlier by prepare_references() and checked
     # by check_references(). When set, those two stages are skipped. Left out of the saved run record.
     references: dict | None = field(default=None, repr=False)
+    # Same idea for the target photo: its scene reading, prepared by prepare_target_scene() and checked by
+    # check_target_scene(). When set, the target_scene stage is skipped. Left out of the saved run record.
+    target_scene: dict | None = field(default=None, repr=False)
 
     def params(self, max_tokens: int | None = None) -> GenerationParams:
         return GenerationParams(max_tokens or self.max_tokens, self.temperature, self.repetition_penalty, self.seed)
@@ -207,6 +210,10 @@ def _notes_stages(backend, run_dir, insp, cfg):
     return notes, stages
 
 
+def _target_scene_stage(backend, run_dir, tgt, cfg):
+    return _run_stage(backend, run_dir, "target_scene", prompts.target_scene_only(), [tgt], schema.TargetScene, cfg, 500)
+
+
 def _aesthetic_stage(backend, run_dir, notes, cfg):
     return _run_stage(backend, run_dir, "aesthetic_from_notes", prompts.aesthetic_from_notes(notes), [], schema.Aesthetic, cfg, 900)
 
@@ -215,8 +222,11 @@ def _decomposed(backend, run_dir, insp, tgt, cfg):
     stages, notes = [], []
     if cfg.references is None:
         notes, stages = _notes_stages(backend, run_dir, insp, cfg)
-    target, st = _run_stage(backend, run_dir, "target_scene", prompts.target_scene_only(), [tgt], schema.TargetScene, cfg, 500)
-    stages.append(st)
+    if cfg.target_scene is None:
+        target, st = _target_scene_stage(backend, run_dir, tgt, cfg)
+        stages.append(st)
+    else:
+        target = cfg.target_scene["target_scene"]
     if cfg.references is None:
         aesthetic, st = _aesthetic_stage(backend, run_dir, notes, cfg)
         stages.append(st)
@@ -420,6 +430,52 @@ def check_references(refs: object, backend: VLMBackend, cfg: RunConfig) -> dict:
     return {"notes": [n.strip() for n in notes], "aesthetic": aesthetic}
 
 
+def _file_sha(path: str) -> str:
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def target_fingerprint(backend: VLMBackend, cfg: RunConfig) -> str:
+    """Like reference_fingerprint, for the target-scene reading."""
+    with prompts.json_format(cfg.json_format):
+        parts = [str(REFERENCES_VERSION), "target", backend.spec.key, cfg.json_format, str(cfg.max_side), prompts.target_scene_only()]
+    return hashlib.sha256("\x1f".join(parts).encode()).hexdigest()[:16]
+
+
+def prepare_target_scene(backend: VLMBackend, target: str, cfg: RunConfig | None = None, runs_dir: Path | None = None) -> dict:
+    """Read the target photo ahead of time. It needs nothing but that photo, so it can run the moment the photo is
+    chosen. The result carries a hash of the photo's bytes so it cannot be paired with a different photo later."""
+    cfg = _normalize_config(cfg or RunConfig(strategy="decomposed"))
+    if cfg.mode != "inspiration" or cfg.strategy != "decomposed":
+        raise InputError("Only the decomposed Inspiration Director has a target scene to prepare.")
+    if not target or not Path(target).is_file():
+        raise InputError(f"File not found: {target}")
+    run_id, run_dir = new_run_dir(Path(runs_dir or DEFAULT_RUNS_DIR), backend.spec.key)
+    tgt = prepare(target, run_dir / "inputs" / "target.jpg", "target", cfg.max_side).saved_as
+    backend.load()
+    t0 = time.perf_counter()
+    with prompts.json_format(cfg.json_format):
+        scene, st = _target_scene_stage(backend, run_dir, tgt, cfg)
+    if scene is None:
+        raise RuntimeError("could not read the target photo (target_scene)")
+    return {"version": REFERENCES_VERSION, "fingerprint": target_fingerprint(backend, cfg), "photo_sha256": _file_sha(target),
+            "target_scene": scene, "wall_s": round(time.perf_counter() - t0, 3)}
+
+
+def check_target_scene(prepared: object, target: str, backend: VLMBackend, cfg: RunConfig) -> dict:
+    """Validate a prepared target scene against the photo it will be used with. StaleReferences when it was made
+    under other settings or for a different photo; InputError when malformed."""
+    if not isinstance(prepared, dict):
+        raise InputError("target_scene must be a JSON object.")
+    if prepared.get("version") != REFERENCES_VERSION or prepared.get("fingerprint") != target_fingerprint(backend, cfg):
+        raise StaleReferences("This target scene was made by a different model or prompt. Prepare it again.")
+    if prepared.get("photo_sha256") != _file_sha(target):
+        raise StaleReferences("This target scene was read from a different photo. Prepare it again.")
+    scene, errors = schema.validate(schema.TargetScene, prepared.get("target_scene"), prompts.ALL_FIELD_DESCRIPTIONS)
+    if errors:
+        raise InputError("target_scene is not valid: " + "; ".join(errors[:3]))
+    return {"target_scene": scene}
+
+
 def analyze(
     backend: VLMBackend,
     inspiration: list[str],
@@ -431,8 +487,8 @@ def analyze(
 ) -> dict:
     cfg = _normalize_config(cfg or RunConfig())
     inspiration = list(inspiration or [])
-    if cfg.references is not None and (cfg.mode != "inspiration" or cfg.strategy != "decomposed"):
-        raise InputError("Prepared references only work with the decomposed Inspiration Director.")
+    if (cfg.references is not None or cfg.target_scene is not None) and (cfg.mode != "inspiration" or cfg.strategy != "decomposed"):
+        raise InputError("Prepared references and target scenes only work with the decomposed Inspiration Director.")
     _check_inputs(inspiration, target, cfg.mode, prepared=cfg.references is not None)
     runs_dir = Path(runs_dir or DEFAULT_RUNS_DIR)
     run_id, run_dir = new_run_dir(runs_dir, backend.spec.key)
@@ -465,8 +521,9 @@ def analyze(
         "mode": cfg.mode,
         "shot_format": cfg.shot_format,
         "model": {"key": backend.spec.key, "repo_id": backend.spec.repo_id, "backend": backend.spec.backend},
-        "config": {k: v for k, v in asdict(cfg).items() if k != "references"},
+        "config": {k: v for k, v in asdict(cfg).items() if k not in ("references", "target_scene")},
         "references_precomputed": cfg.references is not None,
+        "target_scene_precomputed": cfg.target_scene is not None,
         "inputs": {
             "inspiration": [p.to_dict() for p in prepared],
             "target": tgt.to_dict(),

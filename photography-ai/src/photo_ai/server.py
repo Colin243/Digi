@@ -7,6 +7,10 @@ POST /v1/references (multipart: 3-5 inspiration photos) reads the inspiration ph
 notes and aesthetic as JSON. The app holds that and sends it back as the `references` field of /v1/plan, which then
 skips straight to the target scene: those two stages do not depend on the target photo, and the server keeps nothing.
 
+POST /v1/scene (multipart: the target photo) reads the target photo ahead of time and returns its scene reading as JSON,
+tied to a hash of that photo. /v1/plan takes it as the optional `target_scene` field and skips that stage; it is refused
+(409) if the photo sent with the plan is not the one that was read.
+
 POST /v1/plan (multipart) runs the Scene Director or Inspiration Director and streams newline-delimited
 JSON events that mirror DirectorKit's DirectorEvent:
 
@@ -144,6 +148,31 @@ def create_app(backend, keys: dict[str, dict], model_name: str, per_hour: int = 
             shutil.rmtree(workdir, ignore_errors=True)  # photos are never kept
         return JSONResponse({"references": refs})
 
+    @app.post("/v1/scene")
+    async def prepare_scene(who: str = Depends(authed), target: UploadFile = File(...)):
+        workdir = Path(tempfile.mkdtemp(prefix="digi-scene-"))
+        try:
+            path = await _save(target, workdir / "target.jpg")
+        except HTTPException:
+            shutil.rmtree(workdir, ignore_errors=True)
+            raise
+        if state.waiting >= state.max_queue:
+            shutil.rmtree(workdir, ignore_errors=True)
+            raise HTTPException(503, "The director is busy. Try again in a moment.")
+        state.waiting += 1
+        cfg = RunConfig(mode="inspiration", json_format="keys", strategy="decomposed", shot_format="v3")
+        try:
+            async with state.lock:
+                state.waiting -= 1
+                try:
+                    scene = await asyncio.get_running_loop().run_in_executor(
+                        None, lambda: pipeline.prepare_target_scene(state.backend, str(path), cfg, workdir / "runs"))
+                except RuntimeError as exc:
+                    raise HTTPException(502, f"The director {exc}.")
+        finally:
+            shutil.rmtree(workdir, ignore_errors=True)  # the photo is never kept
+        return JSONResponse({"target_scene": scene})
+
     @app.post("/v1/plan")
     async def plan(
         who: str = Depends(authed),
@@ -155,6 +184,7 @@ def create_app(backend, keys: dict[str, dict], model_name: str, per_hour: int = 
         target: UploadFile = File(...),
         inspiration: list[UploadFile] = File(default=[]),
         references: str = Form(""),
+        target_scene: str = Form(""),
     ):
         if upload != "photos":
             # Text-only requests (the privacy setting) are not served yet; the app falls back to the phone.
@@ -167,6 +197,9 @@ def create_app(backend, keys: dict[str, dict], model_name: str, per_hour: int = 
             raise HTTPException(422, "Scene mode needs a style or a brief.")
         if mode in ("scene", "scenery") and inspiration:
             raise HTTPException(422, "Scene mode takes one photo and no references.")
+        prepared_scene = None
+        if target_scene and mode != "inspiration":
+            raise HTTPException(422, "target_scene only applies to inspiration mode.")
         prepared = None
         if references:
             if mode != "inspiration":
@@ -178,6 +211,8 @@ def create_app(backend, keys: dict[str, dict], model_name: str, per_hour: int = 
         workdir = Path(tempfile.mkdtemp(prefix="digi-plan-"))
         try:
             target_path = await _save(target, workdir / "target.jpg")
+            if target_scene:
+                prepared_scene = _check_target_scene(target_scene, str(target_path), state.backend)
             # With prepared references the photos are not needed, so any that came along are not read at all.
             insp_paths = [] if prepared else [await _save(f, workdir / f"inspiration_{i}.jpg") for i, f in enumerate(inspiration, 1)]
         except HTTPException:
@@ -191,7 +226,7 @@ def create_app(backend, keys: dict[str, dict], model_name: str, per_hour: int = 
 
         cfg = RunConfig(
             mode=mode, style=style or None, brief=brief, n_looks=max(3, shot_count), json_format="keys",
-            strategy="decomposed", shot_format="v3", references=prepared,
+            strategy="decomposed", shot_format="v3", references=prepared, target_scene=prepared_scene,
         )
 
         async def events():
@@ -244,6 +279,18 @@ def _check_references(raw: str, backend) -> dict:
         return pipeline.check_references(json.loads(raw), backend, cfg)
     except json.JSONDecodeError:
         raise HTTPException(422, "references must be JSON.")
+    except pipeline.StaleReferences as exc:
+        raise HTTPException(409, str(exc))
+    except pipeline.InputError as exc:
+        raise HTTPException(422, str(exc))
+
+
+def _check_target_scene(raw: str, target_path: str, backend) -> dict:
+    cfg = RunConfig(mode="inspiration", json_format="keys", strategy="decomposed", shot_format="v3")
+    try:
+        return pipeline.check_target_scene(json.loads(raw), target_path, backend, cfg)
+    except json.JSONDecodeError:
+        raise HTTPException(422, "target_scene must be JSON.")
     except pipeline.StaleReferences as exc:
         raise HTTPException(409, str(exc))
     except pipeline.InputError as exc:

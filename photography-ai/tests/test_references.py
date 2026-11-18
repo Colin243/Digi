@@ -133,3 +133,79 @@ def test_plan_rejects_bad_references(client):
     assert post(references=json.dumps({**refs, "notes": ["one"]})) == 422
     assert c.post("/v1/plan", data={"mode": "scene", "style": "relaxed_candid", "references": json.dumps(refs)},
                   files=t, headers=h).status_code == 422
+
+
+# ----------------------------------------------------------------------------- target scene
+
+def test_prepared_target_scene_is_skipped_and_gives_the_same_shots(tmp_path):
+    ins = [jpg(tmp_path, f"i{i}.jpg") for i in range(3)]
+    tgt = jpg(tmp_path, "t.jpg")
+    normal = pipeline.analyze(make_backend("fake"), ins, tgt, cfg(), tmp_path / "r1")
+    b = make_backend("fake")
+    prep = json.loads(json.dumps(pipeline.prepare_target_scene(b, tgt, cfg(), tmp_path / "r2")))
+    assert names(b) == ["scene"]
+    checked = pipeline.check_target_scene(prep, tgt, b, cfg())
+    b.calls.clear()
+    rec = pipeline.analyze(b, ins, tgt, cfg(target_scene=checked), tmp_path / "r3")
+    assert "scene" not in names(b) and names(b).count("notes") == 3 and names(b)[-1] == "comps"
+    assert rec["validation"]["ok"] and rec["target_scene_precomputed"] is True
+    assert rec["result"]["compositions"] == normal["result"]["compositions"] and rec["result"]["target_scene"] == normal["result"]["target_scene"]
+    assert "target_scene" not in rec["config"]
+
+
+def test_everything_prepared_leaves_only_the_compositions_call(tmp_path):
+    ins = [jpg(tmp_path, f"i{i}.jpg") for i in range(3)]
+    tgt = jpg(tmp_path, "t.jpg")
+    b = make_backend("fake")
+    refs = pipeline.check_references(json.loads(json.dumps(pipeline.prepare_references(b, ins, cfg(), tmp_path / "r1"))), b, cfg())
+    scene = pipeline.check_target_scene(json.loads(json.dumps(pipeline.prepare_target_scene(b, tgt, cfg(), tmp_path / "r2"))), tgt, b, cfg())
+    b.calls.clear()
+    rec = pipeline.analyze(b, [], tgt, cfg(references=refs, target_scene=scene), tmp_path / "r3")
+    assert names(b) == ["comps"] and rec["validation"]["ok"]
+
+
+def test_target_scene_for_another_photo_or_setting_is_refused(tmp_path):
+    b = make_backend("fake")
+    tgt, other = jpg(tmp_path, "t.jpg"), tmp_path / "o.jpg"
+    Image.new("RGB", (64, 48), (10, 200, 30)).save(other, "JPEG")
+    prep = pipeline.prepare_target_scene(b, tgt, cfg(), tmp_path / "r")
+    with pytest.raises(StaleReferences):
+        pipeline.check_target_scene(prep, str(other), b, cfg())  # different photo
+    with pytest.raises(StaleReferences):
+        pipeline.check_target_scene({**prep, "fingerprint": "0" * 16}, tgt, b, cfg())
+    with pytest.raises(StaleReferences):
+        pipeline.check_target_scene(prep, tgt, b, cfg(json_format="shape"))
+    with pytest.raises(InputError):
+        pipeline.check_target_scene({**prep, "target_scene": {"nonsense": 1}}, tgt, b, cfg())
+    with pytest.raises(InputError):
+        pipeline.check_target_scene("nope", tgt, b, cfg())
+
+
+def test_scene_endpoint_then_plan_skips_the_scene_call(client):
+    c, h, backend = client
+    tgt = ("target", ("t.jpg", jpeg_bytes(), "image/jpeg"))
+    r = c.post("/v1/scene", files=[tgt], headers=h)
+    assert r.status_code == 200
+    scene = r.json()["target_scene"]
+    backend.calls.clear()
+    r = c.post("/v1/plan", data={"mode": "inspiration", "target_scene": json.dumps(scene)}, files=[tgt] + photos(3), headers=h)
+    assert events(r)[-1]["type"] == "finished" and "scene" not in names(backend)
+    # references and target scene together: only the compositions call is left
+    refs = c.post("/v1/references", files=photos(3), headers=h).json()["references"]
+    backend.calls.clear()
+    r = c.post("/v1/plan", data={"mode": "inspiration", "references": json.dumps(refs), "target_scene": json.dumps(scene)}, files=[tgt], headers=h)
+    assert events(r)[-1]["type"] == "finished" and names(backend) == ["comps"]
+
+
+def test_plan_refuses_a_target_scene_from_another_photo(client):
+    c, h, _ = client
+    scene = c.post("/v1/scene", files=[("target", ("t.jpg", jpeg_bytes(), "image/jpeg"))], headers=h).json()["target_scene"]
+    buf = io.BytesIO(); Image.new("RGB", (64, 48), (5, 5, 250)).save(buf, "JPEG")
+    r = c.post("/v1/plan", data={"mode": "inspiration", "target_scene": json.dumps(scene)},
+               files=[("target", ("t.jpg", buf.getvalue(), "image/jpeg"))] + photos(3), headers=h)
+    assert r.status_code == 409
+    assert c.post("/v1/plan", data={"mode": "inspiration", "target_scene": "{bad"},
+                  files=[("target", ("t.jpg", jpeg_bytes(), "image/jpeg"))] + photos(3), headers=h).status_code == 422
+    assert c.post("/v1/plan", data={"mode": "scene", "style": "relaxed_candid", "target_scene": json.dumps(scene)},
+                  files=[("target", ("t.jpg", jpeg_bytes(), "image/jpeg"))], headers=h).status_code == 422
+    assert c.post("/v1/scene", files=[], headers=h).status_code == 422
