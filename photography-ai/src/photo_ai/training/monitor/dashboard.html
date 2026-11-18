@@ -243,6 +243,25 @@ body.network-display { overflow:hidden; background:#080a0f; }
 @media(max-height:430px) { .network-display #netTitle { display:none; } .network-display.display-inspector #detail { top:80px; max-height:calc(100vh - 190px); } }
 @media(max-width:850px) { .network-display .netleg { display:none; } .network-display .display-hud { inset:20px 20px auto; } .network-display .display-controls { right:16px; bottom:16px; } .display-meta { max-width:190px; } }
 
+
+/* Director pipeline display mode (the same chrome as the network display, scoped to this tab) */
+.pipe-hud,.pipe-controls { display:none; }
+body.pipe-display { overflow:hidden; background:#080a0f; }
+.pipe-display header,.pipe-display .studio-title,.pipe-display .replay,.pipe-display nav,.pipe-display #tab-pipe>.explain,.pipe-display #pipeHead,.pipe-display #pipeTiles,.pipe-display #pipeScale,.pipe-display #tab-pipe .seg,.pipe-display #tab-pipe .net-tools,.pipe-display #pipeTable { display:none!important; }
+.pipe-display main,.pipe-display #tab-pipe,.pipe-display #pipeGrid { padding:0; margin:0; border:0; display:block; }
+.pipe-display #tab-pipe .netwrap { position:fixed; inset:0; margin:0; border:0; border-radius:0; }
+.pipe-display #pipeNet { width:100vw; height:100vh!important; min-height:0; }
+.pipe-display #pipeDetail { display:none; }
+.pipe-display.pipe-inspector #pipeDetail { display:block; position:fixed; right:26px; top:106px; width:310px; max-height:calc(100vh - 230px); z-index:12; background:#141820; color:#eceef4; --text:#eceef4; --text-2:#b9bfce; --muted:#9ba4b7; --border:#303746; --surface:#141820; }
+.pipe-display .pipe-hud { display:flex; position:fixed; inset:28px 32px auto; z-index:10; justify-content:space-between; gap:20px; pointer-events:none; color:#eeeef3; }
+.pipe-display .pipe-controls { max-width:calc(100vw - 32px); box-sizing:border-box; display:flex; flex-wrap:wrap; align-items:center; gap:7px; position:fixed; z-index:15; right:28px; bottom:25px; padding:7px; border:1px solid #2b303c; border-radius:12px; background:rgba(17,21,29,.88); transition:opacity .4s; }
+.pipe-controls button { color:#dbe0eb; background:transparent; border-color:transparent; font-size:12px; min-height:32px; }
+.pipe-controls button:hover,.pipe-controls button[aria-pressed=true] { background:#262e3d; color:#fff; }
+.pipe-display #pipeTitle { max-width:calc(100vw - 64px); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; left:32px; top:95px; font-size:11px; color:#8e98ad; }
+.pipe-display .netleg { display:none; }
+.pipe-display.pipe-resting .pipe-controls { opacity:.12; }
+.pipe-display.pipe-resting .pipe-controls:hover,.pipe-display.pipe-resting .pipe-controls:focus-within { opacity:1; }
+.pipe-display.pipe-resting #pipeTitle { opacity:.14; }
 </style>
 </head>
 <body>
@@ -267,6 +286,7 @@ body.network-display { overflow:hidden; background:#080a0f; }
   <button data-tab="live" class="on">Live metrics</button>
   <button data-tab="arch">Architecture &amp; layers</button>
   <button data-tab="cmp">Compare models</button>
+  <button data-tab="pipe">Director pipeline</button>
   <button data-tab="ckpt">Checkpoints</button>
   <button data-tab="eval">Recommendation comparison</button>
   <button data-tab="log">Run log</button>
@@ -309,6 +329,22 @@ body.network-display { overflow:hidden; background:#080a0f; }
   </div>
   <div id="cmpOut"><div class="empty">Loading…</div></div>
 </section>
+<section class="tab" id="tab-pipe">
+  <div class="explain" style="margin-bottom:10px"><b>One model, two phases.</b> The Director runs the same model for every stage. The inspiration notes and the aesthetic do not depend on the target photo, so they can be <b>prepared ahead</b> (cyan), handed to the app as plain text (gold), and sent back with the plan request. After the target photo is chosen only the orange stages run. On the left is the real Qwen3.5 network (the same view as the Architecture tab: one point per unit, LoRA modules glow by the metric you pick, click any point to inspect it). On the right are the pipeline stages, sized by measured time, each wired to where its input enters the model. Timings are medians from the quiet fused-q5 benchmark; nothing on this page is estimated.</div>
+  <div class="tiles" id="pipeTiles"></div>
+  <div id="pipeHead"></div>
+  <div class="arch netmode" id="pipeGrid"><div>
+  <div class="scale" id="pipeScale"></div>
+  <div class="seg" style="margin:0 0 8px"><button id="pipeNormal" class="on">Normal plan</button><button id="pipeReady">References prepared ahead</button></div>
+  <div class="seg" style="margin:0 0 8px 8px" id="pipeViews"><button data-pv="both" class="on">Both</button><button data-pv="model">Qwen3.5 model</button><button data-pv="pipe">Pipeline</button></div>
+  <div class="net-tools"><span>Drag to orbit · scroll to zoom · Shift-drag to pan · click a point to inspect</span><div role="group" aria-label="3D camera controls"><button id="pipeZoomOut" aria-label="Zoom out">−</button><button id="pipeZoomIn" aria-label="Zoom in">+</button><button id="pipeReset">Reset view</button><button id="pipeDisplay">Display mode ↗</button></div></div>
+  <div class="netwrap"><canvas id="pipeNet" style="height:min(74vh,720px)" tabindex="0" aria-label="3D map of the Qwen3.5 model and the Director pipeline. Arrow keys rotate, plus and minus zoom, zero resets."></canvas><div class="tip" id="pipeTip"></div><div class="nettitle" id="pipeTitle"></div>
+    <div class="netleg"><span><i style="background:linear-gradient(90deg,#60d6f0,#5680ff)"></i>vision blocks 0→23</span><span><i style="background:#ecc468"></i>mergers (connector)</span><span><i style="background:linear-gradient(90deg,#ff8a3d,#ff4f7b,#8f6bff)"></i>language model layers</span><span><i style="background:#666;opacity:.6"></i>small dim dot = frozen unit</span><span><i style="border:1.5px solid #ccc;background:transparent"></i>LoRA module not sampled yet (unavailable)</span>
+    <span><i style="background:#8f6bff;opacity:.7"></i>dashed: where each stage feeds the model</span><span><i style="background:#60d6f0"></i>pipeline: prepared ahead</span><span><i style="background:#ecc468"></i>pipeline: references (text the app holds)</span><span><i style="background:#ff8a3d"></i>pipeline: after the target photo</span></div></div>
+  <div id="pipeTable"></div>
+  </div>
+  <div class="detail" id="pipeDetail"><div class="empty">Click a point to inspect it.</div></div></div>
+</section>
 <section class="tab" id="tab-ckpt">
   <p style="margin-top:0"><span class="badge meas">Measurement</span> Offline adapter-weight comparison between two saved checkpoints (computed by the monitor server from the files, never inside the training step). A weight change says <b>where</b> the adapter moved, not <b>what</b> was learned.</p>
   <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
@@ -329,6 +365,8 @@ body.network-display { overflow:hidden; background:#080a0f; }
   <div class="cmp-pane"><canvas id="dispNetB" tabindex="0" aria-label="Model B network"></canvas><div class="tip" id="dispTipB"></div><div class="cmp-label" id="dispLabelB"></div><div class="cmp-cap" id="dispCapB"></div></div>
 </div>
 <div class="display-switch" role="group" aria-label="Choose which model to show"><button id="dispShowA" aria-pressed="false" title="Show model A (key 1)">A</button><button id="dispShowB" aria-pressed="false" title="Show model B (key 2)">B</button><button id="dispShowBoth" aria-pressed="false" title="Show both side by side (key 3 or C)">A + B</button></div>
+<div class="pipe-hud"><div><div class="observatory-brand">Digi<span>.</span></div><div class="observatory-label">Director pipeline</div></div><div class="display-meta"><div id="pdModel"></div><div id="pdState"></div><div id="pdProof"></div></div></div>
+<div class="pipe-controls" role="group" aria-label="Director pipeline display controls"><button id="pdNormal" aria-pressed="true">Normal plan</button><button id="pdReady" aria-pressed="false">Prepared ahead</button><button data-pv="both" aria-pressed="true">Both</button><button data-pv="model" aria-pressed="false">Model</button><button data-pv="pipe" aria-pressed="false">Pipeline</button><button id="pdMotion" aria-pressed="true">Idle orbit on</button><button id="pdReset">Reset view</button><button id="pdInspect" aria-pressed="false">Inspector</button><button id="pdCycle" aria-pressed="false" title="During idle orbit, inspect the next point every 5 seconds.">Cycle nodes off</button><button id="pdFull">Full screen</button><button id="pdExit">Dashboard ↗</button></div>
 <div class="display-hud"><div><div class="observatory-brand">Digi<span>.</span></div><div class="observatory-label">Model observatory</div></div><div class="display-meta"><div id="displayModel">Loading architecture…</div><div id="displayRunState"></div><div id="displayProvenance"></div></div></div>
 <div class="display-controls" role="group" aria-label="Observatory display controls"><label class="dsel">A <select id="dispA" aria-label="Model A run"></select></label><label class="dsel">B <select id="dispB" aria-label="Model B run"></select></label><button id="dispSwap" title="Swap A and B (key X)">⇄ Swap</button><button id="displayMotion" aria-pressed="true">Idle orbit on</button><button id="displayReset">Reset view</button><button id="displayInspect" aria-pressed="false">Inspector</button><button id="displayCycle" aria-pressed="false" title="During idle orbit, inspect the next node every 5 seconds. Off keeps the current node.">Cycle nodes off</button><button id="displayFullscreen">Full screen</button><button id="displayExit">Dashboard ↗</button></div>
 <script>
@@ -456,6 +494,7 @@ document.querySelectorAll("#tabs button").forEach((b) => b.onclick = () => {
   document.querySelectorAll("section.tab").forEach((s) => s.classList.toggle("on", s.id === "tab-" + b.dataset.tab));
   if (b.dataset.tab === "cmp") initCompare();
   if (b.dataset.tab === "eval") renderEval();
+  if (b.dataset.tab === "pipe") pipeInit();
   render();
 });
 
@@ -1290,6 +1329,311 @@ document.addEventListener("keydown", (ev) => {
   if (k === "1") dcShow("A"); else if (k === "2") dcShow("B"); else if (k === "3" || k === "c") dcShow("both"); else if (k === "x") $("#dispSwap").click(); else return;
   ev.preventDefault();
 });
+
+// ---------------------------------------------------------------- Director pipeline (3D)
+// BEGIN PIPELINE GRAPH
+const PIPE_COL = { prepare: [96, 214, 240], plan: [255, 138, 61], gate: [236, 196, 104], model: [143, 107, 255] };
+function pipeSecs(v) { return v == null ? "not measured" : v.toFixed(1) + " s"; }
+// Pure: stage data in, nodes and edges out. Positions are schematic; sizes and numbers are measured.
+const pipeRgbaS = (c, a = 1) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+function buildPipeline(data, dx = 0, k = 1) {
+  const stages = (data && data.stages) || [], st = Object.fromEntries(stages.map((s) => [s.name, s]));
+  const noteNames = stages.map((s) => s.name).filter((n) => n.startsWith("notes_inspiration")).sort();
+  const names = noteNames.length ? noteNames : ["notes_inspiration1", "notes_inspiration2", "notes_inspiration3", "notes_inspiration4"];
+  const nodes = [], edges = [], by = {};
+  const add = (n) => { nodes.push(n); by[n.key] = n; return n; };
+  const link = (a, b, phase, w = 1) => edges.push([by[a], by[b], pipeRgbaS(PIPE_COL[phase] || [200, 200, 200], phase === "gate" ? .9 : .75), w]);
+  const sz = (s) => (s && s.wall_s ? 3.5 + 3.2 * Math.sqrt(s.wall_s) : 4.5);
+  const tip = (title, s, extra) => !s ? `${title}${extra ? " · " + extra : ""}` :
+    `${title} · ${pipeSecs(s.wall_s)} (median of ${s.cases} cases)` +
+    (s.prefill_s != null || s.decode_s != null ? ` · reads ${s.prompt_tokens} tokens in ${pipeSecs(s.prefill_s)}, writes ${s.generation_tokens} in ${pipeSecs(s.decode_s)}` : "");
+  const n = names.length;
+  names.forEach((name, i) => {
+    const y = (i - (n - 1) / 2) * 78, s = st[name];
+    add({ key: "photo" + i, kind: "photo", phase: "prepare", x: -430, y, z: -200, r: 4.5, label: `inspiration photo ${i + 1}`, tip: `inspiration photo ${i + 1} · sent to the model once, to be read` });
+    add({ key: name, kind: "stage", phase: "prepare", x: -260, y, z: -200, r: sz(s), label: `notes ${i + 1}`, needsImage: true, stage: s, tip: tip(`notes on photo ${i + 1}`, s) });
+    link("photo" + i, name, "prepare");
+  });
+  const aes = st.aesthetic_from_notes, tgt = st.target_scene, comp = st.compositions;
+  add({ key: "aesthetic", kind: "stage", phase: "prepare", x: -80, y: 0, z: -200, r: sz(aes), label: "aesthetic", stage: aes, tip: tip("aesthetic from all the notes (text in, text out)", aes) });
+  names.forEach((name) => link(name, "aesthetic", "prepare"));
+  add({ key: "refs", kind: "gate", phase: "gate", x: 60, y: 0, z: -100, r: 9, label: "references (JSON)", tip: "references: the notes and the aesthetic as plain text. The server keeps nothing: the app holds it and sends it back with the plan request." });
+  link("aesthetic", "refs", "gate", 1.4);
+  add({ key: "targetphoto", kind: "photo", phase: "plan", x: -260, y: 0, z: 200, r: 4.5, label: "target photo", tip: "the place you will shoot · only known when you get there" });
+  add({ key: "target_scene", kind: "stage", phase: "plan", x: -80, y: 0, z: 200, r: sz(tgt), label: "target scene", needsImage: true, stage: tgt, tip: tip("target scene", tgt) });
+  link("targetphoto", "target_scene", "plan");
+  add({ key: "compositions", kind: "stage", phase: "plan", x: 210, y: 0, z: 0, r: sz(comp), label: "compositions", needsImage: true, stage: comp, tip: tip("compositions: the shots", comp) });
+  link("refs", "compositions", "gate", 1.4); link("target_scene", "compositions", "plan"); link("targetphoto", "compositions", "plan", .6);
+  [-1, 0, 1].forEach((k, i) => {
+    add({ key: "shot" + i, kind: "output", phase: "plan", x: 410, y: k * 70, z: 0, r: 5, label: `shot ${i + 1}`, tip: `shot ${i + 1}` });
+    link("compositions", "shot" + i, "plan");
+  });
+  nodes.forEach((x) => { x.x = x.x * k + dx; x.y *= k; x.z *= k; });
+  return { nodes, edges };
+}
+// Put the pipeline next to the real model network and connect them where inputs actually enter the model:
+// photos go in through the vision tower's patch embedding, text-only stages through the token embedding.
+const PIPE_IMAGE_IN = "vision_tower.patch_embed.proj", PIPE_TEXT_IN = "block:language_model:language_model.model.embed_tokens";
+function joinModel(pipe, model, label) {
+  if (!model) return { nodes: pipe.nodes, edges: pipe.edges, joined: 0 };
+  const by = Object.fromEntries(model.nodes.map((n) => [n.key, n])), edges = pipe.edges.slice();
+  let joined = 0;
+  for (const n of pipe.nodes) {
+    if (n.kind !== "stage") continue;
+    const src = by[n.needsImage ? PIPE_IMAGE_IN : PIPE_TEXT_IN] || by[PIPE_TEXT_IN];
+    if (!src) continue;
+    edges.push([src, n, pipeRgbaS(PIPE_COL.model, .5), .9]); joined++;
+  }
+  const top = model.nodes.reduce((m, n) => Math.min(m, n.y), 0);
+  const caption = { key: "model-caption", kind: "caption", phase: "model", x: 0, y: top - 40, z: 0, r: 1, label, tip: label };
+  return { nodes: model.nodes.concat(pipe.nodes, [caption]), edges: model.edges.concat(edges.slice(pipe.edges.length), pipe.edges), joined };
+}
+// Frame some nodes: choose the zoom so their projected extent fills ~88% of the canvas, then pan so the middle of that extent sits
+// at the middle of the usable canvas (project() puts the origin at x = W/2, y = (H-90)/2 + 30, leaving room for the legend).
+function pipeFit(cam, nodes, W, H, project) {
+  const pts = nodes.filter((n) => n.kind !== "caption");
+  if (!pts.length) return cam;
+  const midY = (H - 90) / 2 + 30, box = () => {
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    for (const n of pts) { const p = project(n, cam, W, H); x0 = Math.min(x0, p.x - 6); x1 = Math.max(x1, p.x + 6); y0 = Math.min(y0, p.y - 6); y1 = Math.max(y1, p.y + 6); }
+    return { x0, x1, y0, y1 };
+  };
+  Object.assign(cam, { zoom: 1, panX: 0, panY: 0 });
+  for (let i = 0; i < 4; i++) {
+    let b = box();
+    const f = Math.min((W * .88) / Math.max(1, b.x1 - b.x0), ((H - 90) * .88) / Math.max(1, b.y1 - b.y0));
+    cam.zoom = Math.max(.4, Math.min(3.5, cam.zoom * f));
+    b = box(); cam.panX += W / 2 - (b.x0 + b.x1) / 2; cam.panY += midY - (b.y0 + b.y1) / 2;
+  }
+  return cam;
+}
+// END PIPELINE GRAPH
+
+const PIPE = { data: null, ready: false, cam: null, net: null, bound: false, picked: null, arch: null, samples: {}, run: null };
+const pipeRgb = (phase) => PIPE_COL[phase] || [200, 200, 200];
+function pipeShell() {
+  const a = PIPE.arch; if (!a) { $("#pipeHead").innerHTML = ""; $("#pipeScale").innerHTML = ""; return; }
+  const t = a.totals, vis = a.groups.vision_encoder || {}, con = a.groups.connector || {};
+  $("#pipeHead").innerHTML = `<div class="tiles">${tile("Model", esc(a.model_type || "?"), esc((a.model_class || "").split(".").pop()))}
+    ${tile("Total parameters", big(t.total_params), "logical (4-bit weights unpacked)")}
+    ${tile("Trainable", big(t.trainable_params), `${(100 * t.trainable_params / t.total_params).toFixed(2)}% · ${t.trainable_tensors} tensors`)}
+    ${tile("LoRA modules", String(t.lora_units), `${t.instrumented_units} instrumented · from ${esc(PIPE.run.r.manifest?.run_name || "the adapter run")}`)}
+    ${tile("Vision tower trainable tensors", String(t.vision_trainable_tensors), `${big((vis.trainable_params || 0) + (con.trainable_params || 0))} weights`)}
+    ${tile("LM head", "", esc(a.lm_head))}</div>`;
+  $("#pipeScale").innerHTML = `<label>Colour LoRA points by <select id="pipeMetric">${METRICS.map(([k, d]) => `<option value="${k}" ${k === S.metric ? "selected" : ""}>${d}</option>`).join("")}</select></label>
+    <span class="ramp">${[0, 1, 2, 3, 4, 5, 6].map((i) => `<span style="background:var(--seq${i})"></span>`).join("")}</span>
+    <span class="na">glow and size = the metric from the adapter's last layer sample, scaled within each group (vision, mergers, language model)</span>`;
+  $("#pipeMetric").onchange = (e) => { S.metric = e.target.value; pipeDraw(); pipeDetail(); };
+}
+function pipeDetail() {
+  const d = $("#pipeDetail"), key = PIPE.picked, n = key && PIPE.net.nodes.find((x) => x.key === key);
+  if (!n) { d.innerHTML = `<div class="empty">Click a point to inspect it.</div>`; return; }
+  if (n.pipe) {
+    const st = n.stage, rows = st ? `<div>phase</div><div>${n.phase === "prepare" ? "can run ahead of the request" : "runs after the target photo"}</div><div>time</div><div>${pipeSecs(st.wall_s)} (median of ${st.cases} cases)</div>
+      <div>prompt tokens</div><div>${st.prompt_tokens ?? "–"} · prefill ${pipeSecs(st.prefill_s)}</div><div>output tokens</div><div>${st.generation_tokens ?? "–"} · decode ${pipeSecs(st.decode_s)}</div>
+      <div>enters the model at</div><div>${n.needsImage ? "the vision tower's patch embedding (it reads a photo)" : "the token embedding (text only)"}</div>` : "";
+    d.innerHTML = `<h3>${esc(n.label)}</h3><p><span class="badge ${n.phase === "plan" ? "trainable" : "meas"}">${esc(n.phase)}</span></p><p>${esc(n.tip)}</p><div class="kv">${rows}</div>`; return;
+  }
+  const a = PIPE.arch, us = (a && a.units) || [];
+  if (key.startsWith("block:")) {
+    const [, g, b] = key.split(":"), list = us.filter((u) => u.group === g && (String(u.block) === b || u.name === b || u.name.startsWith(b + "."))),
+      tot = list.reduce((x, u) => x + u.total_params, 0), tr = list.reduce((x, u) => x + u.trainable_params, 0);
+    d.innerHTML = `<h3>${esc(g === "language_model" ? "decoder layer " + b : g.replace("_", " ") + " · " + b)}</h3>
+      <p>${tr ? `<span class="badge trainable">trainable</span> LoRA adapters only; base weights frozen` : `<span class="badge frozen">frozen</span> no gradient`}</p>
+      <div class="kv"><div>units</div><div>${list.length}</div><div>parameters</div><div>${big(tot)}</div><div>trainable</div><div>${big(tr)}</div></div>
+      <div class="scroll" style="margin-top:8px">${paramTable(list)}</div>`; return;
+  }
+  const u = us.find((x) => x.name === key); if (!u) { d.innerHTML = ""; return; }
+  const v = PIPE.samples[u.name] || {}, L = u.lora || {}, row = (k, label) => `<tr><td>${label}</td><td class="num">${fmt(v[k], 4)}</td></tr>`;
+  d.innerHTML = `<h3>${esc(u.name)}</h3><p><span class="badge ${u.status}">${u.status}</span> <span class="badge ${u.instrumented ? "" : "uninst"}">${u.instrumented ? "instrumented" : "uninstrumented"}</span> <span class="badge meas">measurement</span></p>
+    <div class="kv"><div>class</div><div>${esc(u.class)}${L.base_class ? ` wrapping ${esc(L.base_class)} (${L.base_bits ? L.base_bits + "-bit" : "full precision"})` : ""}</div>
+    <div>total params</div><div>${big(u.total_params)}</div><div>trainable</div><div>${big(u.trainable_params)}</div>
+    ${u.lora ? `<div>LoRA rank r</div><div>${L.rank}</div><div>scale (α/r)</div><div>${L.scale}</div><div>A · B</div><div class="mono">${L.d_in}×${L.rank} · ${L.rank}×${L.d_out}</div>` : ""}
+    <div>last sampled</div><div>${PIPE.samples[u.name] ? "yes (latest layer sample of this run)" : NA}</div></div>
+    ${u.lora ? `<table style="margin-top:8px"><tr><th colspan="2">Adapter and effective weight (latest sample)</th></tr>${row("adapter_norm_a", "‖A‖")}${row("adapter_norm_b", "‖B‖")}${row("effective_delta_norm", "‖ΔW‖ from base")}${row("effective_delta_rel", "‖ΔW‖ / ‖W₀‖")}${row("grad_norm_a", "‖∂L/∂A‖")}${row("grad_norm_b", "‖∂L/∂B‖")}</table>
+      <p class="na" style="font-size:12px">This adapter was fused into the q5 model, so these numbers describe what was merged in. They are weight measurements; they do not show what the layer learned.</p>` : ""}
+    <div class="scroll" style="margin-top:8px">${paramTable([u])}</div>`;
+}
+function pipeSkipped(n) { return PIPE.ready && n.phase === "prepare"; }
+function pipeTiles(d) {
+  const e = d.equality, t = d.totals || {}, full = (e && e.full_s) ?? t.full_s, prep = (e && e.prepare_s) ?? t.prepare_s, fast = e && e.with_references_s;
+  const tile = (k, v, sub) => `<div class="tile"><div class="k">${esc(k)}</div><div class="v">${v}</div><div class="s">${esc(sub)}</div></div>`;
+  const same = e ? tile("Same answers?", `${e.all_identical}/${e.cases}`, `cases with identical aesthetic, scene and shots${e.different.length ? " · differ: " + e.different.join(", ") : ""}`)
+                 : tile("Same answers?", "not measured", "run scripts/pipeline_precompute_check.py");
+  return tile("Normal plan", pipeSecs(full), "every stage after the request") + tile("Prepared ahead", pipeSecs(prep), "notes + aesthetic, can run earlier") +
+         tile("Plan with references", pipeSecs(fast), "target scene + compositions only") + same;
+}
+function pipeTable(d) {
+  const rows = (d.stages || []).map((s) => `<tr><td class="mono">${esc(s.name)}</td><td>${s.phase === "prepare" ? "ahead" : "after target"}</td><td class="num">${pipeSecs(s.wall_s)}</td><td class="num">${s.prompt_tokens ?? "–"}</td><td class="num">${pipeSecs(s.prefill_s)}</td><td class="num">${s.generation_tokens ?? "–"}</td><td class="num">${pipeSecs(s.decode_s)}</td></tr>`).join("");
+  return `<details style="margin-top:10px"><summary>Stage numbers</summary><table><tr><th>stage</th><th>phase</th><th>time</th><th>prompt tokens</th><th>prefill</th><th>output tokens</th><th>decode</th></tr>${rows}</table></details>`;
+}
+function pipeDraw() {
+  const cv = $("#pipeNet"); if (!cv || !PIPE.net) return;
+  const W = cv.clientWidth || 600, H = cv.clientHeight || 480, dpr = window.devicePixelRatio || 1;
+  if (cv.width !== W * dpr || cv.height !== H * dpr) { cv.width = W * dpr; cv.height = H * dpr; }
+  const ctx = cv.getContext("2d"); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.fillStyle = "#080b12"; ctx.fillRect(0, 0, W, H);
+  const { nodes, edges } = PIPE.net, metric = S.metric;
+  for (const n of nodes) if (!n.pipe) { const v = n.kind === "lora" ? PIPE.samples[n.key] : null; n.v = v ? v[metric] : null; }
+  const ranges = {};
+  for (const n of nodes) if (!n.pipe && n.kind === "lora" && Number.isFinite(n.v)) { const r = ranges[n.group] || (ranges[n.group] = { lo: Infinity, hi: -Infinity }); r.lo = Math.min(r.lo, n.v); r.hi = Math.max(r.hi, n.v); }
+  const amount = (n) => { const r = ranges[n.group]; return r && r.hi > r.lo ? Math.max(0, Math.min(1, (n.v - r.lo) / (r.hi - r.lo))) : 0.5; };
+  for (const n of nodes) { const pr = Network3D.project(n, PIPE.cam, W, H); n.px = pr.x; n.py = pr.y; n.depth = pr.depth; n.screenR = n.pipe ? Math.max(2.5, n.r * pr.scale) : Math.max(n.kind === "frozen" ? 1.2 : 2, (n.kind === "lora" && Number.isFinite(n.v) ? 2 + 3 * Math.sqrt(amount(n)) : n.r) * pr.scale); }
+  const items = edges.map((e) => ({ e, depth: (e[0].depth + e[1].depth) / 2 })).concat(nodes.map((n) => ({ n, depth: n.depth })));
+  items.sort((a, b) => b.depth - a.depth);
+  for (const it of items) {
+    if (it.e) {
+      const [a, b, color, w] = it.e, dim = pipeSkipped(a) || pipeSkipped(b), link = a.pipe !== b.pipe;
+      ctx.globalAlpha = Math.max(.3, Math.min(.9, .7 - it.depth / 900)) * (dim ? .25 : 1); ctx.strokeStyle = color; ctx.lineWidth = link ? 1.6 : (w || .65) * (a.pipe ? 1.4 : 1);
+      ctx.setLineDash(link ? [5, 4] : []); ctx.beginPath(); ctx.moveTo(a.px, a.py); ctx.lineTo(b.px, b.py); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1; continue;
+    }
+    const n = it.n;
+    if (n.kind === "caption") { const pk = PIPE.picked && nodes.find((x) => x.key === PIPE.picked); if (!pk || pk.pipe) continue; ctx.fillStyle = "#c9b8ff"; ctx.font = "600 12px ui-sans-serif,system-ui,sans-serif"; ctx.textAlign = "center"; ctx.fillText(n.label, n.px, n.py); ctx.textAlign = "start"; continue; }
+    if (!n.pipe) {  // a unit of the real model: same look as the Architecture tab
+      const measured = n.kind === "lora" && n.v != null && Number.isFinite(n.v), fade = Math.max(.4, Math.min(1, 1 - n.depth / 1000));
+      if (measured) { const t = amount(n), R = n.screenR * (3 + 2 * Math.sqrt(t)), g = ctx.createRadialGradient(n.px, n.py, 0, n.px, n.py, R);
+        g.addColorStop(0, rgba(n.rgb, .65 + .25 * t)); g.addColorStop(.3, rgba(n.rgb, .35 + .25 * t)); g.addColorStop(.65, rgba(n.rgb, .08 + .12 * t)); g.addColorStop(1, rgba(n.rgb, 0)); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(n.px, n.py, R, 0, Math.PI * 2); ctx.fill(); }
+      ctx.globalAlpha = fade; ctx.beginPath(); ctx.arc(n.px, n.py, n.screenR, 0, Math.PI * 2);
+      if (n.kind === "lora" && !measured) { ctx.strokeStyle = "#c9c7c0"; ctx.lineWidth = 1; ctx.stroke(); }
+      else { const fill = n.kind === "frozen" ? rgba(n.rgb, .5) : rgba(n.rgb); ctx.shadowColor = fill; ctx.shadowBlur = measured ? 8 : n.kind === "frozen" ? 0 : 5; ctx.fillStyle = fill; ctx.fill(); ctx.shadowBlur = 0; }
+      ctx.globalAlpha = 1;
+      if (PIPE.picked === n.key) { ctx.strokeStyle = "#fff"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(n.px, n.py, n.screenR + 5, 0, Math.PI * 2); ctx.stroke(); ctx.fillStyle = "#e8ebf5"; ctx.font = "11px ui-sans-serif,system-ui,sans-serif"; ctx.fillText(n.label, n.px + n.screenR + 9, n.py + 4); }
+      continue;
+    }
+    const off = pipeSkipped(n), col = pipeRgb(n.phase), fade = Math.max(.45, Math.min(1, 1 - n.depth / 1100)) * (off ? .28 : 1);
+    ctx.globalAlpha = fade;
+    if (n.kind === "stage" || n.kind === "gate" || n.kind === "model") { const R = n.screenR * 2.6, g = ctx.createRadialGradient(n.px, n.py, 0, n.px, n.py, R);
+      g.addColorStop(0, rgba(col, .5)); g.addColorStop(1, rgba(col, 0)); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(n.px, n.py, R, 0, Math.PI * 2); ctx.fill(); }
+    ctx.beginPath();
+    if (n.kind === "photo") { ctx.rect(n.px - n.screenR, n.py - n.screenR * .75, n.screenR * 2, n.screenR * 1.5); ctx.strokeStyle = rgba(col); ctx.lineWidth = 1.4; ctx.stroke(); }
+    else { ctx.arc(n.px, n.py, n.screenR, 0, Math.PI * 2); ctx.fillStyle = rgba(col); ctx.shadowColor = rgba(col); ctx.shadowBlur = 8; ctx.fill(); ctx.shadowBlur = 0; }
+    if (PIPE.picked === n.key) {  // labels only appear for the point you clicked
+      ctx.fillStyle = "#e8ebf5"; ctx.font = "11px ui-sans-serif,system-ui,sans-serif";
+      ctx.fillText(n.kind === "stage" && n.stage ? `${n.label} · ${pipeSecs(n.stage.wall_s)}` : n.label, n.px + n.screenR + 8, n.py + 4);
+    }
+    if (PIPE.picked === n.key) { ctx.globalAlpha = 1; ctx.strokeStyle = "#fff"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(n.px, n.py, n.screenR + 6, 0, Math.PI * 2); ctx.stroke(); }
+    ctx.globalAlpha = 1;
+  }
+  const d = PIPE.data, e = d.equality, t = d.totals || {};
+  const total = PIPE.ready ? ((e && e.with_references_s) ?? null) : ((e && e.full_s) ?? t.full_s);
+  const units = ((PIPE.arch && PIPE.arch.units) || []).length, sampled = nodes.filter((n) => !n.pipe && n.kind === "lora" && n.v != null).length, loras = nodes.filter((n) => !n.pipe && n.kind === "lora").length;
+  $("#pipeTitle").textContent = (PIPE.ready ? "References prepared ahead · plan takes " : "Normal plan · takes ") + pipeSecs(total) + " after the request" +
+    (units ? ` · ${units} model units · ${edges.length} connections · ${(METRICS.find((m) => m[0] === metric) || [, metric])[1]} · ${sampled}/${loras} LoRA sampled · ${PIPE.cam.zoom.toFixed(1)}×` : "");
+}
+function pipeBind() {
+  const cv = $("#pipeNet"), tip = $("#pipeTip"), ptr = new Map(); let dragged = false;
+  const hit = (ev) => { const r = cv.getBoundingClientRect(); return Network3D.pick(PIPE.net.nodes, ev.clientX - r.left, ev.clientY - r.top); };
+  cv.onpointerdown = (ev) => { if (ev.button !== 0 && ev.button !== 2) return; cv.setPointerCapture(ev.pointerId); ptr.set(ev.pointerId, { x: ev.clientX, y: ev.clientY, sx: ev.clientX, sy: ev.clientY }); dragged = false; tip.style.display = "none"; };
+  cv.onpointermove = (ev) => {
+    const o = ptr.get(ev.pointerId);
+    if (o) { const dx = ev.clientX - o.x, dy = ev.clientY - o.y; if (Math.hypot(ev.clientX - o.sx, ev.clientY - o.sy) > 4) dragged = true; ptr.set(ev.pointerId, { ...o, x: ev.clientX, y: ev.clientY });
+      if (dragged) { PIPE.touched = true; if (ev.shiftKey || ev.buttons === 2) Network3D.pan(PIPE.cam, dx, dy, cv.clientWidth, cv.clientHeight); else Network3D.orbit(PIPE.cam, dx, dy); pipeDraw(); } return; }
+    const n = hit(ev), r = cv.getBoundingClientRect(); if (!n) { tip.style.display = "none"; return; }
+    if (n.pipe || n.kind === "caption") tip.textContent = n.tip || n.label; else tip.innerHTML = `<b>${esc(n.label)}</b>` + (n.kind === "lora" ? `<br>${esc(S.metric)}: ${n.v == null ? "unavailable (not sampled yet)" : shortNum(n.v)}` : "");
+    tip.style.whiteSpace = "normal"; tip.style.maxWidth = "320px"; tip.style.display = "block";
+    tip.style.left = Math.max(4, Math.min(r.width - 330, ev.clientX - r.left + 12)) + "px"; tip.style.top = Math.min(r.height - 80, ev.clientY - r.top + 12) + "px";
+  };
+  cv.onpointerup = (ev) => { if (ptr.size === 1 && !dragged && ev.button === 0) { const n = hit(ev); PIPE.picked = n ? n.key : null; pipeDraw(); pipeDetail(); } ptr.delete(ev.pointerId); };
+  cv.onpointercancel = (ev) => ptr.delete(ev.pointerId); cv.onpointerleave = () => { tip.style.display = "none"; }; cv.oncontextmenu = (ev) => ev.preventDefault();
+  cv.addEventListener("wheel", (ev) => { ev.preventDefault(); PIPE.touched = true; Network3D.zoom(PIPE.cam, Math.exp(-Math.max(-300, Math.min(300, ev.deltaY * (ev.deltaMode === 1 ? 16 : 1))) * .0015)); pipeDraw(); }, { passive: false });
+  cv.addEventListener("keydown", (ev) => { const k = ev.key, step = 24; PIPE.touched = true;
+    if (k === "ArrowLeft") Network3D.orbit(PIPE.cam, -step, 0); else if (k === "ArrowRight") Network3D.orbit(PIPE.cam, step, 0); else if (k === "ArrowUp") Network3D.orbit(PIPE.cam, 0, -step);
+    else if (k === "ArrowDown") Network3D.orbit(PIPE.cam, 0, step); else if (k === "+" || k === "=") Network3D.zoom(PIPE.cam, 1.12); else if (k === "-") Network3D.zoom(PIPE.cam, .89);
+    else if (k === "0") pipeView(PIPE.view || "both"); else return; ev.preventDefault(); pipeDraw(); });
+  const mode = (ready) => { PIPE.ready = ready; $("#pipeNormal").classList.toggle("on", !ready); $("#pipeReady").classList.toggle("on", ready); $("#pdNormal").setAttribute("aria-pressed", String(!ready)); $("#pdReady").setAttribute("aria-pressed", String(ready)); pipeDraw(); pipeHud(); };
+  $("#pipeNormal").onclick = $("#pdNormal").onclick = () => mode(false); $("#pipeReady").onclick = $("#pdReady").onclick = () => mode(true);
+  $("#pipeReset").onclick = () => pipeView(PIPE.view || "both");
+  document.querySelectorAll("[data-pv]").forEach((b) => { b.onclick = () => pipeView(b.dataset.pv); });
+  $("#pipeZoomIn").onclick = () => { PIPE.touched = true; Network3D.zoom(PIPE.cam, 1.2); pipeDraw(); }; $("#pipeZoomOut").onclick = () => { PIPE.touched = true; Network3D.zoom(PIPE.cam, 1 / 1.2); pipeDraw(); };
+  window.addEventListener("resize", () => { if (PIPE.net) (PIPE.touched ? pipeDraw() : pipeView(PIPE.view || "both")); });
+}
+function pipeView(which) {
+  PIPE.view = which; PIPE.touched = false; const cv = $("#pipeNet"), W = cv.clientWidth || 800, H = cv.clientHeight || 560;
+  const nodes = PIPE.net.nodes.filter((n) => which === "both" ? true : which === "pipe" ? n.pipe : !n.pipe);
+  PIPE.cam = pipeFit(Object.assign(Network3D.camera(), { yaw: -0.24, pitch: 0.12 }), nodes, W, H, Network3D.project);
+  document.querySelectorAll("[data-pv]").forEach((b) => { b.classList.toggle("on", b.dataset.pv === which); b.setAttribute("aria-pressed", String(b.dataset.pv === which)); });
+  pipeDraw();
+}
+const pipeCamera = () => { pipeView(PIPE.view || "both"); return PIPE.cam; };
+// The real Qwen3.5 network (every unit of its architecture.json is a node), from the run of the adapter that was fused into q5.
+async function pipeScene(data) {
+  const pipe = buildPipeline(data, 500, 1.2); pipe.nodes.forEach((n) => { n.pipe = true; });
+  let model = null, label = "Qwen3.5-2B";
+  try {
+    const runs = (await (await fetch("/api/runs")).json()).runs || [];
+    const q35 = runs.filter((r) => /q35-2b/.test(r.run_name || r.path || ""));
+    const pick = q35.find((r) => /mix2-v7/.test(r.run_name || r.path)) || q35[0];
+    if (pick) {
+      const d = await cmpLoad(pick.path), arch = d.r && d.r.architecture;
+      if (arch && (arch.units || []).length && arch.model_type === "qwen3_5") {
+        model = buildNet(1000, 600, arch); model.nodes.forEach((n) => { n.x = -n.x - 560; n.z = -n.z; });  // turned around: the vision tower (photo entry) faces the pipeline
+        Object.assign(PIPE, { arch, samples: d.samples || {}, run: d });
+        label = `Qwen3.5-2B · ${arch.units.length} units, one point each`;
+      }
+    }
+  } catch (e) { model = null; }
+  PIPE.model = !!model;
+  return joinModel(pipe, model, label);
+}
+async function pipeInit() {
+  if (!PIPE.data) {
+    try { PIPE.data = await (await fetch("/api/pipeline")).json(); } catch (e) { $("#pipeTiles").innerHTML = `<div class="banner crit">${esc(e.message)}</div>`; return; }
+    PIPE.net = await pipeScene(PIPE.data); PIPE.cam = Network3D.camera();
+    $("#pipeTiles").innerHTML = pipeTiles(PIPE.data); $("#pipeTable").innerHTML = pipeTable(PIPE.data); pipeShell();
+    if (!PIPE.bound) { pipeBind(); PIPE.bound = true; }
+  }
+  requestAnimationFrame(() => (PIPE.viewSet ? pipeDraw() : (PIPE.viewSet = true, pipeView(PIPE.view || "both"))));
+}
+
+
+// ---- display mode for this tab: full-window canvas, idle orbit, inspector, node cycling (same behaviour as the network display)
+const PD = { on: false, orbit: true, cycle: false, last: performance.now(), lastOrbit: null, started: null, pitch0: 0, lastCycle: null };
+function pipeHud() {
+  const d = PIPE.data || {}, e = d.equality, total = PIPE.ready ? e && e.with_references_s : (e && e.full_s) ?? (d.totals || {}).full_s;
+  $("#pdModel").textContent = (PIPE.arch ? `${PIPE.arch.model_type} · ${PIPE.arch.units.length} units` : "Director pipeline") + " · fused q5";
+  $("#pdState").textContent = `${PIPE.ready ? "References prepared ahead" : "Normal plan"} · ${pipeSecs(total)} after the request`;
+  $("#pdProof").textContent = e ? `${e.all_identical}/${e.cases} cases give identical answers` : "same-answers check not run";
+}
+function pipeDisplaySet(on) {
+  PD.on = !!on; document.body.classList.toggle("pipe-display", PD.on); document.body.classList.remove("pipe-inspector", "pipe-resting");
+  $("#pdInspect").setAttribute("aria-pressed", "false"); PD.last = performance.now();
+  if (PD.on) pipeHud();
+  requestAnimationFrame(() => { if (PIPE.net) pipeView(PIPE.view || "both"); });
+  if (PD.on) pipeTick();
+}
+function pipeTick() {
+  if (!PD.on) return;
+  const now = performance.now(), cam = PIPE.cam, pointersDown = false;
+  const state = { enabled: PD.orbit, display: true, visible: true, hidden: document.hidden, reducedMotion: false, motionOverride: true, lastInteraction: PD.last };
+  const active = Network3D.shouldOrbit(state, now) && !pointersDown && PIPE.net;
+  document.body.classList.toggle("pipe-resting", now - PD.last > 3500);
+  if (active) {
+    if (PD.started === null) { PD.started = now; PD.lastOrbit = now; PD.pitch0 = cam.pitch; }
+    const dt = Math.min(100, now - (PD.lastOrbit || now));
+    cam.yaw = (cam.yaw + dt * .000045) % (Math.PI * 2); cam.pitch = Math.max(-Math.PI * .49, Math.min(Math.PI * .49, PD.pitch0 + .10 * Math.sin((now - PD.started) / 18000))); PD.lastOrbit = now; pipeDraw();
+  } else { PD.lastOrbit = null; PD.started = null; }
+  const inspectorOpen = document.body.classList.contains("pipe-inspector");
+  if (PD.cycle && active && inspectorOpen) {
+    if (PD.lastCycle === null) PD.lastCycle = now;
+    if (Network3D.shouldCycle({ enabled: PD.cycle, orbiting: active, inspectorOpen, lastChange: PD.lastCycle }, now)) {
+      const next = Network3D.nextNode(PIPE.net.nodes.filter((n) => n.kind !== "caption"), PIPE.picked);
+      if (next !== null) { PIPE.picked = next; pipeDetail(); pipeDraw(); } PD.lastCycle = now;
+    }
+  } else PD.lastCycle = null;
+  setTimeout(pipeTick, active ? 50 : document.hidden ? 1000 : 250);
+}
+for (const name of ["pointerdown", "pointermove", "wheel", "keydown", "click"]) document.addEventListener(name, () => { PD.last = performance.now(); PD.started = null; PD.lastOrbit = null; document.body.classList.remove("pipe-resting"); }, { passive: true });
+$("#pipeDisplay").onclick = () => pipeDisplaySet(true);
+$("#pdExit").onclick = () => pipeDisplaySet(false);
+$("#pdReset").onclick = () => pipeView(PIPE.view || "both");
+$("#pdMotion").onclick = () => { PD.orbit = !PD.orbit; $("#pdMotion").textContent = PD.orbit ? "Idle orbit on" : "Idle orbit off"; $("#pdMotion").setAttribute("aria-pressed", String(PD.orbit)); };
+$("#pdInspect").onclick = () => { const open = document.body.classList.toggle("pipe-inspector"); $("#pdInspect").setAttribute("aria-pressed", String(open)); if (open) pipeDetail(); };
+$("#pdCycle").onclick = () => { PD.cycle = !PD.cycle; PD.lastCycle = null; $("#pdCycle").setAttribute("aria-pressed", String(PD.cycle)); $("#pdCycle").textContent = PD.cycle ? "Cycle nodes · 5s" : "Cycle nodes off"; };
+$("#pdFull").onclick = async () => {
+  if (window.webkit?.messageHandlers?.digi) { window.webkit.messageHandlers.digi.postMessage({ action: "toggleFullscreen" }); return; }
+  try { if (document.fullscreenElement) await document.exitFullscreen(); else if (document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen(); } catch (_) { /* still fills the window */ }
+};
+document.addEventListener("keydown", (ev) => { if (ev.key === "Escape" && PD.on) { pipeDisplaySet(false); ev.preventDefault(); } });
+
 window.addEventListener("resize", () => render());
 loadRuns().catch((e) => { $("#banners").innerHTML = `<div class="banner crit">${esc(e.message)}</div>`; });
 </script>
