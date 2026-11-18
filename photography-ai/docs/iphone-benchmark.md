@@ -271,7 +271,7 @@ MacSmoke ran on 2026-11-12, M3 Pro, 1024 px, cafe-window-candid. The Mac was bus
 Projected onto the device numbers above (compositions prefill 2.7 s at 1024 px / 2.0 s at 768, about 37 tok/s), from the compositions request start:
 
 - shot 1 at about 2.7 + 322 / 37 ≈ **11.5 s** (1024 px), whatever the cap;
-- e2e about 19 s with cap 600 and about 22 s with cap 700 and about 25 s with cap 800 (100 more tokens at 37 tok/s), against 28.9 s uncapped.
+- e2e about 19 s with cap 600, 22 s with cap 700 and 25 s with cap 800 (100 more tokens at 37 tok/s), against 28.9 s uncapped.
 
 **First token under 2 s is unlikely at 1024 px.** TTFT is prep + prefill, and the measured compositions prefill alone is 2.7 s. Streaming doesn't change prefill. At 768 px, prefill was 2.0 s, so TTFT will be right at the edge. Getting well under 2 s needs a shorter prompt or prefix caching; it doesn't come from streaming or the cap.
 
