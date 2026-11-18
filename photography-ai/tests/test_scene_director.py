@@ -36,7 +36,7 @@ def test_scene_mode_single_photo_no_references(photos, tmp_path, style):
                   tmp_path / "runs")
     assert rec["validation"]["ok"], rec["validation"]
     assert rec["mode"] == "scene" and rec["shot_format"] == "v2" and rec["config"]["strategy"] == "scene_director"
-    assert rec["prompt_version"] == prompts.PROMPT_VERSION_V5
+    assert rec["prompt_version"] == prompts.PROMPT_VERSION_V15  # scene look prompt v15 (zoom before distance)
     assert rec["inputs"]["inspiration"] == []
     assert [len(imgs) for _, imgs in backend.calls] == [1, 1, 1, 1]  # scene, then one call per look: one photo each
     looks = rec["result"]["compositions"]

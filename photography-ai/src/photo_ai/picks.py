@@ -288,7 +288,7 @@ def status(cfg: dict) -> dict:
 
 def export(cfg: dict) -> dict:
     """SFT rows for each chosen look (her pick is the approval) + preference records (chosen vs the other looks)."""
-    from .training.export import _j, _row
+    from .training.export import _j, _row, _zoom_first
 
     runs = {r["run_id"]: r for r in json.loads((pick_dir(cfg) / "runs.json").read_text())["runs"]}
     pool = {i["id"]: i for i in load_pool(cfg["dataset"])["images"]}
@@ -307,7 +307,9 @@ def export(cfg: dict) -> dict:
                 prompt = prompts.scene_look(scene, p["theme"], "", prompts.DEFAULT_SUBJECT, c + 1, looks[:c], len(looks))
                 meta = {"pick_id": cfg["pick_id"], "scene": p["scene"], "theme": p["theme"], "reviewer": p["reviewer"],
                         "stage": f"look{c + 1}", "why": p["why"]}
-                sft.append(_row(prompt, [str(REPO_ROOT / pool[p["scene"]]["file"])], _j(looks[c]), meta))
+                # prompt v15 lists zoom_or_lens ahead of distance_and_framing; write the target in the same order
+                sft.append(_row(prompt, [str(REPO_ROOT / pool[p["scene"]]["file"])],
+                                _j(_zoom_first(looks[c], name_zoom=False)), meta))
                 pairs += [{"scene": p["scene"], "theme": p["theme"], "reviewer": p["reviewer"], "chosen": looks[c],
                            "rejected": lk, "why": p["why"]} for k, lk in enumerate(looks) if k not in chosen]
     (out / "sft_chosen.jsonl").write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in sft))

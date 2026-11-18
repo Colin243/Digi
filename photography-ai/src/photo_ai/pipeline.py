@@ -38,7 +38,7 @@ from .backends import GenerationParams, VLMBackend
 from .cases import Case
 from .images import PreparedImage, prepare
 from .metrics import evaluate_result, notes_from_stages
-from .parsing import extract_json
+from .parsing import ArrayItemStream, extract_json
 from .storage import DEFAULT_RUNS_DIR, new_run_dir, save_run, write_raw
 
 MIN_INSPIRATION, MAX_INSPIRATION = 3, 5
@@ -55,8 +55,9 @@ def _emit(event: dict) -> None:
 
 
 STRATEGIES = ("two_stage", "single_pass", "decomposed")
-MODES = ("inspiration", "scene")
+MODES = ("inspiration", "scene", "scenery")
 SCENE_STRATEGY = "scene_director"
+SCENERY_STRATEGY = "scenery_director"
 
 
 @dataclass
@@ -85,7 +86,7 @@ class InputError(ValueError):
 
 
 def _check_inputs(inspiration: list[str], target: str | None, mode: str = "inspiration") -> None:
-    if mode == "scene":
+    if mode in ("scene", "scenery"):
         if inspiration:
             raise InputError("Scene Director takes one scene photo and no reference images.")
     elif not (MIN_INSPIRATION <= len(inspiration) <= MAX_INSPIRATION):
@@ -124,13 +125,19 @@ def _run_stage(
     model: type | None,
     cfg: RunConfig,
     max_tokens: int | None = None,
+    on_text=None,
 ) -> tuple[dict | str | None, dict]:
-    """Generate, parse, validate; retry on invalid JSON. `model=None` means free text."""
+    """Generate, parse, validate; retry on invalid JSON. `model=None` means free text.
+
+    `on_text` receives the first attempt's output as it is generated (retries are not streamed)."""
     attempts = []
     data = None
     for attempt in range(1 + cfg.json_retries):
         p = prompt if attempt == 0 else prompt + prompts.RETRY_SUFFIX
-        gen = backend.generate(p, images, cfg.params(max_tokens))
+        if attempt == 0 and on_text is not None:
+            gen = backend.generate(p, images, cfg.params(max_tokens), on_text=on_text)
+        else:
+            gen = backend.generate(p, images, cfg.params(max_tokens))
         raw_path = write_raw(run_dir, f"{name}_attempt{attempt + 1}", gen.text)
         if model is None:
             text = gen.text.strip()
@@ -194,18 +201,53 @@ def _decomposed(backend, run_dir, insp, tgt, cfg):
     partial = {k: v for k, v in (("aesthetic", aesthetic), ("target_scene", target)) if v} or None
     if not (aesthetic and target):
         return None, partial, stages
+    streamed: list[dict] = []
     comps, st = _run_stage(
         backend, run_dir, "compositions",
-        prompts.compositions_from_parts(aesthetic, target, cfg.subject, cfg.shot_format),
+        prompts.photographer_asks(prompts.compositions_from_parts(aesthetic, target, cfg.subject, cfg.shot_format), cfg.brief),
         [tgt], schema.shot_set(cfg.shot_format), cfg,
         {"v2": max(cfg.max_tokens, SHOT_V2_TOKENS), "v3": max(cfg.max_tokens, SHOT_V3_TOKENS),
-         "v4": max(cfg.max_tokens, SHOT_V3_TOKENS)}.get(cfg.shot_format),
+         "v4": max(cfg.max_tokens, SHOT_V3_TOKENS), "v5": max(cfg.max_tokens, SHOT_V3_TOKENS),
+         "v6": max(cfg.max_tokens, SHOT_V3_TOKENS), "v7": max(cfg.max_tokens, SHOT_V3_TOKENS)}.get(cfg.shot_format),
+        on_text=_look_streamer(cfg.shot_format, streamed),
     )
     stages.append(st)
     result = {"aesthetic": aesthetic, "target_scene": target, **comps} if comps else None
-    for comp in (comps or {}).get("compositions", []):
+    # Looks already sent while generating are not sent again. If the first attempt failed as a whole and a
+    # retry produced the final set, only the final looks after the streamed ones are added.
+    for comp in (comps or {}).get("compositions", [])[len(streamed):]:
         _emit({"type": "shot", "shot": comp})
+    if streamed:
+        st["streamed_looks"] = len(streamed)
     return result, partial, stages
+
+
+MAX_LOOKS = 3  # schema.validate keeps the first 3 compositions; never stream more than that
+
+
+def _look_streamer(shot_format: str, streamed: list[dict]):
+    """Text callback that sends each look to the event sink as soon as its JSON object is complete and valid
+    on its own. None when nobody is listening (benchmarks, CLI), so those runs keep the non-streaming path."""
+    if _EVENT_SINK.get() is None:
+        return None
+    items = ArrayItemStream()
+    look_model = schema.shot_model(shot_format)
+    stopped = False
+
+    def on_text(piece: str) -> None:
+        nonlocal stopped
+        for obj in items.feed(piece):
+            if stopped or len(streamed) >= MAX_LOOKS:
+                return
+            look, errors = schema.validate(look_model, obj, prompts.ALL_FIELD_DESCRIPTIONS)
+            if errors or look is None:
+                # stop at the first bad look so looks stay in order; the end-of-stage pass sends the rest
+                stopped = True
+                return
+            streamed.append(look)
+            _emit({"type": "shot", "shot": look})
+
+    return on_text
 
 
 SHOT_V2_TOKENS = 2200  # three shot-v2 looks run ~1.3-1.8K tokens; leave headroom so JSON isn't cut off
@@ -246,8 +288,30 @@ def _scene_director(backend, run_dir, insp, tgt, cfg):
     return partial, None, stages
 
 
+def _scenery_director(backend, run_dir, insp, tgt, cfg):
+    scene, st = _run_stage(backend, run_dir, "scene", prompts.scenery_scene(), [tgt], schema.TargetScene, cfg,
+                           min(600, cfg.max_tokens))
+    stages = [st]
+    _emit({"type": "stage", "stage": "readingScene"})
+    partial = {"mode": "scenery", "style": {"key": None, "label": "scenery", "brief": cfg.brief},
+               "target_scene": scene, "compositions": []}
+    if scene is None:
+        return None, None, stages
+    for k in range(1, min(cfg.n_looks, len(prompts.SCENERY_LOOK_PLANS)) + 1):
+        look, st = _run_stage(
+            backend, run_dir, f"look{k}", prompts.scenery_look(scene, cfg.brief, k, partial["compositions"]),
+            [tgt], schema.ShotScenery, cfg, min(LOOK_TOKENS, cfg.max_tokens),
+        )
+        stages.append(st)
+        if look is None:
+            return None, partial, stages
+        partial["compositions"].append(look)
+        _emit({"type": "shot", "shot": look})
+    return partial, None, stages
+
+
 _STRATEGY_FUNCS = {"single_pass": _single_pass, "two_stage": _two_stage, "decomposed": _decomposed,
-                   SCENE_STRATEGY: _scene_director}
+                   SCENE_STRATEGY: _scene_director, SCENERY_STRATEGY: _scenery_director}
 
 
 def _normalize_config(cfg: RunConfig) -> RunConfig:
@@ -255,6 +319,9 @@ def _normalize_config(cfg: RunConfig) -> RunConfig:
         raise InputError(f"mode must be one of {MODES}")
     if cfg.shot_format not in schema.SHOT_FORMATS:
         raise InputError(f"shot_format must be one of {schema.SHOT_FORMATS}")
+    if cfg.mode == "scenery":
+        cfg.strategy, cfg.shot_format = SCENERY_STRATEGY, "v2"
+        return cfg
     if cfg.mode == "scene":
         if cfg.style and cfg.style not in prompts.STYLE_BRIEFS:
             raise InputError(f"style must be one of {tuple(prompts.STYLE_BRIEFS)}")
@@ -264,7 +331,7 @@ def _normalize_config(cfg: RunConfig) -> RunConfig:
         return cfg
     if cfg.strategy not in STRATEGIES:
         raise InputError(f"strategy must be one of {STRATEGIES}")
-    if cfg.shot_format in ("v2", "v3", "v4") and cfg.strategy != "decomposed":
+    if cfg.shot_format in ("v2", "v3", "v4", "v5", "v6", "v7") and cfg.strategy != "decomposed":
         raise InputError(f"shot-{cfg.shot_format} in inspiration mode needs the decomposed strategy")
     return cfg
 

@@ -78,7 +78,7 @@ class MLXVLMBackend:
             raise ValueError("interleaved images need a processor chat template")
         return apply_chat_template(self._processor, self._model.config, prompt, num_images=n_images)
 
-    def generate(self, prompt: str, images: list[str], params: GenerationParams) -> Generation:
+    def generate(self, prompt: str, images: list[str], params: GenerationParams, on_text=None) -> Generation:
         import mlx.core as mx
         from mlx_vlm import generate
 
@@ -91,9 +91,12 @@ class MLXVLMBackend:
         if hasattr(mx, "reset_peak_memory"):
             mx.reset_peak_memory()
         t0 = time.perf_counter()
-        result = generate(
-            self._model, self._processor, formatted, image=images or None, verbose=False, **kwargs
-        )
+        if on_text is None:
+            result = generate(
+                self._model, self._processor, formatted, image=images or None, verbose=False, **kwargs
+            )
+        else:
+            result = self._stream(formatted, images, kwargs, on_text)
         wall = time.perf_counter() - t0
         return Generation(
             text=result.text,
@@ -104,6 +107,35 @@ class MLXVLMBackend:
             generation_tps=result.generation_tps,
             peak_memory_gb=result.peak_memory,
             finish_reason=getattr(result, "finish_reason", None),
+        )
+
+    def _stream(self, formatted: str, images: list[str], kwargs: dict, on_text):
+        """mlx-vlm's generate() is a loop over stream_generate(); this is the same loop, passing each piece of
+        text on as it arrives. It resets the stop tokens and cleans the final text exactly as generate() does."""
+        from mlx_vlm import stream_generate
+        from mlx_vlm.generate.common import GenerationResult
+
+        tokenizer = getattr(self._processor, "tokenizer", self._processor)
+        tokenizer.stopping_criteria.reset(self._model.config.eos_token_id)
+        text, last = "", None
+        for response in stream_generate(self._model, self._processor, formatted, images or None, **kwargs):
+            if response.is_draft:
+                continue
+            text += response.text
+            last = response
+            if response.text:
+                on_text(response.text)
+        clean_output = getattr(self._processor, "clean_output", None)
+        if callable(clean_output):
+            text = clean_output(text)
+        if last is None:
+            import mlx.core as mx
+
+            return GenerationResult(text=text, peak_memory=mx.get_peak_memory() / 1e9)
+        return GenerationResult(
+            text=text, prompt_tokens=last.prompt_tokens, generation_tokens=last.generation_tokens,
+            prompt_tps=last.prompt_tps, generation_tps=last.generation_tps, peak_memory=last.peak_memory,
+            finish_reason=last.finish_reason,
         )
 
     def inspect_inputs(self, prompt: str, images: list[str]) -> dict:

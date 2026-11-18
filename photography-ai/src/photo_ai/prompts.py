@@ -49,6 +49,25 @@ History
      tilt) because the distance/lens reason now lives in zoom_or_lens, which keeps the output about as long as v10
      (v10 projected 59.9 s full on the iPhone against a 60 s budget). Only shot_format "v4" prompts are new; v10
      (shot-v3) and every older prompt stay byte-identical. shot-v4 runs record PROMPT_VERSION_V11.
+  v12 (2026-11-16.12) shot-v5 = shot-v4 with zoom_or_lens moved directly ahead of distance_and_framing, and the
+     distance written as "About <N> m at <amount>x". Key order is generation order: in v11 the model wrote the
+     distance before it had chosen the zoom, so trained models zoomed to 2x but kept the 1x distance (17-31% of
+     zoomed looks on portrait_v1) although every training label had the scaled distance. Same fields and rules
+     otherwise; v11 and every older prompt stay byte-identical. shot-v5 runs record PROMPT_VERSION_V12.
+  v13 (2026-11-17.13) shot-v6 = shot-v5 without the "at <amount>x" in distance_and_framing: same order (zoom right
+     before distance) and rule line, but the distance is plain again ("About 4 m; full body"). v5 fixed the
+     step-back check but cost ~18 composition tokens; v6 tests whether the order alone does it. shot-v6 runs
+     record PROMPT_VERSION_V13; v12 and older prompts stay byte-identical.
+  v14 (2026-11-17.14) shot-v7 = shot-v5 without uses_principle. v5 fixed the step-back check but ran 1002.5
+     composition tokens (gate 982.5) and 36.9 s projected on-site (gate 36.2); uses_principle was ~18 tokens per
+     look and the app never shows it. shot-v7 runs record PROMPT_VERSION_V14; older prompts stay byte-identical.
+  v15 (2026-11-17.15) Scene Director look prompt in step with shot-v7: zoom_or_lens moves directly ahead of
+     distance_and_framing in scene_look (SCENE_SHOT_FIELDS_V15); the field text, the room_to_step_back /
+     background_worth_enlarging fields (still last) and every rule are unchanged, and the distance stays plain (no
+     "at <amount>x"). Scene-mode runs now record PROMPT_VERSION_V15 (scenery and inspiration are unchanged);
+     scene_look(zoom_first=False) still renders the earlier scene prompt byte for byte. The training export moves the
+     key in each scene look's target (labels unchanged), and the iOS app's generated copy (OfflinePromptData.swift)
+     is re-exported from this prompt.
 """
 
 from __future__ import annotations
@@ -66,9 +85,21 @@ PROMPT_VERSION_V8 = "2026-11-12.8"  # shot-v3 with short reasoning (run reason-s
 PROMPT_VERSION_V9 = "2026-11-13.9"  # shot-v3, setup_choice names the framing (run reason-choices-r16-v3-20261113)
 PROMPT_VERSION_V10 = "2026-11-13.10"  # shot-v3 with word-limited instruction fields; what version_for returns for v3
 PROMPT_VERSION_V11 = "2026-11-14.11"  # shot-v4: shot-v3 + a 1-2x zoom amount with a reason
+PROMPT_VERSION_V12 = "2026-11-16.12"  # shot-v5: shot-v4 with the zoom chosen before the distance
+PROMPT_VERSION_V13 = "2026-11-17.13"  # shot-v6: shot-v5 order, distance without "at <amount>x"
+PROMPT_VERSION_V14 = "2026-11-17.14"  # shot-v7: shot-v5 without uses_principle
+PROMPT_VERSION_V15 = "2026-11-17.15"  # Scene Director look: zoom_or_lens directly ahead of distance_and_framing
 
 
 def version_for(mode: str = "inspiration", shot_format: str = "v1") -> str:
+    if mode == "scene":
+        return PROMPT_VERSION_V15
+    if shot_format == "v7":
+        return PROMPT_VERSION_V14
+    if shot_format == "v6":
+        return PROMPT_VERSION_V13
+    if shot_format == "v5":
+        return PROMPT_VERSION_V12
     if shot_format == "v4":
         return PROMPT_VERSION_V11
     if shot_format == "v3":
@@ -146,19 +177,87 @@ ZOOM_FIELDS_V4 = {
                     "and stepping back, or staying at 1x and stepping closer, does for this look",
 }
 COMPOSITION_FIELDS_V4 = {**COMPOSITION_FIELDS_V3, **ZOOM_FIELDS_V4}  # same key order as shot-v3
+# shot-v5 (prompt v12): the zoom is chosen first, then the distance for it. v4 kept shot-v3's order, so the
+# distance was generated before the zoom and trained models wrote the 1x distance under a 2x zoom.
+ZOOM_FIELDS_V5 = {
+    "zoom_or_lens": ZOOM_FIELDS_V4["zoom_or_lens"],
+    "distance_and_framing": "distance for the zoom above, written \"About <N> m at <amount>x\" (the 1x distance "
+                            "times the zoom), then how much of the subject is in frame",
+}
+
+
+def _v5_fields() -> dict:
+    out = {}
+    for k, v in COMPOSITION_FIELDS_V4.items():
+        if k == "distance_and_framing":
+            out.update(ZOOM_FIELDS_V5)
+        elif k != "zoom_or_lens":
+            out[k] = v
+    return out
+
+
+COMPOSITION_FIELDS_V5 = _v5_fields()  # shot-v4 fields, zoom_or_lens moved directly ahead of distance_and_framing
+# shot-v6 (prompt v13): v5's order with a plain distance description (no "at <amount>x" written out).
+COMPOSITION_FIELDS_V6 = {**COMPOSITION_FIELDS_V5, "distance_and_framing":
+                         "approximate distance for the zoom above and how much of the subject is in frame"}
+# shot-v7 (prompt v14): v5 without uses_principle (~18 tokens a look, not shown in the app).
+DROPPED_V7 = ("uses_principle",)
+COMPOSITION_FIELDS_V7 = {k: v for k, v in COMPOSITION_FIELDS_V5.items() if k not in DROPPED_V7}
 SCENE_SHOT_FIELDS = {
     **COMPOSITION_FIELDS_V2,
     "title": "a short name for this look",
     "uses_principle": "which part of the style brief this look puts into practice",
+    "room_to_step_back": "yes if the photographer can safely stand about twice as far back as this look says (open ground, no wall, water edge, drop or traffic behind them), otherwise no",
+    "background_worth_enlarging": "yes if a distant landmark or clutter in the background is worth enlarging or cropping with a 2x zoom (a tower, bridge, arch, skyline, peaks), otherwise no",
 }
+
+
+def _zoom_before_distance(fields: dict) -> dict:
+    """The same fields with zoom_or_lens moved directly ahead of distance_and_framing (key order is generation
+    order, so the zoom is chosen before the distance for it)."""
+    out = {}
+    for k, v in fields.items():
+        if k == "distance_and_framing":
+            out["zoom_or_lens"] = fields["zoom_or_lens"]
+        if k != "zoom_or_lens":
+            out[k] = v
+    return out
+
+
+# Scene Director look, prompt v15: SCENE_SHOT_FIELDS with the shot-v7 zoom-then-distance order. Same field text;
+# room_to_step_back and background_worth_enlarging stay last, as before.
+SCENE_SHOT_FIELDS_V15 = _zoom_before_distance(SCENE_SHOT_FIELDS)
 DIRECTOR_TARGET_FIELDS = {
     **TARGET_FIELDS,
     "people_in_frame": "who is visible in the photo, where they are and what they are physically doing, or the word none; describe only what can be seen",
 }
 
+SCENERY_TARGET_FIELDS = {
+    "description": "one or two sentences on the view: what it is and what dominates it",
+    "key_elements[]": "3-6 specific things visible that a shot can use (a peak, a tree, a shoreline, a path, clouds, a light source)",
+    "constraints[]": "1-3 things in the photo that limit the shot, e.g. harsh midday light, a bare sky, clutter at the edges",
+    "people_in_frame": "any people visible and where they are, or the word none",
+}
+
+SCENERY_SHOT_FIELDS = {
+    "title": "a short name for this look",
+    "camera_position": "where to stand, relative to named things in the photo, under 14 words",
+    "camera_height": "how high to hold the phone: ground level, knee, chest, eye level or raised overhead",
+    "camera_angle": "tilt up, down or level, and roughly how much",
+    "subject_position": "where the main feature (the peak, tree, sun, shoreline) sits in the frame, e.g. the left third with the horizon on the lower third line",
+    "distance_and_framing": "how much of the view is in the frame: the whole vista, a layered foreground, or a tight crop of one feature",
+    "orientation": "portrait or landscape, and why",
+    "zoom_or_lens": "1x, 0.5x or 2x, and why",
+    "lighting_tip": "how to use the light and sky visible in the photo, under 16 words",
+    "visible_evidence[]": "2-3 things you can actually see in the photo that this look depends on, a few words each",
+    "needs_on_site_check[]": "1-2 things the still photo cannot tell you, under 8 words each",
+    "steps[]": "exactly 2 short actionable steps, under 8 words each",
+}
+
 ALL_FIELD_DESCRIPTIONS = {
     d for f in (AESTHETIC_FIELDS, TARGET_FIELDS, COMPOSITION_FIELDS, DIRECTION_FIELDS, SCENE_SHOT_FIELDS,
-                DIRECTOR_TARGET_FIELDS, REASONING_FIELDS, ZOOM_FIELDS_V4) for d in f.values()
+                DIRECTOR_TARGET_FIELDS, REASONING_FIELDS, ZOOM_FIELDS_V4, SCENERY_TARGET_FIELDS,
+                SCENERY_SHOT_FIELDS) for d in f.values()
 }
 
 # Starter style briefs (XHS / 小红书 portrait vocabulary). Each brief steers camera, light, pose,
@@ -273,6 +372,12 @@ REASONING_RULES_V4 = (
     "face in proportion, background kept clean); never write generic praise such as \"looks great\".\n"
     f"{framing.zoom_rules()}\n"
     "In zoom_or_lens write the amount first, then the reason for THIS scene: \"<amount>x: <reason>\"."
+)
+# shot-v5 only: v11's rules plus one line tying the distance to the zoom just chosen.
+REASONING_RULES_V5 = (
+    f"{REASONING_RULES_V4}\n"
+    "Choose zoom_or_lens before distance_and_framing, then give the distance for that zoom: at 2x a half body is "
+    "about 2.4 m, a full body about 4 m, a seated look about 3 m."
 )
 
 _RULES = (
@@ -414,13 +519,17 @@ def aesthetic_from_notes(notes: list[str]) -> str:
 def compositions_from_parts(aesthetic: dict, target: dict, subject: str = DEFAULT_SUBJECT,
                             shot_format: str = "v1") -> str:
     """shot_format "v1" returns exactly the v4 prompt (benchmark and training-template parity); "v3" adds
-    reasoning fields first plus REASONING_RULES; "v4" is v3 plus the 1-2x zoom rules (prompt v11)."""
+    reasoning fields first plus REASONING_RULES; "v4" is v3 plus the 1-2x zoom rules (prompt v11); "v5" is v4 with
+    the zoom chosen before the distance (prompt v12); "v6" is v5 with a plain distance (prompt v13);
+    "v7" is v5 without uses_principle (prompt v14)."""
     style = {k: v for k, v in aesthetic.items() if k != "per_image"}
     fields = {"v2": COMPOSITION_FIELDS_V2, "v3": COMPOSITION_FIELDS_V3,
-              "v4": COMPOSITION_FIELDS_V4}.get(shot_format, COMPOSITION_FIELDS)
+              "v4": COMPOSITION_FIELDS_V4, "v5": COMPOSITION_FIELDS_V5,
+              "v6": COMPOSITION_FIELDS_V6, "v7": COMPOSITION_FIELDS_V7}.get(shot_format, COMPOSITION_FIELDS)
     shape = {"compositions": [_blank(fields)] * 3}
     direction = {"v2": f"\n{DIRECTION_RULES}", "v3": f"\n{REASONING_RULES}",
-                 "v4": f"\n{REASONING_RULES_V4}"}.get(shot_format, "")
+                 "v4": f"\n{REASONING_RULES_V4}", "v5": f"\n{REASONING_RULES_V5}",
+                 "v6": f"\n{REASONING_RULES_V5}", "v7": f"\n{REASONING_RULES_V5}"}.get(shot_format, "")
     return (
         TARGET_LABEL + "\n"
         f"You are a photography director. The TARGET scene photo is described as:\n{_shape(target)}\n\n"
@@ -482,9 +591,12 @@ def _style_text(style_key: str | None, brief: str) -> str:
 
 
 def scene_look(scene: dict, style_key: str | None = None, brief: str = "", subject: str = DEFAULT_SUBJECT,
-               look: int = 1, previous: list[dict] | None = None, total: int = 3) -> str:
-    """Prompt for ONE shot-v2 look (look = 1..3); earlier looks are listed so this one differs."""
-    shot = _blank(SCENE_SHOT_FIELDS)
+               look: int = 1, previous: list[dict] | None = None, total: int = 3, zoom_first: bool = True) -> str:
+    """Prompt for ONE shot-v2 look (look = 1..3); earlier looks are listed so this one differs.
+    zoom_first (prompt v15, the default) lists zoom_or_lens directly ahead of distance_and_framing; False gives the
+    earlier Scene Director prompt byte for byte (distance four fields before the zoom)."""
+    fields = SCENE_SHOT_FIELDS_V15 if zoom_first else SCENE_SHOT_FIELDS
+    shot = _blank(fields)
     avoid = ""
     if previous:
         lines = [f"- Look {i}: {p.get('title', '')}: camera {p.get('camera_position', '')}; "
@@ -498,9 +610,64 @@ def scene_look(scene: dict, style_key: str | None = None, brief: str = "", subje
         f"{_style_text(style_key, brief)}\n\n"
         f"The subject will be {subject}. {PEOPLE_RULE}\n"
         f"{avoid}Propose ONE portrait look, look {look} of {max(3, total)}, in that style. Plan for this look: {ALL_LOOK_PLANS[look - 1]}\n\n"
-        f"{_guide('Fields', SCENE_SHOT_FIELDS)}\n\n"
+        f"{_guide('Fields', fields)}\n\n"
         f"{SPECIFICITY_RULES}\n{DIRECTION_RULES}\n{_RULES}\n{_answer(shot)}"
     )
+
+
+# --- Scenery Director: one photo of a view, no person in the shot -----------------------
+
+SCENERY_RULES = """Direct the photographer, not a model. There is no person to pose: never write a body pose, a head direction or a gaze, and never ask anyone to stand, lean, climb or sit.
+- Every instruction is about where to stand, how to hold the phone, and what goes where in the frame.
+- Use rule-of-thirds placement, leading lines, a foreground layer, and the horizon line; say which one and where.
+- Keep it safe: never ask the photographer to step toward an edge, a cliff, water, a railing, traffic or a rock face. If a spot is not clearly safe from the photo, say to check it in needs_on_site_check and offer a safer alternative.
+- Only use things visible in the photo. Write new instructions for THIS view; do not reuse example sentences."""
+
+SCENERY_LOOK_PLANS = (
+    "WIDE VISTA: the whole view, the horizon on a third line, the main feature off-centre, nothing cut off at the "
+    "edges, phone at chest height and level.",
+    "LAYERED: a low phone height so a foreground element visible in the photo (rocks, grass, a path, a shoreline) "
+    "fills the lower part of the frame and leads toward the main feature.",
+    "DETAIL: zoom to 2x and isolate one feature of the view (a peak, a tree, a patch of light, a cloud) with "
+    "plenty of empty space around it; a new position from the earlier looks.",
+)
+
+
+def scenery_scene() -> str:
+    return (
+        SCENE_LABEL + "\n"
+        "Describe this view for a photographer who is standing there now and wants to photograph the scenery. "
+        "Say what dominates the view, the sky or light, and which things could serve as a foreground or a focal point.\n\n"
+        f"{_guide('Fields', SCENERY_TARGET_FIELDS)}\n\n{_RULES}\n{_answer(_blank(SCENERY_TARGET_FIELDS))}"
+    )
+
+
+def scenery_look(scene: dict, brief: str = "", look: int = 1, previous: list[dict] | None = None) -> str:
+    """Prompt for ONE scenery look (look = 1..3); earlier looks are listed so this one differs."""
+    shot = _blank(SCENERY_SHOT_FIELDS)
+    avoid = ""
+    if previous:
+        lines = [f"- Look {i}: {p.get('title', '')}: camera {p.get('camera_position', '')}; "
+                 f"{p.get('distance_and_framing', '')}; {p.get('subject_position', '')}"
+                 for i, p in enumerate(previous, 1)]
+        avoid = ("Earlier looks for this view (this one must be clearly different in camera position and framing):\n"
+                 + "\n".join(lines) + "\n\n")
+    note = f"The photographer adds: {brief.strip()}\n\n" if brief.strip() else ""
+    return (
+        SCENE_LABEL + "\n"
+        f"You are a landscape photography director. The photo is described as:\n{_shape(scene)}\n\n"
+        f"{note}{avoid}Propose ONE look, look {look} of 3. Plan for this look: {SCENERY_LOOK_PLANS[look - 1]}\n\n"
+        f"{_guide('Fields', SCENERY_SHOT_FIELDS)}\n\n"
+        f"{SCENERY_RULES}\n{_RULES}\n{_answer(shot)}"
+    )
+
+
+def photographer_asks(prompt: str, brief: str | None) -> str:
+    """Appends the photographer's own note to a compositions prompt. Used in inspiration mode when the
+    app asks for a refresh ("give new ideas, different from ..."). An empty brief changes nothing, so
+    benchmark and training prompts are untouched."""
+    note = (brief or "").strip()
+    return f"{prompt}\n\nThe photographer also asks: {note}" if note else prompt
 
 
 RETRY_SUFFIX = (
