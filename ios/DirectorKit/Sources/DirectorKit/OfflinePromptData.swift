@@ -5,7 +5,7 @@ import Foundation
 
 enum OfflinePromptData {
     static let promptVersion = #"""
-2026-11-12.6+2026-11-13.10
+2026-11-17.15+2026-11-13.10
 """#
     static let imageMarker = #"""
 <<image>>
@@ -48,9 +48,9 @@ Fields:
 - camera_height (string): camera height relative to the subject's body or a scene object
 - camera_angle (string): which way to tilt or turn the camera and roughly how much
 - subject_position (string): where the subject stands in the scene and where they sit in the frame
+- zoom_or_lens (string): zoom amount or focal length feel
 - distance_and_framing (string): approximate distance and how much of the subject is in frame
 - orientation (string): portrait, landscape or square
-- zoom_or_lens (string): zoom amount or focal length feel
 - lighting_tip (string): how to use the light that is visible in the target photo
 - visible_evidence (list of strings): things you can actually see in the target photo that this shot depends on
 - needs_on_site_check (list of strings): things the still photo cannot tell you, which the photographer must check by moving the camera or looking around
@@ -59,6 +59,8 @@ Fields:
 - head_direction (string): which way the head turns and whether the chin lifts, drops or stays level
 - gaze (string): exactly where the eyes look: the lens, a named thing in the scene, or a direction out of frame
 - expression_cue (string): optional: one small expression the subject may choose, such as a soft closed-mouth smile; leave empty if it adds little
+- room_to_step_back (string): yes if the photographer can safely stand about twice as far back as this look says (open ground, no wall, water edge, drop or traffic behind them), otherwise no
+- background_worth_enlarging (string): yes if a distant landmark or clutter in the background is worth enlarging or cropping with a 2x zoom (a tower, bridge, arch, skyline, peaks), otherwise no
 
 Make every composition concrete enough to follow without guessing.
 Good: "Hold the camera slightly below the subject's waist." "Place the subject in the left third of the frame." "Tilt up slightly to emphasize height." "Move to the right of the subject so the railing leads into the frame."
@@ -71,7 +73,7 @@ Direct the subject as a photographer would, using only what the scene allows.
 - expression_cue is optional creative direction the subject may choose to follow. Never guess what anyone in the photo feels, and never describe someone's mood or emotion. Leave expression_cue empty when it adds little.
 - Keep every direction safe and checkable: no stepping into traffic, onto ledges, railings or water, and no climbing. Only use walls, seats, steps and ground you can see in the photo; if a pose needs a surface or space the photo does not show, list it in needs_on_site_check.
 Answer with ONLY one JSON object, no markdown, no commentary. Write your own words about THESE photos; do not repeat the field descriptions. Do not repeat list items.
-Return only a JSON object with keys: "title" (a string); "uses_principle" (a string); "camera_position" (a string); "camera_height" (a string); "camera_angle" (a string); "subject_position" (a string); "distance_and_framing" (a string); "orientation" (a string); "zoom_or_lens" (a string); "lighting_tip" (a string); "visible_evidence" (a list of strings); "needs_on_site_check" (a list of strings); "steps" (a list of strings); "body_pose" (a string); "head_direction" (a string); "gaze" (a string); "expression_cue" (a string).
+Return only a JSON object with keys: "title" (a string); "uses_principle" (a string); "camera_position" (a string); "camera_height" (a string); "camera_angle" (a string); "subject_position" (a string); "zoom_or_lens" (a string); "distance_and_framing" (a string); "orientation" (a string); "lighting_tip" (a string); "visible_evidence" (a list of strings); "needs_on_site_check" (a list of strings); "steps" (a list of strings); "body_pose" (a string); "head_direction" (a string); "gaze" (a string); "expression_cue" (a string); "room_to_step_back" (a string); "background_worth_enlarging" (a string).
 """#,
         #"""
 SCENE photo: <<image>>
@@ -91,9 +93,9 @@ Fields:
 - camera_height (string): camera height relative to the subject's body or a scene object
 - camera_angle (string): which way to tilt or turn the camera and roughly how much
 - subject_position (string): where the subject stands in the scene and where they sit in the frame
+- zoom_or_lens (string): zoom amount or focal length feel
 - distance_and_framing (string): approximate distance and how much of the subject is in frame
 - orientation (string): portrait, landscape or square
-- zoom_or_lens (string): zoom amount or focal length feel
 - lighting_tip (string): how to use the light that is visible in the target photo
 - visible_evidence (list of strings): things you can actually see in the target photo that this shot depends on
 - needs_on_site_check (list of strings): things the still photo cannot tell you, which the photographer must check by moving the camera or looking around
@@ -102,6 +104,8 @@ Fields:
 - head_direction (string): which way the head turns and whether the chin lifts, drops or stays level
 - gaze (string): exactly where the eyes look: the lens, a named thing in the scene, or a direction out of frame
 - expression_cue (string): optional: one small expression the subject may choose, such as a soft closed-mouth smile; leave empty if it adds little
+- room_to_step_back (string): yes if the photographer can safely stand about twice as far back as this look says (open ground, no wall, water edge, drop or traffic behind them), otherwise no
+- background_worth_enlarging (string): yes if a distant landmark or clutter in the background is worth enlarging or cropping with a 2x zoom (a tower, bridge, arch, skyline, peaks), otherwise no
 
 Make every composition concrete enough to follow without guessing.
 Good: "Hold the camera slightly below the subject's waist." "Place the subject in the left third of the frame." "Tilt up slightly to emphasize height." "Move to the right of the subject so the railing leads into the frame."
@@ -114,7 +118,7 @@ Direct the subject as a photographer would, using only what the scene allows.
 - expression_cue is optional creative direction the subject may choose to follow. Never guess what anyone in the photo feels, and never describe someone's mood or emotion. Leave expression_cue empty when it adds little.
 - Keep every direction safe and checkable: no stepping into traffic, onto ledges, railings or water, and no climbing. Only use walls, seats, steps and ground you can see in the photo; if a pose needs a surface or space the photo does not show, list it in needs_on_site_check.
 Answer with ONLY one JSON object, no markdown, no commentary. Write your own words about THESE photos; do not repeat the field descriptions. Do not repeat list items.
-Return only a JSON object with keys: "title" (a string); "uses_principle" (a string); "camera_position" (a string); "camera_height" (a string); "camera_angle" (a string); "subject_position" (a string); "distance_and_framing" (a string); "orientation" (a string); "zoom_or_lens" (a string); "lighting_tip" (a string); "visible_evidence" (a list of strings); "needs_on_site_check" (a list of strings); "steps" (a list of strings); "body_pose" (a string); "head_direction" (a string); "gaze" (a string); "expression_cue" (a string).
+Return only a JSON object with keys: "title" (a string); "uses_principle" (a string); "camera_position" (a string); "camera_height" (a string); "camera_angle" (a string); "subject_position" (a string); "zoom_or_lens" (a string); "distance_and_framing" (a string); "orientation" (a string); "lighting_tip" (a string); "visible_evidence" (a list of strings); "needs_on_site_check" (a list of strings); "steps" (a list of strings); "body_pose" (a string); "head_direction" (a string); "gaze" (a string); "expression_cue" (a string); "room_to_step_back" (a string); "background_worth_enlarging" (a string).
 """#,
         #"""
 SCENE photo: <<image>>
@@ -134,9 +138,9 @@ Fields:
 - camera_height (string): camera height relative to the subject's body or a scene object
 - camera_angle (string): which way to tilt or turn the camera and roughly how much
 - subject_position (string): where the subject stands in the scene and where they sit in the frame
+- zoom_or_lens (string): zoom amount or focal length feel
 - distance_and_framing (string): approximate distance and how much of the subject is in frame
 - orientation (string): portrait, landscape or square
-- zoom_or_lens (string): zoom amount or focal length feel
 - lighting_tip (string): how to use the light that is visible in the target photo
 - visible_evidence (list of strings): things you can actually see in the target photo that this shot depends on
 - needs_on_site_check (list of strings): things the still photo cannot tell you, which the photographer must check by moving the camera or looking around
@@ -145,6 +149,8 @@ Fields:
 - head_direction (string): which way the head turns and whether the chin lifts, drops or stays level
 - gaze (string): exactly where the eyes look: the lens, a named thing in the scene, or a direction out of frame
 - expression_cue (string): optional: one small expression the subject may choose, such as a soft closed-mouth smile; leave empty if it adds little
+- room_to_step_back (string): yes if the photographer can safely stand about twice as far back as this look says (open ground, no wall, water edge, drop or traffic behind them), otherwise no
+- background_worth_enlarging (string): yes if a distant landmark or clutter in the background is worth enlarging or cropping with a 2x zoom (a tower, bridge, arch, skyline, peaks), otherwise no
 
 Make every composition concrete enough to follow without guessing.
 Good: "Hold the camera slightly below the subject's waist." "Place the subject in the left third of the frame." "Tilt up slightly to emphasize height." "Move to the right of the subject so the railing leads into the frame."
@@ -157,7 +163,7 @@ Direct the subject as a photographer would, using only what the scene allows.
 - expression_cue is optional creative direction the subject may choose to follow. Never guess what anyone in the photo feels, and never describe someone's mood or emotion. Leave expression_cue empty when it adds little.
 - Keep every direction safe and checkable: no stepping into traffic, onto ledges, railings or water, and no climbing. Only use walls, seats, steps and ground you can see in the photo; if a pose needs a surface or space the photo does not show, list it in needs_on_site_check.
 Answer with ONLY one JSON object, no markdown, no commentary. Write your own words about THESE photos; do not repeat the field descriptions. Do not repeat list items.
-Return only a JSON object with keys: "title" (a string); "uses_principle" (a string); "camera_position" (a string); "camera_height" (a string); "camera_angle" (a string); "subject_position" (a string); "distance_and_framing" (a string); "orientation" (a string); "zoom_or_lens" (a string); "lighting_tip" (a string); "visible_evidence" (a list of strings); "needs_on_site_check" (a list of strings); "steps" (a list of strings); "body_pose" (a string); "head_direction" (a string); "gaze" (a string); "expression_cue" (a string).
+Return only a JSON object with keys: "title" (a string); "uses_principle" (a string); "camera_position" (a string); "camera_height" (a string); "camera_angle" (a string); "subject_position" (a string); "zoom_or_lens" (a string); "distance_and_framing" (a string); "orientation" (a string); "lighting_tip" (a string); "visible_evidence" (a list of strings); "needs_on_site_check" (a list of strings); "steps" (a list of strings); "body_pose" (a string); "head_direction" (a string); "gaze" (a string); "expression_cue" (a string); "room_to_step_back" (a string); "background_worth_enlarging" (a string).
 """#
     ]
 

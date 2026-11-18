@@ -61,6 +61,13 @@ History
   v14 (2026-11-17.14) shot-v7 = shot-v5 without uses_principle. v5 fixed the step-back check but ran 1002.5
      composition tokens (gate 982.5) and 36.9 s projected on-site (gate 36.2); uses_principle was ~18 tokens per
      look and the app never shows it. shot-v7 runs record PROMPT_VERSION_V14; older prompts stay byte-identical.
+  v15 (2026-11-17.15) Scene Director look prompt in step with shot-v7: zoom_or_lens moves directly ahead of
+     distance_and_framing in scene_look (SCENE_SHOT_FIELDS_V15); the field text, the room_to_step_back /
+     background_worth_enlarging fields (still last) and every rule are unchanged, and the distance stays plain (no
+     "at <amount>x"). Scene-mode runs now record PROMPT_VERSION_V15 (scenery and inspiration are unchanged);
+     scene_look(zoom_first=False) still renders the earlier scene prompt byte for byte. The training export moves the
+     key in each scene look's target (labels unchanged), and the iOS app's generated copy (OfflinePromptData.swift)
+     is re-exported from this prompt.
 """
 
 from __future__ import annotations
@@ -81,9 +88,12 @@ PROMPT_VERSION_V11 = "2026-11-14.11"  # shot-v4: shot-v3 + a 1-2x zoom amount wi
 PROMPT_VERSION_V12 = "2026-11-16.12"  # shot-v5: shot-v4 with the zoom chosen before the distance
 PROMPT_VERSION_V13 = "2026-11-17.13"  # shot-v6: shot-v5 order, distance without "at <amount>x"
 PROMPT_VERSION_V14 = "2026-11-17.14"  # shot-v7: shot-v5 without uses_principle
+PROMPT_VERSION_V15 = "2026-11-17.15"  # Scene Director look: zoom_or_lens directly ahead of distance_and_framing
 
 
 def version_for(mode: str = "inspiration", shot_format: str = "v1") -> str:
+    if mode == "scene":
+        return PROMPT_VERSION_V15
     if shot_format == "v7":
         return PROMPT_VERSION_V14
     if shot_format == "v6":
@@ -200,6 +210,23 @@ SCENE_SHOT_FIELDS = {
     "room_to_step_back": "yes if the photographer can safely stand about twice as far back as this look says (open ground, no wall, water edge, drop or traffic behind them), otherwise no",
     "background_worth_enlarging": "yes if a distant landmark or clutter in the background is worth enlarging or cropping with a 2x zoom (a tower, bridge, arch, skyline, peaks), otherwise no",
 }
+
+
+def _zoom_before_distance(fields: dict) -> dict:
+    """The same fields with zoom_or_lens moved directly ahead of distance_and_framing (key order is generation
+    order, so the zoom is chosen before the distance for it)."""
+    out = {}
+    for k, v in fields.items():
+        if k == "distance_and_framing":
+            out["zoom_or_lens"] = fields["zoom_or_lens"]
+        if k != "zoom_or_lens":
+            out[k] = v
+    return out
+
+
+# Scene Director look, prompt v15: SCENE_SHOT_FIELDS with the shot-v7 zoom-then-distance order. Same field text;
+# room_to_step_back and background_worth_enlarging stay last, as before.
+SCENE_SHOT_FIELDS_V15 = _zoom_before_distance(SCENE_SHOT_FIELDS)
 DIRECTOR_TARGET_FIELDS = {
     **TARGET_FIELDS,
     "people_in_frame": "who is visible in the photo, where they are and what they are physically doing, or the word none; describe only what can be seen",
@@ -564,9 +591,12 @@ def _style_text(style_key: str | None, brief: str) -> str:
 
 
 def scene_look(scene: dict, style_key: str | None = None, brief: str = "", subject: str = DEFAULT_SUBJECT,
-               look: int = 1, previous: list[dict] | None = None, total: int = 3) -> str:
-    """Prompt for ONE shot-v2 look (look = 1..3); earlier looks are listed so this one differs."""
-    shot = _blank(SCENE_SHOT_FIELDS)
+               look: int = 1, previous: list[dict] | None = None, total: int = 3, zoom_first: bool = True) -> str:
+    """Prompt for ONE shot-v2 look (look = 1..3); earlier looks are listed so this one differs.
+    zoom_first (prompt v15, the default) lists zoom_or_lens directly ahead of distance_and_framing; False gives the
+    earlier Scene Director prompt byte for byte (distance four fields before the zoom)."""
+    fields = SCENE_SHOT_FIELDS_V15 if zoom_first else SCENE_SHOT_FIELDS
+    shot = _blank(fields)
     avoid = ""
     if previous:
         lines = [f"- Look {i}: {p.get('title', '')}: camera {p.get('camera_position', '')}; "
@@ -580,7 +610,7 @@ def scene_look(scene: dict, style_key: str | None = None, brief: str = "", subje
         f"{_style_text(style_key, brief)}\n\n"
         f"The subject will be {subject}. {PEOPLE_RULE}\n"
         f"{avoid}Propose ONE portrait look, look {look} of {max(3, total)}, in that style. Plan for this look: {ALL_LOOK_PLANS[look - 1]}\n\n"
-        f"{_guide('Fields', SCENE_SHOT_FIELDS)}\n\n"
+        f"{_guide('Fields', fields)}\n\n"
         f"{SPECIFICITY_RULES}\n{DIRECTION_RULES}\n{_RULES}\n{_answer(shot)}"
     )
 

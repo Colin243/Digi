@@ -269,3 +269,22 @@ estimated from the labels) and 2.8 s on-site. Watch:
 - setup cues stated fell 0.65 -> 0.55, possibly because `uses_principle` carried some of them.
 
 One greedy run per adapter. Still UNREVIEWED drafts: format evidence only until a human reviews the labels.
+
+### Scene Director look in step: prompt v15 (2026-11-17)
+
+The Scene Director look prompt now uses shot-v7's order: `zoom_or_lens` sits directly ahead of
+`distance_and_framing` (`prompts.SCENE_SHOT_FIELDS_V15`, `scene_look(zoom_first=True)`, the default). Field text and
+rules are unchanged. The distance stays plain, with no "at <amount>x" (scene labels already scale it: 0 of 15
+zoomed looks kept the 1x distance). `room_to_step_back` / `background_worth_enlarging` stay last.
+Scene-mode runs record `PROMPT_VERSION_V15` ("2026-11-17.15"). Scenery and inspiration versions are unchanged.
+
+- Training rows: `export_modes.scene_rows` and `picks.export` move the key in each look target at export time
+  (`export._zoom_first(..., name_zoom=False)`). The answer files are not touched. `export_modes --scene-distance-first`
+  and `scene_look(zoom_first=False)` render the old order byte for byte, for rebuilding mix2-v7 as it was.
+- iOS: `OfflinePromptData.swift` and `offline_prompt_golden.json` were re-exported with
+  `ios-bench/scripts/export_director_prompts.py`, so `promptVersion` is now `2026-11-17.15+2026-11-13.10`. The re-export
+  also adds the room/background fields, which the app copy had been missing since 857b8ed.
+- Not done: no data rebuild, training run or bench. `sft-UNREVIEWED-mix2-v7`'s 144 scene look rows (48 scenes x 3)
+  use the old order, so the next mix should be rebuilt with `export_modes` (default order) before any training.
+- Still out of step: the on-device inspiration prompt is the shot-v3 compositions prompt (`shot_format="v3"` in the
+  export script), not shot-v7.
