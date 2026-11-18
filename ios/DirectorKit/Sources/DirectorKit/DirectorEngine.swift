@@ -22,6 +22,8 @@ public enum DirectorMode: String, Codable, Sendable {
     case inspiration
     /// One scene photo plus a style brief (Scene Director).
     case scene
+    /// One photo of a view, no person to pose (Scenery Director). Style is not used; a note is optional.
+    case scenery
 }
 
 /// What an engine is allowed to send off the phone. The router resolves this; engines obey it.
@@ -70,6 +72,8 @@ extension DirectorRequest {
             guard style != nil || !(brief ?? "").trimmingCharacters(in: .whitespaces).isEmpty else {
                 throw DirectorError.invalidRequest("Choose a style or write a short brief.")
             }
+        case .scenery:
+            guard insp == 0 else { throw DirectorError.invalidRequest("Scenery mode takes one photo and no references.") }
         case .inspiration:
             guard (3...5).contains(insp) else { throw DirectorError.invalidRequest("Add 3 to 5 inspiration photos.") }
         }
