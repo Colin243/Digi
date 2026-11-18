@@ -41,6 +41,7 @@ h2{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--mute
 .chips{display:flex;gap:6px;flex-wrap:wrap}
 .qrow{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(60px,1fr) auto;gap:10px;align-items:center}
 .qname{font:12px var(--mono);overflow-wrap:anywhere}
+.warnbox{border-color:var(--warn);color:var(--warn);font-size:13px}
 .empty{color:var(--muted);font-size:13px;padding:6px 0}
 </style>
 </head>
@@ -51,6 +52,7 @@ h2{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--mute
     <span class="live"><span id="dot" class="dot"></span><span id="stamp">connecting…</span></span>
   </header>
 
+  <div id="overlap" class="card warnbox" hidden></div>
   <section><h2>Running jobs</h2><div id="jobs" class="grid"></div></section>
   <section><h2>Benchmark queue</h2><div id="queue" class="grid"></div></section>
   <section id="svc-wrap" hidden><h2>Services</h2><div id="svc" class="grid"></div></section>
@@ -106,6 +108,8 @@ async function tick(){
     const s = await r.json();
     const jobs = s.training.map(j=>job('Training',j)).concat(s.benches.map(j=>job('Benchmark',j)));
     $('jobs').innerHTML = jobs.join('') || '<div class="empty">No training or benchmark process is running.</div>';
+    $('overlap').hidden = !s.overlap.length;
+    $('overlap').textContent = s.overlap.length ? 'Overlap: ' + s.overlap.join(' + ') + ' are running at the same time. Pause one; this machine has 18 GB of RAM.' : '';
     $('queue').innerHTML = s.queue.map(queueCard).join('') || '<div class="empty">No benchmark script is running.</div>';
     $('svc-wrap').hidden = !s.services.length;
     $('svc').innerHTML = s.services.map(v => `<div class="card"><div class="row"><span class="name">API server :${esc(v.port)}</span>

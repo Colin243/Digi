@@ -198,7 +198,10 @@ def worktrees():
 
 def status():
     procs = processes()
-    return {"time": time.time(), "training": training(procs), "benches": benches(procs),
+    tr, bn = training(procs), benches(procs)
+    # Only one heavy job at a time fits in 18 GB; a paused (SIGSTOP) job does not count.
+    active = [t["name"] for t in tr if t["state"] == "running"] + [b["name"] for b in bn if b["state"] == "running"]
+    return {"time": time.time(), "training": tr, "benches": bn, "overlap": active if len(active) > 1 else [],
             "queue": queue(procs), "services": services(procs), "worktrees": worktrees()}
 
 
