@@ -1,6 +1,7 @@
 """Zoom versus distance: shot-v4 / prompt v11 and the informational zoom check (framing.zoom_fit)."""
 
 import hashlib
+import json
 
 import pytest
 
@@ -12,10 +13,11 @@ AES = {"summary": "s", "principles": ["p"]}
 TGT = {"description": "d", "key_elements": ["k"]}
 
 # sha256[:16] of every pre-v11 prompt, taken before shot-v4 was added. v10 (shot-v3) and older must not move.
-# The scene hashes are the Scene Director look after room_to_step_back and background_worth_enlarging were added.
 FROZEN = {"shape-v1": "bbd57741acb5abcf", "shape-v2": "68eb31e6cdec2c93", "shape-v3": "e1827e678bc1fe35",
           "shape-scene": "b438dc1a3e5d52ae", "keys-v1": "27b967607840e1c1", "keys-v2": "f6f8c668101cc275",
           "keys-v3": "fc45bf534ec06a24", "keys-scene": "8e43ba89e60d840a"}
+# The scene hashes are the pre-v15 Scene Director look (zoom_first=False), taken after room_to_step_back and
+# background_worth_enlarging were added (commit 857b8ed); before that they were 64ca8c883f6917da / 786338c9dece6226.
 
 
 def _h(s: str) -> str:
@@ -27,7 +29,7 @@ def test_older_prompts_are_byte_identical(fmt):
     with prompts.json_format(fmt):
         for sf in ("v1", "v2", "v3"):
             assert _h(prompts.compositions_from_parts(AES, TGT, shot_format=sf)) == FROZEN[f"{fmt}-{sf}"], sf
-        assert _h(prompts.scene_look({"description": "d"}, "relaxed_candid")) == FROZEN[f"{fmt}-scene"]
+        assert _h(prompts.scene_look({"description": "d"}, "relaxed_candid", zoom_first=False)) == FROZEN[f"{fmt}-scene"]
     assert prompts.version_for("inspiration", "v3") == prompts.PROMPT_VERSION_V10
 
 
@@ -152,3 +154,52 @@ def test_v7_is_v5_without_uses_principle():
     p = prompts.compositions_from_parts(AES, TGT, shot_format="v7")
     assert "uses_principle" not in p and p.index("- zoom_or_lens") < p.index("- distance_and_framing")
     assert "uses_principle" in prompts.compositions_from_parts(AES, TGT, shot_format="v5")
+
+
+def test_v15_scene_look_chooses_zoom_before_distance():
+    """Scene Director look prompt v15: same fields as before, zoom_or_lens right ahead of distance_and_framing."""
+    keys = list(prompts.SCENE_SHOT_FIELDS_V15)
+    assert keys.index("zoom_or_lens") + 1 == keys.index("distance_and_framing")
+    assert prompts.SCENE_SHOT_FIELDS_V15 == prompts.SCENE_SHOT_FIELDS  # same text, only the order moved
+    assert keys[-2:] == ["room_to_step_back", "background_worth_enlarging"]
+    assert prompts.version_for("scene", "v2") == prompts.PROMPT_VERSION_V15
+    assert prompts.version_for("scenery", "v2") == prompts.PROMPT_VERSION_V5  # scenery prompt unchanged
+    assert prompts.version_for("inspiration", "v7") == prompts.PROMPT_VERSION_V14
+    for fmt in ("shape", "keys"):
+        with prompts.json_format(fmt):
+            p = prompts.scene_look({"description": "d"}, "relaxed_candid")
+            old = prompts.scene_look({"description": "d"}, "relaxed_candid", zoom_first=False)
+            assert p.index("- zoom_or_lens") < p.index("- distance_and_framing")
+            assert old.index("- distance_and_framing") < old.index("- zoom_or_lens")
+            answer = p[p.rindex("\n") + 1:]  # the JSON shape / key list is generated in this order too
+            assert answer.index('"zoom_or_lens"') < answer.index('"distance_and_framing"')
+            assert sorted(p.splitlines()[:-1]) == sorted(old.splitlines()[:-1])  # only the order moved
+            assert len(p) == len(old)
+    # same order as inspiration shot-v7 for the fields the two share
+    shared = [k for k in prompts.COMPOSITION_FIELDS_V7 if k in prompts.SCENE_SHOT_FIELDS_V15]
+    assert shared == [k for k in prompts.SCENE_SHOT_FIELDS_V15 if k in prompts.COMPOSITION_FIELDS_V7]
+
+
+def _scene_example():
+    look = {k.removesuffix("[]"): ([] if k.endswith("[]") else k) for k in prompts.SCENE_SHOT_FIELDS}
+    look["zoom_or_lens"], look["distance_and_framing"] = "2x: soften the wall", "About 2.4 m away; waist up."
+    return {"example_id": "scene-x", "photo_id": "p", "style_key": "relaxed_candid",
+            "scene": {"description": "d"}, "looks": [look, dict(look), dict(look)]}
+
+
+def test_v15_scene_export_moves_zoom_in_the_targets_only():
+    from photo_ai.training import export_modes
+    ex = _scene_example()
+    before = json.dumps(ex, sort_keys=False)
+    rows = export_modes.scene_rows(ex, "train")
+    assert json.dumps(ex, sort_keys=False) == before  # the answer file is not changed
+    for r in rows[1:]:
+        prompt = r["messages"][0]["content"][-1]["text"]
+        target = json.loads(r["messages"][1]["content"][0]["text"])
+        keys = list(target)
+        assert keys.index("zoom_or_lens") + 1 == keys.index("distance_and_framing")
+        assert set(target) == set(ex["looks"][0])
+        assert target["distance_and_framing"] == "About 2.4 m away; waist up."  # plain distance, no "at 2x"
+        assert prompt.index('"zoom_or_lens"') < prompt.index('"distance_and_framing"')  # prompt and target agree
+    old = export_modes.scene_rows(ex, "train", zoom_first=False)
+    assert list(json.loads(old[1]["messages"][1]["content"][0]["text"])) == list(ex["looks"][0])
