@@ -271,7 +271,7 @@ _WIDE_REASON = re.compile(
     r"surroundings|travel|sense of place|tight|narrow (space|street|room|hall|corridor|alley)|no room|can'?t step back|"
     r"cannot step back|small (room|space)|sharp|full (detail|resolution|quality)|step(ping)? closer|stay close|"
     r"up close|leg|taller|scale|small in the|keeps? (her|him|them|the subject) small|un(stretch|distort)|"
-    r"\bfits?\b|whole body|head to toe|keep[s]? .{0,20}(in|the) (frame|view)")
+    r"\bfits?\b|whole body|head to toe|keep[s]? .{0,20}(in|the) (frame|view)|keeps? [^.;]{0,50}\bin (the )?(frame|view)\b")
 
 
 _METRES = re.compile(r"(\d+(?:\.\d+)?)\s*(?:(?:-|–|to)\s*(\d+(?:\.\d+)?)\s*)?(?:m|metres?|meters?)\b")

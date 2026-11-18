@@ -62,6 +62,13 @@ def test_shot_v4_requires_zoom_or_lens():
     ("3x to compress the trees", 3.0, False, True),           # over the 2x cap
     ("1x or 0.5x if the bank is too tight", 1.0, False, True),  # names a lens Digi does not offer
     ("about 48 mm, cleaner background", 2.0, True, True),
+    ("1x: keep the stairs and red posts in the frame", 1.0, True, True),
+    ("1x: keep the path and trees in the frame", 1.0, True, True),
+    ("1x: keep the whole arch in view", 1.0, True, True),
+    ("2x: keep the stairs and red posts in the frame", 2.0, True, False),  # 2x needs a zoom-in reason
+    ("2x: keep the path and trees in the frame", 2.0, True, False),
+    ("1x: keep the stairs in the frame, compress the tower", 1.0, True, False),
+    ("1x: keep going", 1.0, True, False),
     ("portrait mode", None, False, False),
 ])
 def test_zoom_fit(zoom, amount, in_range, matches):
