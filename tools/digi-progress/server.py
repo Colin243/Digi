@@ -13,6 +13,8 @@ REPO = Path(os.environ.get("DIGI_REPO", "/Users/colin/Documents/ChatGPT/DIgit"))
 PHOTO = REPO / "photography-ai"
 HERE = Path(__file__).parent
 PORT = int(os.environ.get("PORT", "8799"))
+STALL_S = int(os.environ.get("STALL_S", "600"))  # no CPU and no new result for this long => "stalled"
+_seen = {}  # key -> (signature, time the signature last changed); lives as long as the server does
 
 
 def sh(*args, cwd=None):
@@ -40,11 +42,21 @@ def last_json_line(path, key):
 
 def processes():
     out = []
-    for line in sh("ps", "-axo", "pid=,stat=,etime=,command=").splitlines():
-        parts = line.strip().split(None, 3)
-        if len(parts) == 4:
-            out.append({"pid": int(parts[0]), "stat": parts[1], "etime": parts[2], "cmd": parts[3]})
+    for line in sh("ps", "-axo", "pid=,stat=,etime=,time=,command=").splitlines():
+        parts = line.strip().split(None, 4)
+        if len(parts) == 5:
+            out.append({"pid": int(parts[0]), "stat": parts[1], "etime": parts[2], "cpu": parts[3], "cmd": parts[4]})
     return out
+
+
+def idle_for(key, signature):
+    """Seconds since `signature` last changed. A job whose CPU time and finished-case count both stand still is hung."""
+    now = time.time()
+    old = _seen.get(key)
+    if old is None or old[0] != signature:
+        _seen[key] = (signature, now)
+        return 0
+    return now - old[1]
 
 
 def training(procs):
@@ -63,15 +75,17 @@ def training(procs):
         step = last_json_line(log, "step")
         done = step["step"] if step else 0
         paused = p["stat"].startswith("T")
+        stalled = not paused and idle_for(("train", p["pid"]), (p["cpu"], done)) > STALL_S
         remaining_s = None
-        if step and step.get("step_s") and not paused:
+        if step and step.get("step_s") and not paused and not stalled:
             remaining_s = (iters - done) * step["step_s"]
         runs.append({
             "name": cfg["run_name"], "model": cfg.get("base_model"),
-            "done": done, "total": iters, "state": "paused" if paused else "running",
+            "done": done, "total": iters, "state": "paused" if paused else ("stalled" if stalled else "running"),
             "loss": step.get("train_loss") if step else None,
             "remaining_s": remaining_s, "elapsed": p["etime"],
-            "note": "Paused (SIGSTOP) until the benchmark finishes" if paused else "",
+            "note": "Paused (SIGSTOP) until the benchmark finishes" if paused else (
+                "No CPU and no new step for over %d min: probably hung" % (STALL_S // 60) if stalled else ""),
         })
     return runs
 
@@ -104,9 +118,12 @@ def benches(procs):
                     done += 1
         except Exception:
             pass
+        paused = p["stat"].startswith("T")
+        stalled = not paused and idle_for(("bench", p["pid"]), (p["cpu"], done)) > STALL_S
         out.append({"name": bid.group(1), "done": done, "total": total or max(done, 1),
-                    "state": "paused" if p["stat"].startswith("T") else "running",
-                    "elapsed": p["etime"], "suite": suite.group(1) if suite else ""})
+                    "state": "paused" if paused else ("stalled" if stalled else "running"),
+                    "elapsed": p["etime"], "suite": suite.group(1) if suite else "",
+                    "note": "No CPU and no new case for over %d min: probably hung or crashed" % (STALL_S // 60) if stalled else ""})
     return out
 
 
@@ -125,12 +142,17 @@ def _expand(template, env):
 def queue(procs):
     """Benchmark queue read from the shell scripts that are running: every `run <bench-id> ...` line, with simple
     `VAR=value` and `for v in a b c; do ... done` expansion, matched against runs/index.jsonl."""
-    scripts, running_ids, paused_ids = [], set(), set()
+    scripts, running_ids, paused_ids, stalled_ids = [], set(), set(), set()
     for p in procs:
         if "photo-ai bench" in p["cmd"] and "grep" not in p["cmd"]:
             m = re.search(r"--bench-id (\S+)", p["cmd"])
             if m:
-                (paused_ids if p["stat"].startswith("T") else running_ids).add(m.group(1))
+                if p["stat"].startswith("T"):
+                    paused_ids.add(m.group(1))
+                elif ("bench", p["pid"]) in _seen and time.time() - _seen[("bench", p["pid"])][1] > STALL_S:
+                    stalled_ids.add(m.group(1))
+                else:
+                    running_ids.add(m.group(1))
         m = re.search(r"(?:^|\s)(/\S+\.sh)$", p["cmd"])
         if m and Path(m.group(1)).exists() and m.group(1) not in [s[0] for s in scripts]:
             scripts.append((m.group(1), p["etime"]))
@@ -162,7 +184,7 @@ def queue(procs):
         rows = []
         for bid in items:
             done = index.count(f'"label": "{bid}"')
-            state = "done" if done >= total else ("running" if bid in running_ids else ("paused" if bid in paused_ids else "queued"))
+            state = "done" if done >= total else ("running" if bid in running_ids else ("stalled" if bid in stalled_ids else ("paused" if bid in paused_ids else "queued")))
             rows.append({"id": bid, "done": min(done, total), "total": total, "state": state})
         out.append({"script": Path(path).name, "up": etime, "items": rows})
     return out
