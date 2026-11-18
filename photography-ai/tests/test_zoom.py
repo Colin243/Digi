@@ -97,3 +97,50 @@ def test_zoomed_setup_must_step_back():
     assert not F.zoom_fit(stepped)["distance_not_scaled"]
     assert not F.zoom_fit({**half, "zoom_or_lens": "1x: show the street"})["distance_not_scaled"]
     assert not F.zoom_fit({**half, "distance_and_framing": "3-4 m, waist up", "zoom_or_lens": "2x: soft"})["distance_not_scaled"]
+
+
+def test_v5_chooses_zoom_before_distance():
+    p = prompts.compositions_from_parts(AES, TGT, shot_format="v5")
+    assert prompts.version_for("inspiration", "v5") == prompts.PROMPT_VERSION_V12
+    keys = list(prompts.COMPOSITION_FIELDS_V5)
+    assert keys.index("zoom_or_lens") + 1 == keys.index("distance_and_framing")
+    assert set(keys) == set(prompts.COMPOSITION_FIELDS_V4)
+    assert p.index("- zoom_or_lens") < p.index("- distance_and_framing") and "Choose zoom_or_lens before" in p
+    # v11 is unchanged
+    v4 = prompts.compositions_from_parts(AES, TGT, shot_format="v4")
+    assert v4.index("- distance_and_framing") < v4.index("- zoom_or_lens") and "Choose zoom_or_lens" not in v4
+
+
+def test_v5_export_moves_zoom_and_names_it_in_the_distance():
+    look = {"scene_reading": "r", "setup_choice": "Half body: wall", "camera_angle": "down",
+            "distance_and_framing": "About 2.4 m away; head to waist.", "orientation": "portrait",
+            "zoom_or_lens": "2x: step back so the wall softens"}
+    out = export._zoom_first(export._ordered(look, "v5"))
+    keys = list(out)
+    assert keys.index("zoom_or_lens") + 1 == keys.index("distance_and_framing") and set(out) == set(look)
+    assert out["distance_and_framing"] == "About 2.4 m away at 2x; head to waist."
+    assert export.distance_with_zoom({"distance_and_framing": "About 4 m; full body.", "zoom_or_lens": "2x: a b c"}) \
+        == "About 4 m at 2x; full body."
+    assert export.distance_with_zoom({"distance_and_framing": "About 1.2 m; waist up.", "zoom_or_lens": "1x: no room"}) \
+        == "About 1.2 m at 1x; waist up."
+    for d in ("About 2 m away at 1.5x, half body", "Whole bridge and sky"):  # already names a zoom / no distance
+        assert export.distance_with_zoom({"distance_and_framing": d, "zoom_or_lens": "2x: a b c"}) == d
+
+
+def test_v6_keeps_v5_order_with_a_plain_distance():
+    assert list(prompts.COMPOSITION_FIELDS_V6) == list(prompts.COMPOSITION_FIELDS_V5)
+    assert prompts.version_for("inspiration", "v6") == prompts.PROMPT_VERSION_V13
+    p = prompts.compositions_from_parts(AES, TGT, shot_format="v6")
+    assert p.index("- zoom_or_lens") < p.index("- distance_and_framing") and "<amount>x\" (the 1x" not in p
+    look = {"distance_and_framing": "About 4 m; full body.", "orientation": "p", "zoom_or_lens": "2x: a b c"}
+    out = export._zoom_first(look, name_zoom=False)
+    assert list(out) == ["zoom_or_lens", "distance_and_framing", "orientation"]
+    assert out["distance_and_framing"] == "About 4 m; full body."
+
+
+def test_v7_is_v5_without_uses_principle():
+    assert list(prompts.COMPOSITION_FIELDS_V7) == [k for k in prompts.COMPOSITION_FIELDS_V5 if k != "uses_principle"]
+    assert prompts.version_for("inspiration", "v7") == prompts.PROMPT_VERSION_V14
+    p = prompts.compositions_from_parts(AES, TGT, shot_format="v7")
+    assert "uses_principle" not in p and p.index("- zoom_or_lens") < p.index("- distance_and_framing")
+    assert "uses_principle" in prompts.compositions_from_parts(AES, TGT, shot_format="v5")
