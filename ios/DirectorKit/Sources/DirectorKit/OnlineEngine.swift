@@ -79,6 +79,9 @@ public final class OnlineEngine: DirectorEngine {
             if let r = p.references { body.addField("references", String(decoding: r, as: UTF8.self)) }
             if let s = p.targetScene { body.addField("target_scene", String(decoding: s, as: UTF8.self)) }
             if let t = p.planToken { body.addField("plan_token", t) }
+            if p.references == nil, let notes = p.notes {
+                body.addField("notes", "[" + notes.map { $0.map { String(decoding: $0, as: UTF8.self) } ?? "null" }.joined(separator: ",") + "]")
+            }
         }
         // With the references prepared, the server does not need the inspiration photos again.
         let skipInspiration = prepared?.references != nil
@@ -164,7 +167,7 @@ public final class OnlineEngine: DirectorEngine {
 
     static func carriesPrepared(_ r: URLRequest) -> Bool {
         let body = String(decoding: r.httpBody ?? Data(), as: UTF8.self)
-        return ["references", "target_scene", "plan_token"].contains { body.contains("name=\"\($0)\"") }
+        return ["references", "target_scene", "plan_token", "notes"].contains { body.contains("name=\"\($0)\"") }
     }
 
     // MARK: Prepare ahead (PrecomputeService)
@@ -221,7 +224,21 @@ public final class OnlineEngine: DirectorEngine {
 }
 
 extension OnlineEngine: PrecomputeService {
-    /// `POST /v1/references`: the inspiration photos' notes and aesthetic.
+    /// `POST /v1/note`: one inspiration photo's notes.
+    public func prepareNote(_ photo: Data) async throws -> Data {
+        var body = MultipartBody()
+        body.addFile("photo", filename: "inspiration.jpg", data: photo)
+        return try Self.json(try await post("v1/note", body, key: "note"))
+    }
+
+    /// `POST /v1/references` with notes already read: the server only builds the aesthetic.
+    public func prepareReferences(notes: [Data]) async throws -> Data {
+        var body = MultipartBody()
+        body.addField("notes", "[" + notes.map { String(decoding: $0, as: UTF8.self) }.joined(separator: ",") + "]")
+        return try Self.json(try await post("v1/references", body, key: "references"))
+    }
+
+    /// `POST /v1/references`: the inspiration photos' notes and aesthetic in one call.
     public func prepareReferences(_ inspiration: [Data]) async throws -> Data {
         var body = MultipartBody()
         for (i, jpeg) in inspiration.enumerated() { body.addFile("inspiration", filename: "inspiration_\(i + 1).jpg", data: jpeg) }

@@ -1,3 +1,4 @@
+import ImageIO
 import SwiftUI
 import PhotosUI
 import DirectorKit
@@ -7,7 +8,9 @@ import DirectorKit
 struct DirectorView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.guidanceTheme) private var theme
-    @StateObject private var model = DirectorModel()
+    /// One Director for the whole app run: closing the sheet (on purpose or by accident) keeps the photos, the note,
+    /// the shots on screen and any plan still streaming, so reopening shows them without another pass.
+    @ObservedObject private var model = DirectorModel.shared
 
     @AppStorage(DirectorDefaults.serverURL) private var serverURL = ""
     @AppStorage(DirectorDefaults.preference) private var preferenceRaw = UserEnginePreference.automatic.rawValue
@@ -15,19 +18,24 @@ struct DirectorView: View {
     @State private var apiKey = DirectorKeychain.read() ?? ""
     @State private var advancedOpen = false
 
-    @State private var mode: DirectorMode = .scene
-    @State private var style: DirectorStyle = .relaxedCandid
-    @State private var brief = ""
+    private var mode: DirectorMode { get { model.mode } nonmutating set { model.mode = newValue } }
+    private var style: DirectorStyle { get { model.style } nonmutating set { model.style = newValue } }
+    private var brief: String { get { model.brief } nonmutating set { model.brief = newValue } }
     @State private var targetItem: PhotosPickerItem?
-    @State private var targetImage: UIImage?
+    private var targetImage: UIImage? { get { model.targetImage } nonmutating set { model.targetImage = newValue } }
     @State private var inspirationItems: [PhotosPickerItem] = []
-    @State private var inspirationImages: [UIImage] = []
+    private var inspirationImages: [UIImage] { get { model.inspirationImages } nonmutating set { model.inspirationImages = newValue } }
+    /// Photos still loading from the library (shown at once, so a pick never looks ignored), and a counter so a newer
+    /// pick replaces an older one that is still loading.
+    @State private var loadingTarget = false
+    @State private var loadingInspiration = 0
+    @State private var inspirationLoad = 0
 
     private var accent: Color { theme.hint ?? theme.accent }
 
     private var canRun: Bool {
         guard targetImage != nil, model.phase != .running else { return false }
-        return mode != .inspiration || (3...5).contains(inspirationImages.count)
+        return mode != .inspiration || (loadingInspiration == 0 && (3...5).contains(inspirationImages.count))
     }
 
     var body: some View {
@@ -48,23 +56,43 @@ struct DirectorView: View {
         .foregroundStyle(theme.silver).tint(accent)
         .fontDesign(theme.cueDesign)
         .preferredColorScheme(.dark)
-        .onChange(of: targetItem) { _, item in load(item) { targetImage = $0 } }
-        .onChange(of: inspirationItems) { _, items in
+        .onChange(of: targetItem) { _, item in
+            guard let item else { return }
+            loadingTarget = true
             Task {
-                var images: [UIImage] = []
-                for item in items { if let d = try? await item.loadTransferable(type: Data.self), let i = UIImage(data: d) { images.append(i) } }
-                inspirationImages = images
+                if let image = await Self.loadPhoto(item) { targetImage = image }
+                if targetItem == item { loadingTarget = false }
+            }
+        }
+        .onChange(of: inspirationItems) { _, items in
+            inspirationLoad += 1
+            let load = inspirationLoad
+            loadingInspiration = items.count
+            Task {
+                // Each photo is shown, and sent to be read ahead, the moment it has loaded, in the order picked.
+                var slots = [UIImage?](repeating: nil, count: items.count)
+                await withTaskGroup(of: (Int, UIImage?).self) { group in
+                    for (i, item) in items.enumerated() { group.addTask { (i, await Self.loadPhoto(item)) } }
+                    for await (i, image) in group {
+                        slots[i] = image
+                        guard load == inspirationLoad else { continue }  // a newer pick is loading
+                        loadingInspiration -= 1
+                        inspirationImages = slots.compactMap { $0 }
+                    }
+                }
+                if load == inspirationLoad { loadingInspiration = 0; inputsChanged() }
             }
         }
         // Inspiration mode: let the server read the photos while the rest is being chosen.
         .onChange(of: targetImage) { _, _ in inputsChanged() }
         .onChange(of: inspirationImages) { _, _ in inputsChanged() }
         .onChange(of: mode) { _, _ in inputsChanged() }
-        .onDisappear { model.inputsChanged(mode: mode, target: nil, inspiration: []) }
+        .onAppear { inputsChanged() }  // resume reading ahead for photos kept from last time
     }
 
     private func inputsChanged() {
-        model.inputsChanged(mode: mode, target: targetImage, inspiration: inspirationImages)
+        model.inputsChanged(mode: mode, target: targetImage, inspiration: inspirationImages,
+                            inspirationComplete: loadingInspiration == 0)
     }
 
     // MARK: input
@@ -77,25 +105,37 @@ struct DirectorView: View {
                     .font(.subheadline).foregroundStyle(.white.opacity(0.65))
             }
             Spacer(minLength: 12)
-            Button { model.cancel(); dismiss() } label: {
-                Image(systemName: "xmark").font(.system(size: 15, weight: .semibold))
-                    .frame(width: 36, height: 36).background(.white.opacity(0.12), in: Circle())
+            Button { dismiss() } label: {  // closing keeps everything; a plan in progress keeps streaming
+                Image(systemName: "xmark").font(.system(size: 16, weight: .semibold))
+                    .frame(width: 44, height: 44).background(.white.opacity(0.12), in: Circle()).contentShape(Circle())
             }.accessibilityLabel("Close").accessibilityIdentifier("director-close")
         }
     }
 
     private var modePicker: some View {
-        Picker("Mode", selection: $mode) {
-            Text("Portrait").tag(DirectorMode.scene)
-            Text("Scenery").tag(DirectorMode.scenery)
-            Text("Inspiration").tag(DirectorMode.inspiration)
-        }.pickerStyle(.segmented).accessibilityIdentifier("director-mode")
+        // Three full-size buttons rather than a segmented control: its thin segments were easy to miss on the phone.
+        HStack(spacing: 8) {
+            ForEach([(DirectorMode.scene, "Portrait"), (.scenery, "Scenery"), (.inspiration, "Inspiration")], id: \.0) { m, title in
+                Button { mode = m } label: {
+                    Text(title).font(.subheadline.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.8)
+                        .frame(maxWidth: .infinity, minHeight: 48)
+                        .background(mode == m ? accent : theme.panel, in: RoundedRectangle(cornerRadius: 14))
+                        .foregroundStyle(mode == m ? Color.black : theme.silver)
+                        .contentShape(RoundedRectangle(cornerRadius: 14))
+                }.buttonStyle(.plain)
+                    .accessibilityAddTraits(mode == m ? .isSelected : [])
+                    .accessibilityIdentifier("director-mode-\(m.rawValue)")
+            }
+        }.accessibilityIdentifier("director-mode")
     }
 
     private var photoCard: some View {
         PhotosPicker(selection: $targetItem, matching: .images) {
             ZStack(alignment: .bottomTrailing) {
-                if let targetImage {
+                if loadingTarget && targetImage == nil {
+                    VStack(spacing: 8) { ProgressView(); Text("Loading photo…").font(.footnote) }
+                        .frame(maxWidth: .infinity).frame(height: 150)
+                } else if let targetImage {
                     Image(uiImage: targetImage).resizable().scaledToFill()
                         .frame(maxWidth: .infinity).frame(height: 190).clipped()
                     Label("Change", systemImage: "photo").font(.footnote.weight(.semibold))
@@ -113,6 +153,7 @@ struct DirectorView: View {
             .clipShape(RoundedRectangle(cornerRadius: 18))
             .overlay(RoundedRectangle(cornerRadius: 18)
                 .stroke(.white.opacity(0.12), style: StrokeStyle(lineWidth: 1, dash: targetImage == nil ? [6, 5] : [])))
+            .contentShape(RoundedRectangle(cornerRadius: 18))
         }.buttonStyle(.plain).accessibilityIdentifier("director-photo")
     }
 
@@ -123,8 +164,9 @@ struct DirectorView: View {
                 HStack(spacing: 8) {
                     ForEach(DirectorStyle.allCases, id: \.self) { s in
                         Button { style = s } label: {
-                            Text(s.label).font(.subheadline.weight(.medium)).padding(.horizontal, 14).padding(.vertical, 9)
-                                .background(style == s ? accent : theme.panel, in: Capsule())
+                            Text(s.label).font(.subheadline.weight(.medium)).padding(.horizontal, 16)
+                                .frame(minHeight: 44)
+                                .background(style == s ? accent : theme.panel, in: Capsule()).contentShape(Capsule())
                                 .foregroundStyle(style == s ? Color.black : theme.silver)
                         }.buttonStyle(.plain)
                     }
@@ -136,10 +178,13 @@ struct DirectorView: View {
     private var inspirationPicker: some View {
         VStack(alignment: .leading, spacing: 10) {
             PhotosPicker(selection: $inspirationItems, maxSelectionCount: 5, matching: .images) {
-                Label("Choose 3 to 5 inspiration photos (\(inspirationImages.count) picked)", systemImage: "photo.stack")
-                    .font(.subheadline.weight(.medium)).frame(maxWidth: .infinity, alignment: .leading)
+                Label(loadingInspiration > 0 ? "Loading \(loadingInspiration) photos…"
+                                             : "Choose 3 to 5 inspiration photos (\(inspirationImages.count) picked)",
+                      systemImage: loadingInspiration > 0 ? "hourglass" : "photo.stack")
+                    .font(.subheadline.weight(.medium)).frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
                     .padding(14).background(theme.panel, in: RoundedRectangle(cornerRadius: 14))
-            }.buttonStyle(.plain)
+                    .contentShape(RoundedRectangle(cornerRadius: 14))
+            }.buttonStyle(.plain).accessibilityIdentifier("director-inspiration")
             if !inspirationImages.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack { ForEach(inspirationImages.indices, id: \.self) { i in
@@ -154,7 +199,7 @@ struct DirectorView: View {
     private var noteField: some View {
         TextField(mode == .scene ? "Optional note, e.g. she prefers seated poses" :
                   mode == .scenery ? "Optional note, e.g. calm and minimal" : "Optional note",
-                  text: $brief)
+                  text: $model.brief)
             .padding(14).background(theme.panel, in: RoundedRectangle(cornerRadius: 14))
     }
 
@@ -164,9 +209,9 @@ struct DirectorView: View {
                 HStack(spacing: 8) {
                     if model.phase == .running { ProgressView().tint(.black) }
                     Text(model.phase == .running ? model.stageText : "Plan my shots").font(.headline)
-                }.frame(maxWidth: .infinity, minHeight: 50)
+                }.frame(maxWidth: .infinity, minHeight: 56)
                     .background(accent.opacity(canRun ? 1 : 0.35), in: RoundedRectangle(cornerRadius: 16))
-                    .foregroundStyle(Color.black)
+                    .foregroundStyle(Color.black).contentShape(RoundedRectangle(cornerRadius: 16))
             }.buttonStyle(.plain).disabled(!canRun).accessibilityIdentifier("director-run")
             if mode == .inspiration && model.phase != .running && model.prepStatus != .idle {
                 Label(model.prepStatus == .working ? "Reading your photos ahead…" : "Photos read ahead: planning will be quicker",
@@ -175,7 +220,10 @@ struct DirectorView: View {
                     .accessibilityIdentifier("director-prep-status")
             }
             if model.phase == .running {
-                Button("Cancel", role: .cancel) { model.cancel() }.font(.subheadline)
+                Button(role: .cancel) { model.cancel() } label: {
+                    Text("Cancel").font(.subheadline.weight(.medium)).frame(maxWidth: .infinity, minHeight: 44)
+                        .background(theme.panel, in: RoundedRectangle(cornerRadius: 14)).contentShape(RoundedRectangle(cornerRadius: 14))
+                }.buttonStyle(.plain).accessibilityIdentifier("director-cancel")
             }
         }
     }
@@ -210,8 +258,8 @@ struct DirectorView: View {
             }
             Button { model.refresh() } label: {
                 Label(refreshTitle, systemImage: "arrow.clockwise").font(.subheadline.weight(.medium))
-                    .frame(maxWidth: .infinity, minHeight: 44)
-                    .background(theme.panel, in: RoundedRectangle(cornerRadius: 14))
+                    .frame(maxWidth: .infinity, minHeight: 48)
+                    .background(theme.panel, in: RoundedRectangle(cornerRadius: 14)).contentShape(RoundedRectangle(cornerRadius: 14))
             }.buttonStyle(.plain).disabled(!model.deck.canRefresh || model.phase == .running)
                 .accessibilityIdentifier("director-refresh")
             Text("Star the shots you like, then refresh to replace the rest.")
@@ -244,7 +292,7 @@ struct DirectorView: View {
                         Text("Best results").tag(DirectorPriority.bestResults.rawValue)
                         Text("Balanced").tag(DirectorPriority.balanced.rawValue)
                         Text("Fastest").tag(DirectorPriority.fastest.rawValue)
-                    }.pickerStyle(.segmented).accessibilityIdentifier("director-priority")
+                    }.pickerStyle(.segmented).controlSize(.large).accessibilityIdentifier("director-priority")
                     Text(priorityNote).font(.footnote).foregroundStyle(.white.opacity(0.55))
 
                     Text("Director server").font(.footnote.weight(.semibold)).foregroundStyle(.white.opacity(0.55)).padding(.top, 6)
@@ -296,9 +344,25 @@ struct DirectorView: View {
         model.run(mode: mode, style: style, brief: brief, target: targetImage, inspiration: inspirationImages)
     }
 
-    private func load(_ item: PhotosPickerItem?, _ apply: @escaping (UIImage) -> Void) {
-        guard let item else { return }
-        Task { if let d = try? await item.loadTransferable(type: Data.self), let i = UIImage(data: d) { apply(i) } }
+    /// Photos load side by side, already shrunk: decoding a full 48 MP library photo took seconds each, during which
+    /// the screen still showed the old pick. The Director sends 1024 px anyway.
+    static func loadPhotos(_ items: [PhotosPickerItem]) async -> [UIImage] {
+        await withTaskGroup(of: (Int, UIImage?).self) { group in
+            for (i, item) in items.enumerated() { group.addTask { (i, await loadPhoto(item)) } }
+            var loaded: [(Int, UIImage)] = []
+            for await (i, image) in group { if let image { loaded.append((i, image)) } }
+            return loaded.sorted { $0.0 < $1.0 }.map(\.1)
+        }
+    }
+
+    static func loadPhoto(_ item: PhotosPickerItem, maxPixels: Int = 1600) async -> UIImage? {
+        guard let data = try? await item.loadTransferable(type: Data.self) else { return nil }
+        guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
+              let thumb = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                  kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceCreateThumbnailWithTransform: true,
+                  kCGImageSourceThumbnailMaxPixelSize: maxPixels] as CFDictionary)
+        else { return UIImage(data: data) }
+        return UIImage(cgImage: thumb)
     }
 }
 
@@ -323,7 +387,7 @@ private struct ShotCard: View {
                 Spacer(minLength: 8)
                 Button(action: onKeep) {
                     Image(systemName: kept ? "star.fill" : "star").font(.title3).foregroundStyle(kept ? .yellow : .white.opacity(0.5))
-                        .frame(width: 36, height: 36)
+                        .frame(width: 44, height: 44).contentShape(Rectangle())
                 }.buttonStyle(.plain).accessibilityLabel(kept ? "Unkeep this shot" : "Keep this shot")
                     .accessibilityIdentifier("director-keep-\(index)")
             }
@@ -341,13 +405,15 @@ private struct ShotCard: View {
                 HStack(spacing: 4) {
                     Text(open ? "Show less" : "Show all details")
                     Image(systemName: open ? "chevron.up" : "chevron.down").font(.caption2.weight(.semibold))
-                }.font(.footnote.weight(.semibold)).foregroundStyle(accent).frame(minHeight: 32)
+                }.font(.footnote.weight(.semibold)).foregroundStyle(accent)
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading).contentShape(Rectangle())
             }.buttonStyle(.plain)
 
             Button(action: onUse) {
                 Text("Use this shot on the camera").font(.subheadline.weight(.semibold))
-                    .frame(maxWidth: .infinity, minHeight: 46)
+                    .frame(maxWidth: .infinity, minHeight: 50)
                     .background(accent, in: RoundedRectangle(cornerRadius: 14)).foregroundStyle(Color.black)
+                    .contentShape(RoundedRectangle(cornerRadius: 14))
             }.buttonStyle(.plain).accessibilityIdentifier("director-use-shot-\(index)")
         }
         .padding(16)

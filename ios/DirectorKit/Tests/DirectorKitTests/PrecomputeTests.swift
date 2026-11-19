@@ -37,8 +37,11 @@ private actor FakeService: PrecomputeService {
         try? await Task.sleep(for: .milliseconds(20))
         running -= 1
     }
-    nonisolated func prepareReferences(_ inspiration: [Data]) async throws -> Data {
-        await call("refs\(inspiration.count)"); return Data(#"{"notes":["a","b","c"]}"#.utf8)
+    nonisolated func prepareNote(_ photo: Data) async throws -> Data {
+        await call("note"); return Data(#"{"note":"n"}"#.utf8)
+    }
+    nonisolated func prepareReferences(notes: [Data]) async throws -> Data {
+        await call("refs\(notes.count)"); return Data(#"{"notes":["a","b","c"]}"#.utf8)
     }
     nonisolated func prepareScene(_ target: Data) async throws -> Data {
         await call("scene")
@@ -84,6 +87,14 @@ final class OnlineEnginePrecomputeTests: XCTestCase {
         XCTAssertTrue(b.contains(#"name="target_scene""#) && b.contains(#"name="plan_token""#))
         XCTAssertEqual(count(b, #"name="inspiration""#), 0)
         XCTAssertEqual(count(b, #"name="target""#), 1)
+    }
+
+    func testPartialNotesAreSentWithAllThePhotos() throws {
+        let note = Data(#"{"note":"n"}"#.utf8)
+        let p = PreparedInputs(targetScene: Data("{}".utf8), notes: [note, nil, note])
+        let b = body(try engine(RoutedHTTP([:])).makeRequest(inspirationRequest(prepared: p)))
+        XCTAssertTrue(b.contains(#"[{"note":"n"},null,{"note":"n"}]"#))
+        XCTAssertEqual(count(b, #"name="inspiration""#), 3, "the plan still needs the photo that was not read")
     }
 
     func testSceneOnlyPreparedStillSendsInspirationPhotos() throws {
@@ -155,7 +166,7 @@ final class PlanPreparerTests: XCTestCase {
         await p.update(target: target, inspiration: insp)
         try await waitIdle(p)
         let log = await s.log, maxRunning = await s.maxRunning
-        XCTAssertEqual(log, ["scene", "refs3", "plan"])
+        XCTAssertEqual(log, ["scene", "note", "note", "note", "refs3", "plan"])
         XCTAssertEqual(maxRunning, 1)
         let status = await p.currentStatus
         XCTAssertEqual(status, .ready)
@@ -171,7 +182,8 @@ final class PlanPreparerTests: XCTestCase {
         await p.update(target: target, inspiration: insp); try await waitIdle(p)
         await p.update(target: target, inspiration: [insp[0], insp[1], Data([99])]); try await waitIdle(p)
         let log = await s.log
-        XCTAssertEqual(log, ["scene", "refs3", "plan", "refs3", "plan"])
+        XCTAssertEqual(log, ["scene", "note", "note", "note", "refs3", "plan", "note", "refs3", "plan"],
+                       "only the new photo is read again")
         let old = await p.prepared(target: target, inspiration: insp)
         XCTAssertNil(old.references, "results are only given for the exact photos they were made from")
         XCTAssertNotNil(old.targetScene)
@@ -181,7 +193,7 @@ final class PlanPreparerTests: XCTestCase {
         let s = FakeService(); let p = PlanPreparer(service: s)
         await p.update(target: target, inspiration: [insp[0], insp[1]]); try await waitIdle(p)
         let log = await s.log
-        XCTAssertEqual(log, ["scene"])
+        XCTAssertEqual(log, ["scene", "note", "note"], "each photo is read as soon as it is there")
     }
 
     func testAFailingCallIsNotRetriedInALoopButNewPhotosTryAgain() async throws {
@@ -189,11 +201,11 @@ final class PlanPreparerTests: XCTestCase {
         let p = PlanPreparer(service: s)
         await p.update(target: target, inspiration: insp); try await waitIdle(p)
         var log = await s.log
-        XCTAssertEqual(log, ["scene", "refs3"], "no plan token without a scene, and the scene is not asked again")
+        XCTAssertEqual(log, ["scene", "note", "note", "note", "refs3"], "no plan token without a scene, and the scene is not asked again")
         await s.setFailScene(false)
         await p.update(target: Data([7]), inspiration: insp); try await waitIdle(p)
         log = await s.log
-        XCTAssertEqual(log, ["scene", "refs3", "scene", "plan"])
+        XCTAssertEqual(log, ["scene", "note", "note", "note", "refs3", "scene", "plan"])
     }
 
     func testNoTokenWhenTheServerHasNoPromptCache() async throws {
@@ -217,6 +229,72 @@ final class PlanPreparerTests: XCTestCase {
         XCTAssertNil(got.planToken); XCTAssertNotNil(got.targetScene)
     }
 
+    func testPlanPressedMidReadKeepsTheCallInProgressAndStartsNoMore() async throws {
+        let s = FakeService(); let p = PlanPreparer(service: s)
+        await p.update(target: target, inspiration: insp)   // scene call starts
+        try await Task.sleep(for: .milliseconds(5))
+        let waited = await p.finishCurrent()
+        XCTAssertGreaterThan(waited, 0)
+        let log = await s.log
+        XCTAssertEqual(log, ["scene"], "the scene call finished; references and the token were not started")
+        let got = await p.prepared(target: target, inspiration: insp)
+        XCTAssertNotNil(got.targetScene, "the finished call's result is kept and sent with the plan")
+        XCTAssertNil(got.references)
+        await p.update(target: target, inspiration: insp)   // the same photos again: still stopped
+        try await waitIdle(p)
+        var after = await s.log
+        XCTAssertEqual(after, ["scene"])
+        await p.update(target: Data([4, 5]), inspiration: insp)  // a different photo: reading ahead resumes
+        try await waitIdle(p)
+        after = await s.log
+        XCTAssertEqual(after, ["scene", "scene", "note", "note", "note", "refs3", "plan"])
+    }
+
+    func testWhileAPickIsStillLoadingNotesAreReadButNotTheReferences() async throws {
+        let s = FakeService(); let p = PlanPreparer(service: s)
+        await p.update(target: target, inspiration: insp, inspirationComplete: false)
+        try await waitIdle(p)
+        var log = await s.log
+        XCTAssertEqual(log, ["scene", "note", "note", "note"])
+        await p.update(target: target, inspiration: insp)   // the last photo of the pick has loaded
+        try await waitIdle(p)
+        log = await s.log
+        XCTAssertEqual(log, ["scene", "note", "note", "note", "refs3", "plan"], "notes are not read twice")
+    }
+
+    func testPlanBeforeTheStyleIsReadySendsTheNotesAlreadyRead() async throws {
+        let s = FakeService(); let p = PlanPreparer(service: s)
+        await p.update(target: target, inspiration: insp, inspirationComplete: false)
+        try await waitIdle(p)
+        let got = await p.prepared(target: target, inspiration: insp)
+        XCTAssertNil(got.references)
+        XCTAssertEqual(got.notes?.count, 3)
+        XCTAssertEqual(got.notes?.compactMap { $0 }.count, 3)
+        let none = await PlanPreparer(service: FakeService()).prepared(target: target, inspiration: insp)
+        XCTAssertNil(none.notes, "no notes read: nothing to send")
+    }
+
+    func testTheSamePhotosAfterPlanDoNotRestartReading() async throws {
+        let s = FakeService(); let p = PlanPreparer(service: s)
+        await p.update(target: target, inspiration: [], inspirationComplete: true)
+        try await waitIdle(p)
+        await p.finishCurrent()                               // Plan pressed
+        await p.update(target: target, inspiration: [])       // the view sends the same photos again
+        try await waitIdle(p)
+        var log = await s.log
+        XCTAssertEqual(log, ["scene"])
+        await p.update(target: target, inspiration: insp)     // new photos: reading resumes
+        try await waitIdle(p)
+        log = await s.log
+        XCTAssertEqual(log, ["scene", "note", "note", "note", "refs3", "plan"])
+    }
+
+    func testFinishCurrentWithNothingRunningReturnsAtOnce() async throws {
+        let p = PlanPreparer(service: FakeService())
+        let waited = await p.finishCurrent()
+        XCTAssertEqual(waited, 0)
+    }
+
     func testStatusReportsWorkingThenReady() async throws {
         final class Box: @unchecked Sendable { let lock = NSLock(); var seen: [PlanPreparer.Status] = []
             func add(_ s: PlanPreparer.Status) { lock.lock(); seen.append(s); lock.unlock() } }
@@ -226,5 +304,23 @@ final class PlanPreparerTests: XCTestCase {
         XCTAssertEqual(box.seen, [.working, .ready])
         await p.update(target: nil, inspiration: []); try await waitIdle(p)
         XCTAssertEqual(box.seen, [.working, .ready, .idle])
+    }
+}
+
+
+final class OnlineEngineNoteTests: XCTestCase {
+    func testNoteAndReferencesFromNotesRequests() async throws {
+        let http = RoutedHTTP([
+            "/v1/note": [(200, [#"{"note": {"version": 1, "note": "n1"}}"#])],
+            "/v1/references": [(200, [#"{"references": {"notes": ["n1", "n2", "n3"]}}"#])],
+        ])
+        let e = engine(http)
+        let note = try await e.prepareNote(Data([1]))
+        XCTAssertEqual(try JSONSerialization.jsonObject(with: note) as? NSDictionary, ["version": 1, "note": "n1"])
+        _ = try await e.prepareReferences(notes: [note, note, note])
+        XCTAssertTrue(body(http.requests[0]).contains(#"name="photo""#))
+        let b = body(http.requests[1])
+        XCTAssertTrue(b.contains(#"name="notes""#) && !b.contains(#"name="inspiration""#))
+        XCTAssertTrue(b.contains(#"[{"note":"n1","version":1},{"note":"n1","version":1},{"note":"n1","version":1}]"#))
     }
 }

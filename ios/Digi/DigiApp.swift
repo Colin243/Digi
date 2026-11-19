@@ -676,37 +676,6 @@ enum CameraStyle {
     static let rose = Color(red: 0.95, green: 0.73, blue: 0.70)
 }
 
-/// What the app just changed for a pinned shot, and what it replaced.
-struct PresetNote: Identifiable, Equatable {
-    struct Undo: Equatable { var zoom: CGFloat; var bias: Float; var flash: PhotoFlash; var shotID: String = "" }
-    let id = UUID()
-    var reasons: [CameraPreset.Reason]
-    var undo: Undo
-}
-
-/// "Set for you" line over the viewfinder with a one-tap Undo.
-struct PresetChip: View {
-    @Environment(\.guidanceTheme) private var theme
-    let note: PresetNote
-    let style: GuidanceStyle
-    var undo: () -> Void
-
-    var body: some View {
-        let text = note.reasons.map { GuidanceWording.text($0, style: style) }.joined(separator: " · ")
-        HStack(spacing: 8) {
-            Image(systemName: "slider.horizontal.3").font(.footnote)
-            Text(text).font(.footnote).lineLimit(2)
-            Button("Undo", action: undo).font(.footnote.weight(.semibold)).foregroundStyle(theme.accent)
-                .frame(minHeight: 32).accessibilityIdentifier("preset-undo")
-        }
-        .foregroundStyle(.white).padding(.horizontal, 12).padding(.vertical, 6)
-        .background(.black.opacity(0.6), in: Capsule())
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("preset-chip")
-        .padding(.horizontal, 12)
-    }
-}
-
 struct CameraView: View {
     @Environment(\.guidanceTheme) private var theme
     @StateObject private var camera = CameraController()
@@ -724,7 +693,6 @@ struct CameraView: View {
     @State private var guidanceSheet = false
     @State private var guidanceFirstRun = false
     @AppStorage("digi.autoCameraSettings") private var autoSettings = true
-    @State private var presetNote: PresetNote?
     @Environment(\.deviceScale) private var deviceScale
     @State private var review = false
     @State private var showStatus = true
@@ -734,12 +702,12 @@ struct CameraView: View {
     @State private var countdown = ShutterCountdown()
     @State private var countdownTask: Task<Void, Never>?
 
-    /// Sets zoom, brightness and flash from the shot's text, keeps what it replaced so Undo can restore it.
+    /// Sets zoom, brightness and flash from the shot's text, quietly: no banner or Undo. The person changes any of
+    /// them the usual way (pinch, brightness, flash) if they want something else.
     private func applyPreset(for shot: Shot) {
         guard autoSettings, pinnedShot.shot?.id == shot.id else { return }
         let p = CameraPreset.make(for: shot, baseFocalLengthMM: Double(CameraController.baseFocalLength))
         guard !p.isEmpty else { return }
-        var undo = PresetNote.Undo(zoom: camera.zoom, bias: camera.exposureBias, flash: camera.flash)
         var applied: [CameraPreset.Reason] = []
         for r in p.reasons {
             switch r {
@@ -755,20 +723,7 @@ struct CameraView: View {
             default: break
             }
         }
-        guard !applied.isEmpty else { return }
-        undo.shotID = shot.id
-        let note = PresetNote(reasons: applied, undo: undo)
-        withAnimation { presetNote = note }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 9) {
-            if presetNote?.id == note.id { withAnimation { presetNote = nil } }
-        }
-    }
-
-    private func undoPreset(_ note: PresetNote) {
-        camera.setZoom(note.undo.zoom)
-        camera.setBrightness(note.undo.bias)
-        if camera.supportedFlash.contains(note.undo.flash) { camera.flash = note.undo.flash }
-        withAnimation { presetNote = nil }
+        if !applied.isEmpty, haptics { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
     }
 
     private var canShoot: Bool { camera.ready && !camera.busy && !camera.pending }
@@ -829,13 +784,6 @@ struct CameraView: View {
                                             ZoomReadout(zoom: camera.zoom, detail: guidanceSettings.display.zoomDetail).allowsHitTesting(false)
                                         }
                                     }.padding(.bottom, 12)
-                                }
-                                if let note = presetNote, !pinnedShot.expanded {
-                                    VStack {
-                                        PresetChip(note: note, style: guidanceSettings.prefs.style) { undoPreset(note) }
-                                            .padding(.top, guidanceSettings.prefs.style == .full ? 128 : 64)
-                                        Spacer()
-                                    }.transition(.opacity)
                                 }
                                 VStack {
                                     PinnedShotCard(store: pinnedShot).padding(.trailing, portrait ? 0 : 58)
@@ -1039,7 +987,6 @@ struct CameraView: View {
         .onChange(of: pinnedShot.shot) { old, new in
             updateGuidance()
             if let new, new.id != old?.id { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { applyPreset(for: new) } }
-            if new == nil { presetNote = nil }
             // First time a shot is pinned: let the person pick how much the camera says.
             if old == nil, new != nil, !guidanceSettings.hasChosen {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
