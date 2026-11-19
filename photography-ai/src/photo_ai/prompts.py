@@ -68,6 +68,9 @@ History
      scene_look(zoom_first=False) still renders the earlier scene prompt byte for byte. The training export moves the
      key in each scene look's target (labels unchanged), and the iOS app's generated copy (OfflinePromptData.swift)
      is re-exported from this prompt.
+  v16 (2026-11-18.16) shot-v8 = shot-v7 without visible_evidence, fix_if_wrong and orientation (~15% of the look's
+     tokens; the app shows none of them). The rules drop the sentences that name those fields; needs_on_site_check
+     keeps its instruction. shot-v8 runs record PROMPT_VERSION_V16; older prompts stay byte-identical.
 """
 
 from __future__ import annotations
@@ -89,11 +92,14 @@ PROMPT_VERSION_V12 = "2026-11-16.12"  # shot-v5: shot-v4 with the zoom chosen be
 PROMPT_VERSION_V13 = "2026-11-17.13"  # shot-v6: shot-v5 order, distance without "at <amount>x"
 PROMPT_VERSION_V14 = "2026-11-17.14"  # shot-v7: shot-v5 without uses_principle
 PROMPT_VERSION_V15 = "2026-11-17.15"  # Scene Director look: zoom_or_lens directly ahead of distance_and_framing
+PROMPT_VERSION_V16 = "2026-11-18.16"  # shot-v8: shot-v7 without visible_evidence, fix_if_wrong, orientation
 
 
 def version_for(mode: str = "inspiration", shot_format: str = "v1") -> str:
     if mode == "scene":
         return PROMPT_VERSION_V15
+    if shot_format == "v8":
+        return PROMPT_VERSION_V16
     if shot_format == "v7":
         return PROMPT_VERSION_V14
     if shot_format == "v6":
@@ -203,6 +209,9 @@ COMPOSITION_FIELDS_V6 = {**COMPOSITION_FIELDS_V5, "distance_and_framing":
 # shot-v7 (prompt v14): v5 without uses_principle (~18 tokens a look, not shown in the app).
 DROPPED_V7 = ("uses_principle",)
 COMPOSITION_FIELDS_V7 = {k: v for k, v in COMPOSITION_FIELDS_V5.items() if k not in DROPPED_V7}
+# shot-v8 (prompt v16): v7 without three more fields the app never shows.
+DROPPED_V8 = (*DROPPED_V7, "visible_evidence", "fix_if_wrong", "orientation")
+COMPOSITION_FIELDS_V8 = {k: v for k, v in COMPOSITION_FIELDS_V5.items() if k.removesuffix("[]") not in DROPPED_V8}
 SCENE_SHOT_FIELDS = {
     **COMPOSITION_FIELDS_V2,
     "title": "a short name for this look",
@@ -379,6 +388,14 @@ REASONING_RULES_V5 = (
     "Choose zoom_or_lens before distance_and_framing, then give the distance for that zoom: at 2x a half body is "
     "about 2.4 m, a full body about 4 m, a seated look about 3 m."
 )
+# shot-v8 only: the v5 rules and specificity text without the sentences naming fix_if_wrong / visible_evidence.
+REASONING_RULES_V8 = REASONING_RULES_V5.replace(
+    "Fill scene_reading, setup_choice, why_each_choice and fix_if_wrong first",
+    "Fill scene_reading, setup_choice and why_each_choice first")
+SPECIFICITY_RULES_V8 = SPECIFICITY_RULES.replace(
+    "Separate what you can see from what you are assuming: put visible facts in visible_evidence, and put anything",
+    "Put anything")
+assert REASONING_RULES_V8 != REASONING_RULES_V5 and SPECIFICITY_RULES_V8 != SPECIFICITY_RULES
 
 _RULES = (
     "Answer with ONLY one JSON object, no markdown, no commentary. "
@@ -521,15 +538,19 @@ def compositions_from_parts(aesthetic: dict, target: dict, subject: str = DEFAUL
     """shot_format "v1" returns exactly the v4 prompt (benchmark and training-template parity); "v3" adds
     reasoning fields first plus REASONING_RULES; "v4" is v3 plus the 1-2x zoom rules (prompt v11); "v5" is v4 with
     the zoom chosen before the distance (prompt v12); "v6" is v5 with a plain distance (prompt v13);
-    "v7" is v5 without uses_principle (prompt v14)."""
+    "v7" is v5 without uses_principle (prompt v14); "v8" is v7 without visible_evidence, fix_if_wrong and
+    orientation (prompt v16)."""
     style = {k: v for k, v in aesthetic.items() if k != "per_image"}
     fields = {"v2": COMPOSITION_FIELDS_V2, "v3": COMPOSITION_FIELDS_V3,
               "v4": COMPOSITION_FIELDS_V4, "v5": COMPOSITION_FIELDS_V5,
-              "v6": COMPOSITION_FIELDS_V6, "v7": COMPOSITION_FIELDS_V7}.get(shot_format, COMPOSITION_FIELDS)
+              "v6": COMPOSITION_FIELDS_V6, "v7": COMPOSITION_FIELDS_V7,
+              "v8": COMPOSITION_FIELDS_V8}.get(shot_format, COMPOSITION_FIELDS)
     shape = {"compositions": [_blank(fields)] * 3}
     direction = {"v2": f"\n{DIRECTION_RULES}", "v3": f"\n{REASONING_RULES}",
                  "v4": f"\n{REASONING_RULES_V4}", "v5": f"\n{REASONING_RULES_V5}",
-                 "v6": f"\n{REASONING_RULES_V5}", "v7": f"\n{REASONING_RULES_V5}"}.get(shot_format, "")
+                 "v6": f"\n{REASONING_RULES_V5}", "v7": f"\n{REASONING_RULES_V5}",
+                 "v8": f"\n{REASONING_RULES_V8}"}.get(shot_format, "")
+    specificity = SPECIFICITY_RULES_V8 if shot_format == "v8" else SPECIFICITY_RULES
     return (
         TARGET_LABEL + "\n"
         f"You are a photography director. The TARGET scene photo is described as:\n{_shape(target)}\n\n"
@@ -537,7 +558,7 @@ def compositions_from_parts(aesthetic: dict, target: dict, subject: str = DEFAUL
         f"The subject will be {subject}. Give exactly 3 different compositions for shooting in the "
         "TARGET scene with that style.\n\n"
         f"{_guide('each of the 3 compositions', fields)}\n\n"
-        f"{SPECIFICITY_RULES}{direction}\n{_RULES}\n{_answer(shape)}"
+        f"{specificity}{direction}\n{_RULES}\n{_answer(shape)}"
     )
 
 

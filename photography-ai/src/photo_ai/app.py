@@ -204,7 +204,8 @@ def build(runs_dir: Path, monitor_port: int = 7870) -> gr.Blocks:
                                                 ("shot-v4 (shot-v3 + 1-2x zoom with a reason; decomposed only)", "v4"),
                                                 ("shot-v5 (shot-v4, zoom chosen before distance; decomposed only)", "v5"),
                                                 ("shot-v6 (shot-v5 with a plain distance; decomposed only)", "v6"),
-                                                ("shot-v7 (shot-v5 without uses_principle; decomposed only)", "v7")],
+                                                ("shot-v7 (shot-v5 without uses_principle; decomposed only)", "v7"),
+                                                ("shot-v8 (shot-v7 without 3 hidden fields; decomposed only)", "v8")],
                                                value="v1", label="Shot format")
                         with gr.Accordion("Generation settings", open=False):
                             max_side = gr.Slider(384, 2048, value=d.max_side, step=64, label="Max image side (px)")
