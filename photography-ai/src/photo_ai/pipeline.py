@@ -86,6 +86,12 @@ class RunConfig:
     # Same idea for the target photo: its scene reading, prepared by prepare_target_scene() and checked by
     # check_target_scene(). When set, the target_scene stage is skipped. Left out of the saved run record.
     target_scene: dict | None = field(default=None, repr=False)
+    # Inspiration notes the client already read one photo at a time (check_notes), aligned with the photos; None for
+    # a photo not read yet. Only the missing ones are read in the plan. Left out of the saved run record.
+    prepared_notes: list | None = field(default=None, repr=False)
+    # Experiments (benchmarks only until a quality check says otherwise):
+    notes_style: str = "full"  # prompts.NOTES_STYLES: "short" asks for notes under 40 words
+    skip_aesthetic: bool = False  # True: no separate style step; the notes go straight into the compositions prompt
 
     def params(self, max_tokens: int | None = None) -> GenerationParams:
         return GenerationParams(max_tokens or self.max_tokens, self.temperature, self.repetition_penalty, self.seed)
@@ -212,11 +218,29 @@ def _two_stage(backend, run_dir, insp, tgt, cfg):
 
 def _notes_stages(backend, run_dir, insp, cfg):
     stages, notes = [], []
+    prepared = list(cfg.prepared_notes or [])
     for i, path in enumerate(insp, 1):
-        note, st = _run_stage(backend, run_dir, f"notes_inspiration{i}", prompts.image_notes(), [path], None, cfg, 200)
+        ready = prepared[i - 1] if i - 1 < len(prepared) else None
+        if ready:  # already read ahead: same stage record shape, no model call
+            raw = write_raw(run_dir, f"notes_inspiration{i}_attempt1", ready)
+            st = {"name": f"notes_inspiration{i}", "max_tokens": 0, "prompt": "", "n_images": 0, "ok": True, "wall_s": 0.0,
+                  "prepared": True, "attempts": [{"attempt": 1, "raw_output": raw, "parse_method": "text", "errors": [],
+                                                  "wall_s": 0.0, "prompt_tokens": None, "generation_tokens": None,
+                                                  "prompt_tps": None, "generation_tps": None, "peak_memory_gb": None,
+                                                  "finish_reason": "prepared"}]}
+            stages.append(st)
+            notes.append(ready)
+            continue
+        note, st = _run_stage(backend, run_dir, f"notes_inspiration{i}", prompts.image_notes(cfg.notes_style), [path], None,
+                              cfg, prompts.NOTES_MAX_TOKENS.get(cfg.notes_style, 200))
         stages.append(st)
         notes.append(note or "")
     return notes, stages
+
+
+def _style_from_notes(notes: list[str]) -> dict:
+    """Stand-in for the aesthetic when the style step is skipped: the notes themselves, as the style summary."""
+    return {"summary": " ".join(f"Inspiration photo {i}: {n}" for i, n in enumerate(notes, 1) if n)}
 
 
 def _target_scene_stage(backend, run_dir, tgt, cfg):
@@ -247,11 +271,13 @@ def _decomposed(backend, run_dir, insp, tgt, cfg):
         stages.append(st)
     else:
         target = cfg.target_scene["target_scene"]
-    if cfg.references is None:
+    if cfg.references is not None:
+        aesthetic = cfg.references["aesthetic"]
+    elif cfg.skip_aesthetic:
+        aesthetic = _style_from_notes(notes) if any(notes) else None
+    else:
         aesthetic, st = _aesthetic_stage(backend, run_dir, notes, cfg)
         stages.append(st)
-    else:
-        aesthetic = cfg.references["aesthetic"]
     partial = {k: v for k, v in (("aesthetic", aesthetic), ("target_scene", target)) if v} or None
     if not (aesthetic and target):
         return None, partial, stages
@@ -404,7 +430,7 @@ def reference_fingerprint(backend: VLMBackend, cfg: RunConfig) -> str:
     references is refused instead of silently feeding a different model's wording into this one."""
     with prompts.json_format(cfg.json_format):
         parts = [str(REFERENCES_VERSION), backend.spec.key, cfg.json_format, str(cfg.max_side),
-                 prompts.image_notes(), prompts.aesthetic_from_notes(["{note}"])]
+                 prompts.image_notes(cfg.notes_style), prompts.aesthetic_from_notes(["{note}"])]
     return hashlib.sha256("\x1f".join(parts).encode()).hexdigest()[:16]
 
 
@@ -453,6 +479,83 @@ def check_references(refs: object, backend: VLMBackend, cfg: RunConfig) -> dict:
     if errors:
         raise InputError("references.aesthetic is not valid: " + "; ".join(errors[:3]))
     return {"notes": [n.strip() for n in notes], "aesthetic": aesthetic}
+
+
+def note_fingerprint(backend: VLMBackend, cfg: RunConfig) -> str:
+    """Like reference_fingerprint, for one photo's notes (free text: the JSON format does not matter)."""
+    parts = [str(REFERENCES_VERSION), "note", backend.spec.key, str(cfg.max_side), prompts.image_notes(cfg.notes_style)]
+    return hashlib.sha256("\x1f".join(parts).encode()).hexdigest()[:16]
+
+
+def prepare_note(backend: VLMBackend, photo: str, cfg: RunConfig | None = None, runs_dir: Path | None = None) -> dict:
+    """Read ONE inspiration photo ahead of time, so the app can send each photo the moment it is picked (and keep the
+    notes of photos it already sent). Returns {"version", "fingerprint", "note", "wall_s"} for the client to hold."""
+    cfg = _normalize_config(cfg or RunConfig(strategy="decomposed"))
+    if not photo or not Path(photo).is_file():
+        raise InputError(f"File not found: {photo}")
+    run_id, run_dir = new_run_dir(Path(runs_dir or DEFAULT_RUNS_DIR), backend.spec.key)
+    path = prepare(photo, run_dir / "inputs" / "inspiration_1.jpg", "inspiration", cfg.max_side).saved_as
+    backend.load()
+    t0 = time.perf_counter()
+    notes, stages = _notes_stages(backend, run_dir, [path], cfg)
+    if not notes or not notes[0]:
+        raise RuntimeError("could not read the inspiration photo (notes)")
+    return {"version": REFERENCES_VERSION, "fingerprint": note_fingerprint(backend, cfg), "note": notes[0],
+            "wall_s": round(time.perf_counter() - t0, 3)}
+
+
+def check_notes(notes: object, backend: VLMBackend, cfg: RunConfig) -> list[str]:
+    """Validate prepared notes (a list of prepare_note results) from a client: 3-5, made by this model and prompt."""
+    if not isinstance(notes, list) or not MIN_INSPIRATION <= len(notes) <= MAX_INSPIRATION:
+        raise InputError(f"notes must be a list of {MIN_INSPIRATION}-{MAX_INSPIRATION} prepared notes.")
+    fp, out = note_fingerprint(backend, cfg), []
+    for n in notes:
+        if not isinstance(n, dict):
+            raise InputError("each note must be a JSON object.")
+        if n.get("version") != REFERENCES_VERSION or n.get("fingerprint") != fp:
+            raise StaleReferences("These notes were made by a different model or prompt. Prepare them again.")
+        text = n.get("note")
+        if not isinstance(text, str) or not text.strip() or len(text) > MAX_NOTE_CHARS:
+            raise InputError("each note must be a short, non-empty text.")
+        out.append(text.strip())
+    return out
+
+
+def check_partial_notes(notes: object, n_photos: int, backend: VLMBackend, cfg: RunConfig) -> list[str | None]:
+    """Notes read ahead for SOME of the plan's photos (Plan was pressed before all were read): one entry per photo,
+    a prepare_note result or null. Returns the texts with None where the plan still has to read the photo."""
+    if not isinstance(notes, list) or len(notes) != n_photos:
+        raise InputError("notes must have one entry (a prepared note or null) per inspiration photo.")
+    fp, out = note_fingerprint(backend, cfg), []
+    for n in notes:
+        if n is None:
+            out.append(None)
+            continue
+        if not isinstance(n, dict):
+            raise InputError("each note must be a JSON object or null.")
+        if n.get("version") != REFERENCES_VERSION or n.get("fingerprint") != fp:
+            raise StaleReferences("These notes were made by a different model or prompt. Prepare them again.")
+        text = n.get("note")
+        if not isinstance(text, str) or not text.strip() or len(text) > MAX_NOTE_CHARS:
+            raise InputError("each note must be a short, non-empty text.")
+        out.append(text.strip())
+    return out
+
+
+def prepare_references_from_notes(backend: VLMBackend, notes: list[str], cfg: RunConfig | None = None,
+                                  runs_dir: Path | None = None) -> dict:
+    """The aesthetic from notes already read (check_notes), packaged exactly like prepare_references: no photo is
+    read again, so only the aesthetic call (about 5 s) is left once every photo has its notes."""
+    cfg = _normalize_config(cfg or RunConfig(strategy="decomposed"))
+    run_id, run_dir = new_run_dir(Path(runs_dir or DEFAULT_RUNS_DIR), backend.spec.key)
+    backend.load()
+    t0 = time.perf_counter()
+    with prompts.json_format(cfg.json_format):
+        aesthetic, st = _aesthetic_stage(backend, run_dir, notes, cfg)
+    if aesthetic is None:
+        raise RuntimeError("could not read the inspiration photos (aesthetic_from_notes)")
+    return {"version": REFERENCES_VERSION, "fingerprint": reference_fingerprint(backend, cfg), "notes": list(notes),
+            "aesthetic": aesthetic, "wall_s": round(time.perf_counter() - t0, 3)}
 
 
 def _file_sha(path: str) -> str:
@@ -567,7 +670,7 @@ def analyze(
         "mode": cfg.mode,
         "shot_format": cfg.shot_format,
         "model": {"key": backend.spec.key, "repo_id": backend.spec.repo_id, "backend": backend.spec.backend},
-        "config": {k: v for k, v in asdict(cfg).items() if k not in ("references", "target_scene")},
+        "config": {k: v for k, v in asdict(cfg).items() if k not in ("references", "target_scene", "prepared_notes")},
         "references_precomputed": cfg.references is not None,
         "target_scene_precomputed": cfg.target_scene is not None,
         "inputs": {

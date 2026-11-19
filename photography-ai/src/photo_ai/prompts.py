@@ -505,7 +505,19 @@ def stage2_compositions(aesthetic: dict, subject: str = DEFAULT_SUBJECT) -> str:
 
 # --- decomposed strategy: one image per call, then text-guided composition ------------
 
-def image_notes() -> str:
+NOTES_STYLES = ("full", "short")
+NOTES_MAX_TOKENS = {"full": 200, "short": 110}
+
+
+def image_notes(style: str = "full") -> str:
+    """Notes on one inspiration photo. "short" asks for the same facts in fewer words (the notes are written once per
+    photo before every plan, so their length is on the critical path when the photos have not been read ahead)."""
+    if style == "short":
+        return (
+            f"Photo: {IMAGE_MARKER}\n"
+            "In under 40 words, say what this photo shows and how it was shot: camera height and angle, "
+            "framing, where the main subject sits in the frame, how much empty space there is, and the light."
+        )
     return (
         f"Photo: {IMAGE_MARKER}\n"
         "In 2-3 sentences, say what this photo shows and how it was shot: camera height and angle, "
