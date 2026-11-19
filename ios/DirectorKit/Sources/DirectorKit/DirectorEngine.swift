@@ -47,15 +47,18 @@ public struct DirectorRequest: Sendable {
     public var upload: UploadMode
     /// Set by HybridDirector from device state. Only the offline engine reads it.
     public var offlineProfile: OfflineProfile
+    /// Work the server already did on these photos (Inspiration Director only). Only the online engine reads it,
+    /// and falls back to sending the photos alone if the server refuses it.
+    public var prepared: PreparedInputs?
 
     public init(
         mode: DirectorMode, style: DirectorStyle? = nil, brief: String? = nil,
         images: [DirectorImage], shotFormat: ShotFormat = .v3, shotCount: Int = 3,
-        upload: UploadMode = .none, offlineProfile: OfflineProfile = .standard
+        upload: UploadMode = .none, offlineProfile: OfflineProfile = .standard, prepared: PreparedInputs? = nil
     ) {
         self.mode = mode; self.style = style; self.brief = brief; self.images = images
         self.shotFormat = shotFormat; self.shotCount = shotCount
-        self.upload = upload; self.offlineProfile = offlineProfile
+        self.upload = upload; self.offlineProfile = offlineProfile; self.prepared = prepared
     }
 }
 

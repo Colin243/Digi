@@ -74,11 +74,20 @@ public final class OnlineEngine: DirectorEngine {
         body.addField("brief", request.brief ?? "")
         body.addField("shot_count", String(request.shotCount))
         body.addField("upload", UploadMode.photos.rawValue)
+        let prepared = request.mode == .inspiration ? request.prepared : nil
+        if let p = prepared {
+            if let r = p.references { body.addField("references", String(decoding: r, as: UTF8.self)) }
+            if let s = p.targetScene { body.addField("target_scene", String(decoding: s, as: UTF8.self)) }
+            if let t = p.planToken { body.addField("plan_token", t) }
+        }
+        // With the references prepared, the server does not need the inspiration photos again.
+        let skipInspiration = prepared?.references != nil
         var n = 0
         for image in request.images {
             switch image.role {
             case .target: body.addFile("target", filename: "target.jpg", data: image.jpeg)
             case .inspiration:
+                if skipInspiration { continue }
                 n += 1
                 body.addFile("inspiration", filename: "inspiration_\(n).jpg", data: image.jpeg)
             }
@@ -98,8 +107,14 @@ public final class OnlineEngine: DirectorEngine {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
-                    let urlRequest = try makeRequest(request)
-                    try await run(urlRequest, into: continuation)
+                    do {
+                        try await run(try makeRequest(request), into: continuation)
+                    } catch PreparedRefused.refused where request.prepared.map({ !$0.isEmpty }) ?? false {
+                        // Stale or unreadable prepared work (another model, prompt or photo): send the photos alone.
+                        var plain = request
+                        plain.prepared = nil
+                        try await run(try makeRequest(plain), into: continuation)
+                    }
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: Self.normalize(error))
@@ -114,6 +129,8 @@ public final class OnlineEngine: DirectorEngine {
         guard response.statusCode == 200 else {
             var text = ""
             for try await line in lines { text += line; if text.count > 4096 { break } }
+            // 409: prepared work the server refuses as stale; 422: a field it could not read. Nothing was streamed yet.
+            if [409, 422].contains(response.statusCode) && Self.carriesPrepared(urlRequest) { throw PreparedRefused.refused }
             throw DirectorError.onlineUnavailable(Self.errorMessage(text, status: response.statusCode))
         }
         let decoder = JSONDecoder()
@@ -143,6 +160,44 @@ public final class OnlineEngine: DirectorEngine {
         throw DirectorError.onlineUnavailable("The connection ended before the server finished.")
     }
 
+    private enum PreparedRefused: Error { case refused }
+
+    static func carriesPrepared(_ r: URLRequest) -> Bool {
+        let body = String(decoding: r.httpBody ?? Data(), as: UTF8.self)
+        return ["references", "target_scene", "plan_token"].contains { body.contains("name=\"\($0)\"") }
+    }
+
+    // MARK: Prepare ahead (PrecomputeService)
+
+    /// One non-streaming POST. Returns the value under `key` in the JSON reply, re-encoded as JSON.
+    private func post(_ path: String, _ body: MultipartBody, key: String) async throws -> Any? {
+        var url = URLRequest(url: config.baseURL.appendingPathComponent(path), timeoutInterval: max(config.timeout, 60))
+        url.httpMethod = "POST"
+        url.setValue("Bearer \(config.apiKey)", forHTTPHeaderField: "Authorization")
+        url.setValue(body.contentType, forHTTPHeaderField: "Content-Type")
+        url.setValue("application/json", forHTTPHeaderField: "Accept")
+        url.httpBody = body.data
+        do {
+            let (response, lines) = try await client.send(url)
+            var text = ""
+            for try await line in lines { text += line + "\n"; if text.count > 2_000_000 { break } }
+            guard response.statusCode == 200 else {
+                throw DirectorError.onlineUnavailable(Self.errorMessage(text, status: response.statusCode))
+            }
+            guard let obj = try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any] else {
+                throw DirectorError.onlineUnavailable("The server sent an unreadable reply.")
+            }
+            return obj[key]
+        } catch { throw Self.normalize(error) }
+    }
+
+    private static func json(_ value: Any?) throws -> Data {
+        guard let value, JSONSerialization.isValidJSONObject(value) else {
+            throw DirectorError.onlineUnavailable("The server sent an empty reply.")
+        }
+        return try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys])
+    }
+
     private struct WireEvent: Decodable {
         let type: String
         let stage: String?
@@ -162,5 +217,30 @@ public final class OnlineEngine: DirectorEngine {
         if let e = error as? URLError, e.code == .cancelled { return CancellationError() }
         if error is DirectorError { return error }
         return DirectorError.onlineUnavailable(error.localizedDescription)
+    }
+}
+
+extension OnlineEngine: PrecomputeService {
+    /// `POST /v1/references`: the inspiration photos' notes and aesthetic.
+    public func prepareReferences(_ inspiration: [Data]) async throws -> Data {
+        var body = MultipartBody()
+        for (i, jpeg) in inspiration.enumerated() { body.addFile("inspiration", filename: "inspiration_\(i + 1).jpg", data: jpeg) }
+        return try Self.json(try await post("v1/references", body, key: "references"))
+    }
+
+    /// `POST /v1/scene`: the target photo's scene reading.
+    public func prepareScene(_ target: Data) async throws -> Data {
+        var body = MultipartBody()
+        body.addFile("target", filename: "target.jpg", data: target)
+        return try Self.json(try await post("v1/scene", body, key: "target_scene"))
+    }
+
+    /// `POST /v1/prepare-plan`: the server reads the start of the compositions prompt and returns a single-use token.
+    public func preparePlan(target: Data, references: Data, targetScene: Data) async throws -> String? {
+        var body = MultipartBody()
+        body.addField("references", String(decoding: references, as: UTF8.self))
+        body.addField("target_scene", String(decoding: targetScene, as: UTF8.self))
+        body.addFile("target", filename: "target.jpg", data: target)
+        return try await post("v1/prepare-plan", body, key: "plan_token") as? String
     }
 }

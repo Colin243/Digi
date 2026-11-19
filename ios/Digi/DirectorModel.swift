@@ -15,18 +15,75 @@ final class DirectorModel: ObservableObject {
     private var lastRequest: DirectorRequest?
     @Published var engineUsed: EngineKind?
     @Published var notice: String?
+    /// Inspiration Director: whether the server is reading the chosen photos ahead of the plan.
+    @Published private(set) var prepStatus: PlanPreparer.Status = .idle
 
     private var task: Task<Void, Never>?
 
-    #if DEBUG
+    // MARK: reading photos ahead (Inspiration Director, online only)
+
+    /// Each photo is turned into a JPEG once and that exact `Data` is used for preparing and for the plan:
+    /// the server ties prepared work to the photo's bytes.
+    private var jpegCache: [ObjectIdentifier: (image: UIImage, jpeg: Data)] = [:]
+    private var preparer: PlanPreparer?
+    private var preparerServer: (url: URL, key: String)?
+    private var prepTask: Task<Void, Never>?
+
+    private func jpegData(_ image: UIImage) -> Data? {
+        if let hit = jpegCache[ObjectIdentifier(image)], hit.image === image { return hit.jpeg }
+        guard let data = Self.jpeg(image) else { return nil }
+        jpegCache[ObjectIdentifier(image)] = (image, data)
+        return data
+    }
+
+    /// Call when the mode or any photo changes. In Inspiration mode, with online use allowed, the server starts
+    /// reading the photos straight away so the plan has less left to do.
+    func inputsChanged(mode: DirectorMode, target: UIImage?, inspiration: [UIImage]) {
+        let keep = Set(([target].compactMap { $0 } + inspiration).map(ObjectIdentifier.init))
+        jpegCache = jpegCache.filter { keep.contains($0.key) }
+        let targetJPEG = mode == .inspiration ? target.flatMap(jpegData) : nil
+        let inspirationJPEGs = mode == .inspiration ? inspiration.compactMap(jpegData) : []
+        prepTask?.cancel()
+        prepTask = Task { [weak self] in
+            guard let self else { return }
+            let allowed = await Self.onlinePreparationAllowed()
+            guard !Task.isCancelled else { return }
+            if allowed, let preparer = self.currentPreparer() {
+                await preparer.update(target: targetJPEG, inspiration: inspirationJPEGs)
+            } else {
+                await self.preparer?.update(target: nil, inspiration: [])
+            }
+        }
+    }
+
+    /// Only when the photos would go online for the plan anyway: a server is set up and the router would try it first.
+    private static func onlinePreparationAllowed() async -> Bool {
+        guard DirectorDefaults.configuration() != nil else { return false }
+        let config = DirectorConfig.make(preference: DirectorDefaults.userPreference(), priority: DirectorDefaults.userPriority())
+        guard let route = try? Router.route(conditions: await conditions.current(), config: config) else { return false }
+        return route.upload == .photos && route.order.first == .online
+    }
+
+    private func currentPreparer() -> PlanPreparer? {
+        guard let cfg = DirectorDefaults.configuration() else { preparer = nil; return nil }
+        if let preparer, let s = preparerServer, s.url == cfg.baseURL, s.key == cfg.apiKey { return preparer }
+        let p = PlanPreparer(service: OnlineEngine(configuration: cfg), onStatus: { status in
+            Task { @MainActor [weak self] in self?.prepStatus = status }
+        })
+        preparer = p; preparerServer = (cfg.baseURL, cfg.apiKey); prepStatus = .idle
+        return p
+    }
+
     init() {
+        _ = Self.conditions  // start the network monitor now, so it has a reading before the first photo is picked
+        #if DEBUG
         // Debug only: `-digiDebugShots YES` shows sample results so the shot cards can be reviewed without a server.
         if UserDefaults.standard.bool(forKey: "digiDebugShots") {
             for i in 0..<3 { var shot = PinnedShotStore.debugSampleShot; shot.title += " \(i + 1)"; deck.append(shot) }
             engineUsed = .online; phase = .done
         }
+        #endif
     }
-    #endif
 
     /// Builds the director from the current Settings each time, so edits apply to the next request.
     private func makeDirector() -> HybridDirector {
@@ -35,16 +92,20 @@ final class DirectorModel: ObservableObject {
         let config = DirectorConfig.make(preference: DirectorDefaults.userPreference(), priority: DirectorDefaults.userPriority())
         let online = DirectorDefaults.configuration().map { OnlineEngine(configuration: $0) }
         return HybridDirector(online: online, offline: OfflineEngine(generator: OnDeviceGenerator.shared),
-                              conditions: SystemConditionsProvider(), config: { config })
+                              conditions: Self.conditions, config: { config })
     }
 
+    /// One long-lived monitor: a fresh NWPathMonitor reports "no connection" until its first update arrives,
+    /// which made a just-created one route everything to the phone.
+    private static let conditions = SystemConditionsProvider()
+
     func run(mode: DirectorMode, style: DirectorStyle, brief: String, target: UIImage?, inspiration: [UIImage]) {
-        guard let target, let targetJPEG = Self.jpeg(target) else {
+        guard let target, let targetJPEG = jpegData(target) else {
             phase = .failed("Add a photo of the place you will shoot."); return
         }
         var images = [DirectorImage(role: .target, jpeg: targetJPEG)]
         if mode == .inspiration {
-            images += inspiration.compactMap { Self.jpeg($0) }.map { DirectorImage(role: .inspiration, jpeg: $0) }
+            images += inspiration.compactMap { jpegData($0) }.map { DirectorImage(role: .inspiration, jpeg: $0) }
         }
         let request = DirectorRequest(mode: mode, style: mode == .scene ? style : nil,
                                       brief: brief.isEmpty ? nil : brief, images: images)
@@ -57,8 +118,12 @@ final class DirectorModel: ObservableObject {
     /// Keeps the starred shots and rewrites the rest, steering the engine away from every look seen so far.
     func refresh() {
         guard phase != .running, let base = lastRequest, let seen = deck.beginRefresh() else { return }
+        // The notes and scene read earlier still hold; a refresh has a brief, so the prepared prompt would not match.
+        var prepared = base.prepared
+        prepared?.planToken = nil
         let request = DirectorRequest(mode: base.mode, style: base.style,
-                                      brief: ShotDeck.briefAvoiding(seen, base: base.brief), images: base.images)
+                                      brief: ShotDeck.briefAvoiding(seen, base: base.brief), images: base.images,
+                                      prepared: prepared)
         start(request, refreshing: true)
     }
 
@@ -79,7 +144,20 @@ final class DirectorModel: ObservableObject {
         let priority = DirectorDefaults.userPriority()
         let started = Date()
         var firstShotAt: Date?, shotCount = 0, fellBack = false
+        let preparer = request.mode == .inspiration && request.prepared == nil ? self.preparer : nil
         task = Task { [weak self] in
+            var request = request
+            if let preparer {
+                // Stop reading ahead (the server runs one job at a time) and take whatever is ready for these photos.
+                await preparer.pause()
+                let target = request.images.first { $0.role == .target }?.jpeg
+                let inspiration = request.images.filter { $0.role == .inspiration }.map(\.jpeg)
+                if let target {
+                    let ready = await preparer.prepared(target: target, inspiration: inspiration)
+                    if !ready.isEmpty { request.prepared = ready }
+                }
+                if !refreshing, let self { var kept = request; kept.prepared?.planToken = nil; self.lastRequest = kept }
+            }
             /// Writes the run to the log once it ends with at least one shot.
             @MainActor func record() {
                 guard let self, shotCount > 0 else { return }

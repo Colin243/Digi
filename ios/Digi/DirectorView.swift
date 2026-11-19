@@ -56,6 +56,15 @@ struct DirectorView: View {
                 inspirationImages = images
             }
         }
+        // Inspiration mode: let the server read the photos while the rest is being chosen.
+        .onChange(of: targetImage) { _, _ in inputsChanged() }
+        .onChange(of: inspirationImages) { _, _ in inputsChanged() }
+        .onChange(of: mode) { _, _ in inputsChanged() }
+        .onDisappear { model.inputsChanged(mode: mode, target: nil, inspiration: []) }
+    }
+
+    private func inputsChanged() {
+        model.inputsChanged(mode: mode, target: targetImage, inspiration: inspirationImages)
     }
 
     // MARK: input
@@ -159,6 +168,12 @@ struct DirectorView: View {
                     .background(accent.opacity(canRun ? 1 : 0.35), in: RoundedRectangle(cornerRadius: 16))
                     .foregroundStyle(Color.black)
             }.buttonStyle(.plain).disabled(!canRun).accessibilityIdentifier("director-run")
+            if mode == .inspiration && model.phase != .running && model.prepStatus != .idle {
+                Label(model.prepStatus == .working ? "Reading your photos ahead…" : "Photos read ahead: planning will be quicker",
+                      systemImage: model.prepStatus == .working ? "hourglass" : "bolt.fill")
+                    .font(.footnote).foregroundStyle(.white.opacity(0.6))
+                    .accessibilityIdentifier("director-prep-status")
+            }
             if model.phase == .running {
                 Button("Cancel", role: .cancel) { model.cancel() }.font(.subheadline)
             }
