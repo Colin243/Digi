@@ -47,7 +47,7 @@ from typing import Callable
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from . import pipeline, prompts
+from . import pipeline, prompts, schema
 from .pipeline import RunConfig
 
 DEFAULT_KEYS_FILE = Path("data/server/keys.json")
@@ -102,6 +102,7 @@ class ServerState:
     max_queue: int = 2
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     waiting: int = 0
+    shot_format: str = "v3"  # inspiration-mode shot format the server asks for (see schema.SHOT_FORMATS)
     prefixes: "PrefixStore" = field(default_factory=lambda: PrefixStore())
 
 
@@ -144,8 +145,13 @@ class PrefixStore:
 
 # ----------------------------------------------------------------------------- app
 
-def create_app(backend, keys: dict[str, dict], model_name: str, per_hour: int = 30, max_queue: int = 2) -> FastAPI:
-    state = ServerState(backend, keys, RateLimiter(per_hour), model_name, max_queue)
+def create_app(backend, keys: dict[str, dict], model_name: str, per_hour: int = 30, max_queue: int = 2,
+               shot_format: str = "v3") -> FastAPI:
+    """`shot_format` is what Inspiration plans ask the model for. Use the format the model was trained on (fused q5:
+    v7). Apps before the ZoomPlan "N m at Kx" fix mis-scale v5-v7 distances, so v3 stays the default."""
+    if shot_format not in schema.SHOT_FORMATS:
+        raise ValueError(f"shot_format must be one of {schema.SHOT_FORMATS}")
+    state = ServerState(backend, keys, RateLimiter(per_hour), model_name, max_queue, shot_format=shot_format)
     app = FastAPI(title="Digi Director", docs_url=None, redoc_url=None, openapi_url=None)
     app.state.s = state
 
@@ -163,7 +169,8 @@ def create_app(backend, keys: dict[str, dict], model_name: str, per_hour: int = 
 
     @app.get("/v1/health")
     async def health():
-        return {"ok": True, "api": API_VERSION, "model": state.model_name, "busy": state.lock.locked()}
+        return {"ok": True, "api": API_VERSION, "model": state.model_name, "shot_format": state.shot_format,
+                "busy": state.lock.locked()}
 
     @app.post("/v1/references")
     async def prepare_references(who: str = Depends(authed), inspiration: list[UploadFile] = File(default=[])):
@@ -179,7 +186,7 @@ def create_app(backend, keys: dict[str, dict], model_name: str, per_hour: int = 
             shutil.rmtree(workdir, ignore_errors=True)
             raise HTTPException(503, "The director is busy. Try again in a moment.")
         state.waiting += 1
-        cfg = RunConfig(mode="inspiration", json_format="keys", strategy="decomposed", shot_format="v3")
+        cfg = RunConfig(mode="inspiration", json_format="keys", strategy="decomposed", shot_format=state.shot_format)
         try:
             async with state.lock:
                 state.waiting -= 1
@@ -204,7 +211,7 @@ def create_app(backend, keys: dict[str, dict], model_name: str, per_hour: int = 
             shutil.rmtree(workdir, ignore_errors=True)
             raise HTTPException(503, "The director is busy. Try again in a moment.")
         state.waiting += 1
-        cfg = RunConfig(mode="inspiration", json_format="keys", strategy="decomposed", shot_format="v3")
+        cfg = RunConfig(mode="inspiration", json_format="keys", strategy="decomposed", shot_format=state.shot_format)
         try:
             async with state.lock:
                 state.waiting -= 1
@@ -223,8 +230,8 @@ def create_app(backend, keys: dict[str, dict], model_name: str, per_hour: int = 
         workdir = Path(tempfile.mkdtemp(prefix="digi-prefix-"))
         try:
             path = await _save(target, workdir / "target.jpg")
-            refs = _check_references(references, state.backend)
-            scene = _check_target_scene(target_scene, str(path), state.backend)
+            refs = _check_references(references, state.backend, state.shot_format)
+            scene = _check_target_scene(target_scene, str(path), state.backend, state.shot_format)
         except HTTPException:
             shutil.rmtree(workdir, ignore_errors=True)
             raise
@@ -232,7 +239,7 @@ def create_app(backend, keys: dict[str, dict], model_name: str, per_hour: int = 
             shutil.rmtree(workdir, ignore_errors=True)
             raise HTTPException(503, "The director is busy. Try again in a moment.")
         state.waiting += 1
-        cfg = RunConfig(mode="inspiration", json_format="keys", strategy="decomposed", shot_format="v3")
+        cfg = RunConfig(mode="inspiration", json_format="keys", strategy="decomposed", shot_format=state.shot_format)
         try:
             async with state.lock:
                 state.waiting -= 1
@@ -277,7 +284,7 @@ def create_app(backend, keys: dict[str, dict], model_name: str, per_hour: int = 
         if references:
             if mode != "inspiration":
                 raise HTTPException(422, "references only apply to inspiration mode.")
-            prepared = _check_references(references, state.backend)
+            prepared = _check_references(references, state.backend, state.shot_format)
         elif mode == "inspiration" and not 3 <= len(inspiration) <= 5:
             raise HTTPException(422, "Inspiration mode needs 3 to 5 inspiration photos (or prepared references).")
 
@@ -285,7 +292,7 @@ def create_app(backend, keys: dict[str, dict], model_name: str, per_hour: int = 
         try:
             target_path = await _save(target, workdir / "target.jpg")
             if target_scene:
-                prepared_scene = _check_target_scene(target_scene, str(target_path), state.backend)
+                prepared_scene = _check_target_scene(target_scene, str(target_path), state.backend, state.shot_format)
             prefix = state.prefixes.take(plan_token, who, _sha(target_path)) if plan_token else None
             # With prepared references the photos are not needed, so any that came along are not read at all.
             insp_paths = [] if prepared else [await _save(f, workdir / f"inspiration_{i}.jpg") for i, f in enumerate(inspiration, 1)]
@@ -300,7 +307,7 @@ def create_app(backend, keys: dict[str, dict], model_name: str, per_hour: int = 
 
         cfg = RunConfig(
             mode=mode, style=style or None, brief=brief, n_looks=max(3, shot_count), json_format="keys",
-            strategy="decomposed", shot_format="v3", references=prepared, target_scene=prepared_scene,
+            strategy="decomposed", shot_format=state.shot_format, references=prepared, target_scene=prepared_scene,
         )
 
         async def events():
@@ -349,8 +356,8 @@ def create_app(backend, keys: dict[str, dict], model_name: str, per_hour: int = 
     return app
 
 
-def _check_references(raw: str, backend) -> dict:
-    cfg = RunConfig(mode="inspiration", json_format="keys", strategy="decomposed", shot_format="v3")
+def _check_references(raw: str, backend, shot_format: str = "v3") -> dict:
+    cfg = RunConfig(mode="inspiration", json_format="keys", strategy="decomposed", shot_format=shot_format)
     try:
         return pipeline.check_references(json.loads(raw), backend, cfg)
     except json.JSONDecodeError:
@@ -361,8 +368,8 @@ def _check_references(raw: str, backend) -> dict:
         raise HTTPException(422, str(exc))
 
 
-def _check_target_scene(raw: str, target_path: str, backend) -> dict:
-    cfg = RunConfig(mode="inspiration", json_format="keys", strategy="decomposed", shot_format="v3")
+def _check_target_scene(raw: str, target_path: str, backend, shot_format: str = "v3") -> dict:
+    cfg = RunConfig(mode="inspiration", json_format="keys", strategy="decomposed", shot_format=shot_format)
     try:
         return pipeline.check_target_scene(json.loads(raw), target_path, backend, cfg)
     except json.JSONDecodeError:

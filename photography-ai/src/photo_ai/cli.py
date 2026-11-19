@@ -214,6 +214,8 @@ def main(argv: list[str] | None = None) -> int:
     sv.add_argument("--port", type=int, default=8787)
     sv.add_argument("--model", default="qwen3-vl-2b-4bit", help='serve: model key, e.g. "qwen3-vl-2b-4bit+adapter=data/adapters/<run>"')
     sv.add_argument("--per-hour", type=int, default=30, help="serve: requests per key per hour")
+    sv.add_argument("--shot-format", default="v3", help="serve: shot format for Inspiration plans; use the one the model "
+                    "was trained on (fused q5: v7). Apps without the ZoomPlan 'N m at Kx' fix need v3")
     sv.add_argument("--label", default="device", help="keygen: a name for this client key")
 
     pk = sub.add_parser("picks", help="tap-to-pick review: generate looks, build the page, import picks, export training data")
@@ -460,7 +462,8 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         backend = make_backend(a.model)
         backend.load()  # keep the model warm so the first request is not slow
-        uvicorn.run(SV.create_app(backend, keys, a.model, a.per_hour), host=a.host, port=a.port, log_level="warning")
+        uvicorn.run(SV.create_app(backend, keys, a.model, a.per_hour, shot_format=a.shot_format), host=a.host, port=a.port,
+                    log_level="warning")
         return 0
 
     if a.cmd == "monitor":
