@@ -86,6 +86,9 @@ class MonitorApp:
         if route == "/api/evals":
             from . import evals as EV
             return 200, EV.collect(PROJECT_ROOT / "runs")
+        if route == "/api/pipeline":
+            from . import pipeline_view as PV
+            return 200, PV.collect(PROJECT_ROOT / "runs")
         if route == "/api/compare":
             a, b = g("a", ""), g("b", "")
             for p in (a, b):
