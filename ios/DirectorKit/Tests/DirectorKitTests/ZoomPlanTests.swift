@@ -65,3 +65,55 @@ final class ZoomPlanTests: XCTestCase {
         XCTAssertTrue(ZoomPlan.resolved(s).zoomOrLens.hasPrefix("1x"))
     }
 }
+
+/// Shot formats v5-v7 write the distance for the model's own zoom ("About 2.4 m at 2x"). The rule must undo that
+/// before it applies its own zoom; these are real fused-q5 v7 lines that came out doubled or contradictory before.
+final class ZoomPlanAtZoomTests: XCTestCase {
+    private func shot(_ distance: String, room: String = "", background: String = "") -> Shot {
+        var s = Shot(title: "t", cameraPosition: "p", cameraHeight: "h", cameraAngle: "a", subjectPosition: "s")
+        s.distanceAndFraming = distance; s.roomToStepBack = room; s.backgroundWorthEnlarging = background
+        return s
+    }
+
+    func testReadsTheOneXDistanceBackOut() {
+        XCTAssertEqual(ZoomPlan.oneXMeters("About 2.4 m at 2x; waist up with the trees") ?? 0, 1.2, accuracy: 0.001)
+        XCTAssertEqual(ZoomPlan.oneXMeters("About 3 m at 1.5x; half body") ?? 0, 2, accuracy: 0.001)
+        XCTAssertEqual(ZoomPlan.oneXMeters("About 2 m at 1x; full body") ?? 0, 2, accuracy: 0.001)
+        XCTAssertEqual(ZoomPlan.oneXMeters("About 2 m away, head to toe.") ?? 0, 2, accuracy: 0.001)  // v3: already 1x
+        XCTAssertNil(ZoomPlan.oneXMeters("close, head and shoulders"))
+    }
+
+    func testModelTwoXRuleTwoXIsNotScaledTwice() {
+        // Was "About 4.8 m at 2x": the 2x distance doubled again.
+        let r = ZoomPlan.resolved(shot("About 2.4 m at 2x; waist up with the trees", room: "yes", background: "yes"))
+        XCTAssertEqual(r.distanceAndFraming, "About 2.4 m at 2x; waist up with the trees")
+        XCTAssertTrue(r.zoomOrLens.hasPrefix("2x"))
+    }
+
+    func testModelTwoXRuleOneXGoesBackToTheOneXDistance() {
+        // Was "About 2.4 m at 2x" under a "1x main lens" line.
+        let r = ZoomPlan.resolved(shot("About 2.4 m at 2x; head and shoulders with the bridge", room: "no", background: "no"))
+        XCTAssertEqual(r.zoomOrLens, "1x main lens")
+        XCTAssertEqual(r.distanceAndFraming, "About 1.2 m at 1x; head and shoulders with the bridge")
+    }
+
+    func testModelOneXRuleTwoXSaysTwoX() {
+        // Was "About 4 m at 1x" under a 2x lens line.
+        let r = ZoomPlan.resolved(shot("About 2 m at 1x; full body with the mountains", room: "yes", background: "yes"))
+        XCTAssertEqual(r.distanceAndFraming, "About 4 m at 2x; full body with the mountains")
+        XCTAssertTrue(r.zoomOrLens.hasPrefix("2x"))
+    }
+
+    func testHalfStepAndUnchangedCases() {
+        XCTAssertEqual(ZoomPlan.resolved(shot("About 2 m at 1x; full body", room: "maybe", background: "yes")).distanceAndFraming,
+                       "About 2 m at 1x; full body")  // "maybe" in the trained field is not yes/no: text rules, no zoom
+        XCTAssertEqual(ZoomPlan.rewriteDistance("About 2 m at 1x; full body", zoom: 1.5), "About 3 m at 1.5x; full body")
+        XCTAssertEqual(ZoomPlan.rewriteDistance("About 1.2 m at 1x; waist up", zoom: 1), "About 1.2 m at 1x; waist up")
+        XCTAssertEqual(ZoomPlan.rewriteDistance("about 2 m, half body", zoom: 2), "about 4 m, half body")  // v3 text: as before
+        XCTAssertEqual(ZoomPlan.rewriteDistance("about 2 m, half body", zoom: 1), "about 2 m, half body")
+    }
+
+    func testIgnoresImplausibleZoomText() {
+        XCTAssertEqual(ZoomPlan.oneXMeters("About 3 m at 10x") ?? 0, 3, accuracy: 0.001)
+    }
+}

@@ -40,12 +40,39 @@ public struct ZoomPlan: Equatable, Sendable {
     }
 
     /// The shot's own distance text rewritten for the zoom, e.g. "about 2 m, half body" at 2x becomes "about 4 m, half body".
+    /// Text that already names its zoom ("About 2.4 m at 2x", shot formats v5-v7) is first turned back into the 1x
+    /// distance, then rewritten whole, so the distance and the "at <zoom>x" always match the zoom the app uses.
     public static func rewriteDistance(_ text: String, zoom: Double) -> String {
+        if let (r, meters, atZoom) = distanceAtZoom(text) {
+            let oneX = meters / atZoom
+            return text.replacingCharacters(in: r, with: "\(number(oneX * zoom)) m at \(number(zoom))x")
+        }
         guard zoom > 1.01, let r = text.range(of: #"\d+(?:\.\d+)?\s*m\b"#, options: .regularExpression),
               let n = Self.parseMeters(String(text[r])) else { return text }
-        let scaled = (n * zoom * 10).rounded() / 10
-        let shown = scaled.truncatingRemainder(dividingBy: 1) == 0 ? String(Int(scaled)) : String(scaled)
-        return text.replacingCharacters(in: r, with: "\(shown) m")
+        return text.replacingCharacters(in: r, with: "\(number(n * zoom)) m")
+    }
+
+    /// The distance as if shot at 1x: "About 2.4 m at 2x" is 1.2 m; text without a zoom is already a 1x distance.
+    public static func oneXMeters(_ text: String) -> Double? {
+        if let (_, meters, atZoom) = distanceAtZoom(text) { return meters / atZoom }
+        return parseMeters(text)
+    }
+
+    /// "<N> m at <K>x" in the text: its range, N and K (K between 1 and 3, else ignored).
+    static func distanceAtZoom(_ text: String) -> (Range<String.Index>, Double, Double)? {
+        guard let r = text.range(of: #"\d+(?:\.\d+)?\s*m\s+at\s+\d+(?:\.\d+)?\s*[x×]"#, options: [.regularExpression, .caseInsensitive]) else { return nil }
+        var nums: [Double] = [], rest = Substring(text[r])
+        while let n = rest.range(of: #"\d+(?:\.\d+)?"#, options: .regularExpression) {
+            if let v = Double(rest[n]) { nums.append(v) }
+            rest = rest[n.upperBound...]
+        }
+        guard nums.count == 2, nums[1] >= 1, nums[1] <= 3 else { return nil }
+        return (r, nums[0], nums[1])
+    }
+
+    static func number(_ x: Double) -> String {
+        let v = (x * 10).rounded() / 10
+        return v.truncatingRemainder(dividingBy: 1) == 0 ? String(Int(v)) : String(v)
     }
 
     // MARK: - From the shot's own words
@@ -76,18 +103,18 @@ public struct ZoomPlan: Equatable, Sendable {
     }
 
     /// The shot with the rule's zoom written into its lens line and its distance rewritten to match. The model's own
-    /// zoom is replaced, so a 2x look cannot arrive with the 1x distance. The distance text is treated as the 1x distance.
+    /// zoom is replaced, so a 2x look cannot arrive with the 1x distance. Distance text without a zoom is treated as
+    /// the 1x distance; "About 2.4 m at 2x" (shot formats v5-v7) is converted back to its 1x distance first.
     public static func resolved(_ shot: Shot) -> Shot {
         let facts = infer(from: shot)
-        let plan = make(oneXDistanceMeters: parseMeters(shot.distanceAndFraming), room: facts.room, background: facts.background)
+        let plan = make(oneXDistanceMeters: oneXMeters(shot.distanceAndFraming), room: facts.room, background: facts.background)
         var out = shot
         if plan.zoom > 1.01 {
-            let z = plan.zoom.truncatingRemainder(dividingBy: 1) == 0 ? String(Int(plan.zoom)) : String(plan.zoom)
-            out.zoomOrLens = "\(z)x, stand further back and zoom in"
-            out.distanceAndFraming = rewriteDistance(shot.distanceAndFraming, zoom: plan.zoom)
+            out.zoomOrLens = "\(number(plan.zoom))x, stand further back and zoom in"
         } else {
             out.zoomOrLens = "1x main lens"
         }
+        out.distanceAndFraming = rewriteDistance(shot.distanceAndFraming, zoom: plan.zoom)
         return out
     }
 }
