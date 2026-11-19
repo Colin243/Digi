@@ -13,7 +13,7 @@ import gc
 import time
 from importlib import metadata
 
-from .base import IMAGE_MARKER, Generation, GenerationParams, ModelSpec
+from .base import IMAGE_MARKER, Generation, GenerationParams, ModelSpec, PromptPrefix
 
 # Tokens that open one image block, used to count images that reached the model.
 _IMAGE_START_TOKENS = ("<global-img>", "<|vision_start|>")
@@ -78,7 +78,50 @@ class MLXVLMBackend:
             raise ValueError("interleaved images need a processor chat template")
         return apply_chat_template(self._processor, self._model.config, prompt, num_images=n_images)
 
-    def generate(self, prompt: str, images: list[str], params: GenerationParams, on_text=None) -> Generation:
+    # ---- prompt prefix cache
+    # The chat template closes the user turn with END_TOKEN and then adds the assistant header. Everything before
+    # END_TOKEN can be read ahead of time. Qwen3.5's linear-attention layers keep a recurrent state that cannot be
+    # rewound, so the warm-up must leave the cache holding EXACTLY the tokens the real prompt starts with: it reads
+    # the prefix and forces its single generated token to be END_TOKEN, the real prompt's next token. mlx-vlm then
+    # reuses the cache with nothing to trim (PromptCacheState) and reads only the short assistant header.
+    END_TOKEN = "<|im_end|>"
+
+    def prepare_prefix(self, prompt: str, images: list[str], params: GenerationParams) -> PromptPrefix | None:
+        import mlx.core as mx
+        from mlx_vlm import stream_generate
+        from mlx_vlm.generate.common import PromptCacheState
+
+        formatted = self.format_prompt(prompt, len(images))
+        cut = formatted.rfind(self.END_TOKEN)
+        tokenizer = getattr(self._processor, "tokenizer", self._processor)
+        end_id = tokenizer.convert_tokens_to_ids(self.END_TOKEN) if cut > 0 else None
+        if cut <= 0 or not isinstance(end_id, int) or end_id < 0:
+            return None  # this model's template has no such marker: no prefix cache, the normal path still works
+
+        def force_end(tokens, logits):
+            keep = mx.arange(logits.shape[-1]) == end_id
+            return mx.where(keep, logits, mx.full(logits.shape, -1e9, dtype=logits.dtype))
+
+        state = PromptCacheState()
+        tokenizer.stopping_criteria.reset(self._model.config.eos_token_id)
+        mx.random.seed(params.seed)
+        t0 = time.perf_counter()
+        for _ in stream_generate(self._model, self._processor, formatted[:cut], images or None, max_tokens=1,
+                                 temperature=0.0, prompt_cache_state=state, logits_processors=[force_end]):
+            pass
+        wall = time.perf_counter() - t0
+        ids = state.token_ids or []
+        offsets = {int(getattr(c, "offset", 0) or 0) for c in (state.cache or [])}
+        if not ids or ids[-1] != end_id or not offsets <= {0, len(ids)}:
+            return None  # the cache does not hold exactly prefix + END_TOKEN; reusing it could corrupt the answer
+        return PromptPrefix(text=formatted[:cut], state=state, n_tokens=len(ids), wall_seconds=wall)
+
+    def _prefix_fits(self, prefix: PromptPrefix | None, formatted: str) -> bool:
+        return (prefix is not None and not prefix.used and prefix.state is not None
+                and formatted.startswith(prefix.text) and formatted[len(prefix.text):].startswith(self.END_TOKEN))
+
+    def generate(self, prompt: str, images: list[str], params: GenerationParams, on_text=None,
+                 prefix: PromptPrefix | None = None) -> Generation:
         import mlx.core as mx
         from mlx_vlm import generate
 
@@ -87,6 +130,10 @@ class MLXVLMBackend:
         kwargs = {"max_tokens": params.max_tokens, "temperature": params.temperature}
         if params.repetition_penalty:
             kwargs["repetition_penalty"] = params.repetition_penalty
+        cached = self._prefix_fits(prefix, formatted)
+        if cached:
+            kwargs["prompt_cache_state"] = prefix.state
+            prefix.used = True  # generation advances the state; never reuse it
 
         if hasattr(mx, "reset_peak_memory"):
             mx.reset_peak_memory()
@@ -107,6 +154,7 @@ class MLXVLMBackend:
             generation_tps=result.generation_tps,
             peak_memory_gb=result.peak_memory,
             finish_reason=getattr(result, "finish_reason", None),
+            prefix_cached=cached,
         )
 
     def generate_batch(self, items: list[tuple[str, list[str]]], params: GenerationParams) -> list[Generation] | None:

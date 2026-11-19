@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 import time
 
-from .base import Generation, GenerationParams, ModelSpec
+from .base import Generation, GenerationParams, ModelSpec, PromptPrefix
 
 AESTHETIC = {
     "per_image": ["FAKE: photo 1", "FAKE: photo 2", "FAKE: photo 3"],
@@ -94,6 +94,8 @@ class FakeBackend:
         self._responses = list(responses) if responses else None
         self._loaded = False
         self.calls: list[tuple[str, list[str]]] = []
+        self.prefix_calls: list[tuple[str, list[str]]] = []
+        self.prefix_hits: list[bool] = []
 
     @property
     def is_loaded(self) -> bool:
@@ -106,15 +108,25 @@ class FakeBackend:
         self.load_seconds = 0.0
         return 0.0
 
-    def generate(self, prompt: str, images: list[str], params: GenerationParams, on_text=None) -> Generation:
+    def prepare_prefix(self, prompt: str, images: list[str], params: GenerationParams) -> PromptPrefix | None:
+        self.load()
+        self.prefix_calls.append((prompt, list(images)))
+        return PromptPrefix(text=prompt, state=object(), n_tokens=len(prompt))
+
+    def generate(self, prompt: str, images: list[str], params: GenerationParams, on_text=None,
+                 prefix: PromptPrefix | None = None) -> Generation:
         self.load()
         self.calls.append((prompt, list(images)))
+        cached = prefix is not None and not prefix.used and prompt == prefix.text
+        if cached:
+            prefix.used = True
+        self.prefix_hits.append(cached)
         t0 = time.perf_counter()
         text = self._responses.pop(0) if self._responses else default_response(prompt)
         if on_text is not None:  # stream in small pieces, like a real model, so callers see partial output
             for i in range(0, len(text), STREAM_CHUNK):
                 on_text(text[i:i + STREAM_CHUNK])
-        return Generation(text=text, wall_seconds=time.perf_counter() - t0, finish_reason="stop")
+        return Generation(text=text, wall_seconds=time.perf_counter() - t0, finish_reason="stop", prefix_cached=cached)
 
     def generate_batch(self, items: list[tuple[str, list[str]]], params: GenerationParams) -> list[Generation]:
         """Same answers as calling generate() on each item in order (the fake has no padding to disturb them)."""
