@@ -38,6 +38,7 @@ class Generation:
     peak_memory_gb: float | None = None
     finish_reason: str | None = None
     extra: dict = field(default_factory=dict)
+    prefix_cached: bool = False  # True when a prepared PromptPrefix was reused for this call
 
 
 class VLMBackend(Protocol):
@@ -60,3 +61,17 @@ class VLMBackend(Protocol):
         """Tokenize without generating; report how images reached the model."""
 
     def runtime_info(self) -> dict: ...
+
+
+@dataclass
+class PromptPrefix:
+    """A prompt whose fixed beginning was already read by the model (see prepare_prefix on a backend).
+
+    `text` is that beginning in the backend's own form (the formatted prompt for MLX, the raw prompt for the fake
+    backend); `state` is backend-private (the MLX KV/recurrent cache). Single use: generating with it advances the
+    state, so a backend marks it used and ignores it after that."""
+    text: str
+    state: object = None
+    n_tokens: int = 0
+    wall_seconds: float = 0.0
+    used: bool = False

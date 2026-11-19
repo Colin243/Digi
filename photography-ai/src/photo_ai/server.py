@@ -11,6 +11,12 @@ POST /v1/scene (multipart: the target photo) reads the target photo ahead of tim
 tied to a hash of that photo. /v1/plan takes it as the optional `target_scene` field and skips that stage; it is refused
 (409) if the photo sent with the plan is not the one that was read.
 
+POST /v1/prepare-plan (multipart: target photo + references + target_scene) reads the fixed beginning of the
+compositions prompt ahead of time and returns a short-lived `plan_token`. /v1/plan takes it as `plan_token`; the model
+then starts writing shots almost at once. The prepared state lives only in this process's memory, belongs to the key
+that made it, is used at most once and expires after PREFIX_TTL_S. A token that is missing, expired, used, someone
+else's, or for a different photo or brief is ignored and the plan runs normally (never an error).
+
 POST /v1/plan (multipart) runs the Scene Director or Inspiration Director and streams newline-delimited
 JSON events that mirror DirectorKit's DirectorEvent:
 
@@ -96,6 +102,44 @@ class ServerState:
     max_queue: int = 2
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     waiting: int = 0
+    prefixes: "PrefixStore" = field(default_factory=lambda: PrefixStore())
+
+
+PREFIX_TTL_S = 600
+PREFIX_MAX = 4  # each holds the model's cache for one prompt (about 60 MB for Qwen3.5-2B)
+
+
+class PrefixStore:
+    """Prepared compositions prefixes, in memory only. Single use, per key, expiring, bounded."""
+
+    def __init__(self, ttl_s: float = PREFIX_TTL_S, max_items: int = PREFIX_MAX, clock: Callable[[], float] = time.monotonic):
+        self.ttl_s, self.max_items, self.clock = ttl_s, max_items, clock
+        self._items: dict[str, dict] = {}
+
+    def _purge(self) -> None:
+        now = self.clock()
+        for k in [k for k, v in self._items.items() if v["expires"] <= now]:
+            del self._items[k]
+
+    def put(self, who: str, photo_sha256: str, prefix) -> str:
+        self._purge()
+        while len(self._items) >= self.max_items:  # drop the oldest
+            del self._items[min(self._items, key=lambda k: self._items[k]["expires"])]
+        token = secrets.token_urlsafe(18)
+        self._items[token] = {"who": who, "photo": photo_sha256, "prefix": prefix, "expires": self.clock() + self.ttl_s}
+        return token
+
+    def take(self, token: str, who: str, photo_sha256: str):
+        """The prefix for this token if it is live, this key's, and for this photo; it is removed either way."""
+        self._purge()
+        item = self._items.pop(token, None) if token else None
+        if item is None or item["who"] != who or item["photo"] != photo_sha256:
+            return None
+        return item["prefix"]
+
+    def __len__(self) -> int:
+        self._purge()
+        return len(self._items)
 
 
 # ----------------------------------------------------------------------------- app
@@ -173,6 +217,34 @@ def create_app(backend, keys: dict[str, dict], model_name: str, per_hour: int = 
             shutil.rmtree(workdir, ignore_errors=True)  # the photo is never kept
         return JSONResponse({"target_scene": scene})
 
+    @app.post("/v1/prepare-plan")
+    async def prepare_plan(who: str = Depends(authed), target: UploadFile = File(...), references: str = Form(...),
+                           target_scene: str = Form(...)):
+        workdir = Path(tempfile.mkdtemp(prefix="digi-prefix-"))
+        try:
+            path = await _save(target, workdir / "target.jpg")
+            refs = _check_references(references, state.backend)
+            scene = _check_target_scene(target_scene, str(path), state.backend)
+        except HTTPException:
+            shutil.rmtree(workdir, ignore_errors=True)
+            raise
+        if state.waiting >= state.max_queue:
+            shutil.rmtree(workdir, ignore_errors=True)
+            raise HTTPException(503, "The director is busy. Try again in a moment.")
+        state.waiting += 1
+        cfg = RunConfig(mode="inspiration", json_format="keys", strategy="decomposed", shot_format="v3")
+        try:
+            async with state.lock:
+                state.waiting -= 1
+                prefix = await asyncio.get_running_loop().run_in_executor(
+                    None, lambda: pipeline.prepare_compositions_prefix(state.backend, refs, scene, str(path), cfg, workdir / "runs"))
+            photo = _sha(path)
+        finally:
+            shutil.rmtree(workdir, ignore_errors=True)  # the photo is never kept; only the model state, in memory
+        if prefix is None:
+            return JSONResponse({"prepared": False})
+        return JSONResponse({"prepared": True, "plan_token": state.prefixes.put(who, photo, prefix), "expires_in_s": state.prefixes.ttl_s})
+
     @app.post("/v1/plan")
     async def plan(
         who: str = Depends(authed),
@@ -185,6 +257,7 @@ def create_app(backend, keys: dict[str, dict], model_name: str, per_hour: int = 
         inspiration: list[UploadFile] = File(default=[]),
         references: str = Form(""),
         target_scene: str = Form(""),
+        plan_token: str = Form(""),
     ):
         if upload != "photos":
             # Text-only requests (the privacy setting) are not served yet; the app falls back to the phone.
@@ -213,6 +286,7 @@ def create_app(backend, keys: dict[str, dict], model_name: str, per_hour: int = 
             target_path = await _save(target, workdir / "target.jpg")
             if target_scene:
                 prepared_scene = _check_target_scene(target_scene, str(target_path), state.backend)
+            prefix = state.prefixes.take(plan_token, who, _sha(target_path)) if plan_token else None
             # With prepared references the photos are not needed, so any that came along are not read at all.
             insp_paths = [] if prepared else [await _save(f, workdir / f"inspiration_{i}.jpg") for i, f in enumerate(inspiration, 1)]
         except HTTPException:
@@ -238,6 +312,7 @@ def create_app(backend, keys: dict[str, dict], model_name: str, per_hour: int = 
 
             def work() -> None:
                 token = pipeline.set_event_sink(sink)
+                ptoken = pipeline.set_compositions_prefix(prefix)
                 try:
                     record = pipeline.analyze(state.backend, insp_paths, str(target_path), cfg, runs_dir=workdir / "runs")
                     if record["validation"]["ok"]:
@@ -248,6 +323,7 @@ def create_app(backend, keys: dict[str, dict], model_name: str, per_hour: int = 
                 except Exception as exc:  # noqa: BLE001 - report any failure to the client
                     sink({"type": "error", "message": str(exc)})
                 finally:
+                    pipeline.reset_compositions_prefix(ptoken)
                     pipeline.reset_event_sink(token)
 
             try:
@@ -295,6 +371,10 @@ def _check_target_scene(raw: str, target_path: str, backend) -> dict:
         raise HTTPException(409, str(exc))
     except pipeline.InputError as exc:
         raise HTTPException(422, str(exc))
+
+
+def _sha(path) -> str:
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
 def _line(obj: dict) -> bytes:

@@ -47,6 +47,9 @@ MIN_INSPIRATION, MAX_INSPIRATION = 3, 5
 # Optional progress sink for servers: called with {"type": "stage", "stage": ...} or {"type": "shot", "shot": {...}}
 # as work finishes. A contextvar (not RunConfig) so it never lands in the saved run record.
 _EVENT_SINK: contextvars.ContextVar = contextvars.ContextVar("photo_ai_event_sink", default=None)
+# Optional prepared compositions prefix (backends.base.PromptPrefix) for servers; a contextvar for the same reason:
+# it holds live model state and must never be copied into a run record.
+_COMPOSITIONS_PREFIX: contextvars.ContextVar = contextvars.ContextVar("photo_ai_compositions_prefix", default=None)
 
 
 def _emit(event: dict) -> None:
@@ -139,18 +142,23 @@ def _run_stage(
     cfg: RunConfig,
     max_tokens: int | None = None,
     on_text=None,
+    prefix=None,
 ) -> tuple[dict | str | None, dict]:
     """Generate, parse, validate; retry on invalid JSON. `model=None` means free text.
 
     `on_text` receives the first attempt's output as it is generated (retries are not streamed)."""
     attempts = []
     data = None
+    prefix_cached = False
     for attempt in range(1 + cfg.json_retries):
         p = prompt if attempt == 0 else prompt + prompts.RETRY_SUFFIX
+        extra = {"prefix": prefix} if attempt == 0 and prefix is not None else {}
         if attempt == 0 and on_text is not None:
-            gen = backend.generate(p, images, cfg.params(max_tokens), on_text=on_text)
+            gen = backend.generate(p, images, cfg.params(max_tokens), on_text=on_text, **extra)
         else:
-            gen = backend.generate(p, images, cfg.params(max_tokens))
+            gen = backend.generate(p, images, cfg.params(max_tokens), **extra)
+        if getattr(gen, "prefix_cached", False):
+            prefix_cached = True
         raw_path = write_raw(run_dir, f"{name}_attempt{attempt + 1}", gen.text)
         if model is None:
             text = gen.text.strip()
@@ -176,6 +184,7 @@ def _run_stage(
         "ok": data is not None,
         "wall_s": round(sum(a["wall_s"] for a in attempts), 3),
         "attempts": attempts,
+        **({"prefix_cached": True} if prefix_cached else {}),
     }
 
 
@@ -218,6 +227,16 @@ def _aesthetic_stage(backend, run_dir, notes, cfg):
     return _run_stage(backend, run_dir, "aesthetic_from_notes", prompts.aesthetic_from_notes(notes), [], schema.Aesthetic, cfg, 900)
 
 
+def _compositions_prompt(aesthetic: dict, target: dict, cfg: RunConfig, brief: str) -> str:
+    return prompts.photographer_asks(prompts.compositions_from_parts(aesthetic, target, cfg.subject, cfg.shot_format), brief)
+
+
+def _compositions_tokens(cfg: RunConfig) -> int | None:
+    return {"v2": max(cfg.max_tokens, SHOT_V2_TOKENS), "v3": max(cfg.max_tokens, SHOT_V3_TOKENS),
+            "v4": max(cfg.max_tokens, SHOT_V3_TOKENS), "v5": max(cfg.max_tokens, SHOT_V3_TOKENS),
+            "v6": max(cfg.max_tokens, SHOT_V3_TOKENS), "v7": max(cfg.max_tokens, SHOT_V3_TOKENS)}.get(cfg.shot_format)
+
+
 def _decomposed(backend, run_dir, insp, tgt, cfg):
     stages, notes = [], []
     if cfg.references is None:
@@ -237,13 +256,9 @@ def _decomposed(backend, run_dir, insp, tgt, cfg):
         return None, partial, stages
     streamed: list[dict] = []
     comps, st = _run_stage(
-        backend, run_dir, "compositions",
-        prompts.photographer_asks(prompts.compositions_from_parts(aesthetic, target, cfg.subject, cfg.shot_format), cfg.brief),
-        [tgt], schema.shot_set(cfg.shot_format), cfg,
-        {"v2": max(cfg.max_tokens, SHOT_V2_TOKENS), "v3": max(cfg.max_tokens, SHOT_V3_TOKENS),
-         "v4": max(cfg.max_tokens, SHOT_V3_TOKENS), "v5": max(cfg.max_tokens, SHOT_V3_TOKENS),
-         "v6": max(cfg.max_tokens, SHOT_V3_TOKENS), "v7": max(cfg.max_tokens, SHOT_V3_TOKENS)}.get(cfg.shot_format),
-        on_text=_look_streamer(cfg.shot_format, streamed),
+        backend, run_dir, "compositions", _compositions_prompt(aesthetic, target, cfg, cfg.brief),
+        [tgt], schema.shot_set(cfg.shot_format), cfg, _compositions_tokens(cfg),
+        on_text=_look_streamer(cfg.shot_format, streamed), prefix=_COMPOSITIONS_PREFIX.get(),
     )
     stages.append(st)
     result = {"aesthetic": aesthetic, "target_scene": target, **comps} if comps else None
@@ -292,6 +307,15 @@ LOOK_TOKENS = 900  # one shot-v2 look runs ~450-650 tokens
 def set_event_sink(sink):
     """Install a progress callback for the current context; returns the token for reset_event_sink."""
     return _EVENT_SINK.set(sink)
+
+
+def set_compositions_prefix(prefix):
+    """Use a prepared compositions prefix (prepare_compositions_prefix) for runs in this context. Returns a token."""
+    return _COMPOSITIONS_PREFIX.set(prefix)
+
+
+def reset_compositions_prefix(token) -> None:
+    _COMPOSITIONS_PREFIX.reset(token)
 
 
 def reset_event_sink(token) -> None:
@@ -474,6 +498,27 @@ def check_target_scene(prepared: object, target: str, backend: VLMBackend, cfg: 
     if errors:
         raise InputError("target_scene is not valid: " + "; ".join(errors[:3]))
     return {"target_scene": scene}
+
+
+def prepare_compositions_prefix(backend: VLMBackend, references: dict, target_scene: dict, target: str,
+                                cfg: RunConfig, runs_dir: Path | None = None):
+    """Read the fixed beginning of the compositions prompt ahead of time: target photo, target scene and aesthetic,
+    everything except the photographer's brief. Takes CHECKED references and target scene (check_references /
+    check_target_scene). Returns a single-use backends.base.PromptPrefix, or None when the backend has no prefix
+    cache. A plan with a non-empty brief, or with different inputs, does not match the prefix and runs normally."""
+    cfg = _normalize_config(cfg)
+    if cfg.mode != "inspiration" or cfg.strategy != "decomposed":
+        raise InputError("Only the decomposed Inspiration Director has a compositions prompt to prepare.")
+    if not hasattr(backend, "prepare_prefix"):
+        return None
+    if not target or not Path(target).is_file():
+        raise InputError(f"File not found: {target}")
+    run_id, run_dir = new_run_dir(Path(runs_dir or DEFAULT_RUNS_DIR), backend.spec.key)
+    tgt = prepare(target, run_dir / "inputs" / "target.jpg", "target", cfg.max_side).saved_as  # same pixels as the plan
+    backend.load()
+    with prompts.json_format(cfg.json_format):
+        prompt = _compositions_prompt(references["aesthetic"], target_scene["target_scene"], cfg, "")
+    return backend.prepare_prefix(prompt, [tgt], cfg.params(_compositions_tokens(cfg)))
 
 
 def analyze(

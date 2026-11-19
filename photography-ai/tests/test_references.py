@@ -209,3 +209,112 @@ def test_plan_refuses_a_target_scene_from_another_photo(client):
     assert c.post("/v1/plan", data={"mode": "scene", "style": "relaxed_candid", "target_scene": json.dumps(scene)},
                   files=[("target", ("t.jpg", jpeg_bytes(), "image/jpeg"))], headers=h).status_code == 422
     assert c.post("/v1/scene", files=[], headers=h).status_code == 422
+
+
+# ----------------------------------------------------------------------------- compositions prefix cache
+
+def _prepared(b, tmp_path, ins, tgt):
+    refs = pipeline.check_references(json.loads(json.dumps(pipeline.prepare_references(b, ins, cfg(), tmp_path / "a"))), b, cfg())
+    scene = pipeline.check_target_scene(json.loads(json.dumps(pipeline.prepare_target_scene(b, tgt, cfg(), tmp_path / "b"))), tgt, b, cfg())
+    return refs, scene
+
+
+def test_prepared_prefix_is_used_once_by_the_compositions_call_and_changes_nothing(tmp_path):
+    ins, tgt = [jpg(tmp_path, f"i{i}.jpg") for i in range(3)], jpg(tmp_path, "t.jpg")
+    b = make_backend("fake")
+    refs, scene = _prepared(b, tmp_path, ins, tgt)
+    prefix = pipeline.prepare_compositions_prefix(b, refs, scene, tgt, cfg(), tmp_path / "c")
+    assert prefix is not None and len(b.prefix_calls) == 1 and len(b.prefix_calls[0][1]) == 1  # target photo only
+    plain = pipeline.analyze(b, [], tgt, cfg(references=refs, target_scene=scene), tmp_path / "d")
+    b.prefix_hits.clear()
+    tok = pipeline.set_compositions_prefix(prefix)
+    try:
+        rec = pipeline.analyze(b, [], tgt, cfg(references=refs, target_scene=scene), tmp_path / "e")
+        again = pipeline.analyze(b, [], tgt, cfg(references=refs, target_scene=scene), tmp_path / "f")
+    finally:
+        pipeline.reset_compositions_prefix(tok)
+    assert b.prefix_hits == [True, False]  # single use: the second plan reads the prompt normally
+    comp = [s for s in rec["stages"] if s["name"] == "compositions"][0]
+    assert comp.get("prefix_cached") is True and "prefix_cached" not in [s for s in again["stages"] if s["name"] == "compositions"][0]
+    assert rec["result"] == plain["result"] == again["result"]
+
+
+def test_a_brief_or_other_inputs_do_not_use_the_prefix(tmp_path):
+    ins, tgt = [jpg(tmp_path, f"i{i}.jpg") for i in range(3)], jpg(tmp_path, "t.jpg")
+    b = make_backend("fake")
+    refs, scene = _prepared(b, tmp_path, ins, tgt)
+    for kw in ({"brief": "give new ideas, different from: x"}, {"subject": "two people"}):
+        prefix = pipeline.prepare_compositions_prefix(b, refs, scene, tgt, cfg(), tmp_path / "c")
+        b.prefix_hits.clear()
+        tok = pipeline.set_compositions_prefix(prefix)
+        try:
+            rec = pipeline.analyze(b, [], tgt, cfg(references=refs, target_scene=scene, **kw), tmp_path / "d")
+        finally:
+            pipeline.reset_compositions_prefix(tok)
+        assert rec["validation"]["ok"] and not any(b.prefix_hits) and prefix.used is False, kw
+
+
+def test_prefix_store_is_single_use_per_key_per_photo_and_expires():
+    now = [0.0]
+    st_ = server.PrefixStore(ttl_s=10, max_items=2, clock=lambda: now[0])
+    t = st_.put("phone", "sha-a", "P")
+    assert st_.take(t, "other-key", "sha-a") is None and st_.take(t, "phone", "sha-a") is None  # wrong key also burns it
+    t = st_.put("phone", "sha-a", "P")
+    assert st_.take(t, "phone", "sha-b") is None  # different photo
+    t = st_.put("phone", "sha-a", "P")
+    assert st_.take(t, "phone", "sha-a") == "P" and st_.take(t, "phone", "sha-a") is None  # single use
+    t = st_.put("phone", "sha-a", "P"); now[0] = 11
+    assert st_.take(t, "phone", "sha-a") is None and len(st_) == 0  # expired
+    a, b2, c = (st_.put("phone", "s", x) for x in "ABC")
+    assert len(st_) == 2 and st_.take(a, "phone", "s") is None and st_.take(c, "phone", "s") == "C"  # bounded, oldest out
+    assert st_.take("", "phone", "s") is None
+
+
+def test_prepare_plan_endpoint_then_plan_with_the_token(client):
+    c, h, backend = client
+    tgt = ("target", ("t.jpg", jpeg_bytes(), "image/jpeg"))
+    refs = c.post("/v1/references", files=photos(3), headers=h).json()["references"]
+    scene = c.post("/v1/scene", files=[tgt], headers=h).json()["target_scene"]
+    form = {"references": json.dumps(refs), "target_scene": json.dumps(scene)}
+    r = c.post("/v1/prepare-plan", data=form, files=[tgt], headers=h)
+    assert r.status_code == 200 and r.json()["prepared"] is True
+    token = r.json()["plan_token"]
+    backend.prefix_hits.clear(); backend.calls.clear()
+    r = c.post("/v1/plan", data={"mode": "inspiration", "plan_token": token, **form}, files=[tgt], headers=h)
+    ev = events(r)
+    assert ev[-1]["type"] == "finished" and sum(e["type"] == "shot" for e in ev) == 3
+    assert names(backend) == ["comps"] and backend.prefix_hits == [True]
+    # the token is spent: the same request still works, without the cache
+    backend.prefix_hits.clear()
+    r = c.post("/v1/plan", data={"mode": "inspiration", "plan_token": token, **form}, files=[tgt], headers=h)
+    assert events(r)[-1]["type"] == "finished" and backend.prefix_hits == [False]
+
+
+def test_plan_token_for_another_photo_or_a_bogus_token_is_ignored_not_an_error(client):
+    c, h, backend = client
+    tgt = ("target", ("t.jpg", jpeg_bytes(), "image/jpeg"))
+    refs = c.post("/v1/references", files=photos(3), headers=h).json()["references"]
+    scene = c.post("/v1/scene", files=[tgt], headers=h).json()["target_scene"]
+    form = {"references": json.dumps(refs), "target_scene": json.dumps(scene)}
+    token = c.post("/v1/prepare-plan", data=form, files=[tgt], headers=h).json()["plan_token"]
+    buf = io.BytesIO(); Image.new("RGB", (64, 48), (5, 5, 250)).save(buf, "JPEG")
+    backend.prefix_hits.clear()
+    r = c.post("/v1/plan", data={"mode": "inspiration", "plan_token": token, "references": form["references"]},
+               files=[("target", ("t.jpg", buf.getvalue(), "image/jpeg"))], headers=h)
+    assert events(r)[-1]["type"] == "finished" and backend.prefix_hits and not any(backend.prefix_hits)
+    r = c.post("/v1/plan", data={"mode": "inspiration", "plan_token": "nope", **form}, files=[tgt], headers=h)
+    assert events(r)[-1]["type"] == "finished"
+
+
+def test_prepare_plan_validates_its_inputs(client):
+    c, h, _ = client
+    tgt = ("target", ("t.jpg", jpeg_bytes(), "image/jpeg"))
+    refs = c.post("/v1/references", files=photos(3), headers=h).json()["references"]
+    scene = c.post("/v1/scene", files=[tgt], headers=h).json()["target_scene"]
+    assert c.post("/v1/prepare-plan", data={"references": json.dumps(refs), "target_scene": json.dumps(scene)}, files=[tgt]).status_code == 401
+    assert c.post("/v1/prepare-plan", data={"references": "{x", "target_scene": json.dumps(scene)}, files=[tgt], headers=h).status_code == 422
+    assert c.post("/v1/prepare-plan", data={"references": json.dumps({**refs, "fingerprint": "f" * 16}),
+                                            "target_scene": json.dumps(scene)}, files=[tgt], headers=h).status_code == 409
+    buf = io.BytesIO(); Image.new("RGB", (64, 48), (9, 9, 9)).save(buf, "JPEG")
+    assert c.post("/v1/prepare-plan", data={"references": json.dumps(refs), "target_scene": json.dumps(scene)},
+                  files=[("target", ("t.jpg", buf.getvalue(), "image/jpeg"))], headers=h).status_code == 409  # scene from another photo
