@@ -47,7 +47,8 @@ final class DirectorModel: ObservableObject {
 
     /// Call when the mode or any photo changes. In Inspiration mode, with online use allowed, the server starts
     /// reading the photos straight away so the plan has less left to do.
-    func inputsChanged(mode: DirectorMode, target: UIImage?, inspiration: [UIImage], inspirationComplete: Bool = true) {
+    func inputsChanged(mode: DirectorMode, target: UIImage?, inspiration: [UIImage], inspirationComplete: Bool = true,
+                       after delay: Double = 0) {
         let keep = Set(([target].compactMap { $0 } + inspiration).map(ObjectIdentifier.init))
         jpegCache = jpegCache.filter { keep.contains($0.key) }
         let targetJPEG = mode == .inspiration ? target.flatMap(jpegData) : nil
@@ -55,6 +56,8 @@ final class DirectorModel: ObservableObject {
         prepTask?.cancel()
         prepTask = Task { [weak self] in
             guard let self else { return }
+            if delay > 0 { try? await Task.sleep(for: .seconds(delay)) }
+            guard !Task.isCancelled else { return }
             let allowed = await Self.onlinePreparationAllowed()
             guard !Task.isCancelled else { return }
             if allowed, let preparer = self.currentPreparer() {
@@ -71,6 +74,14 @@ final class DirectorModel: ObservableObject {
         let config = DirectorConfig.make(preference: DirectorDefaults.userPreference(), priority: DirectorDefaults.userPriority())
         guard let route = try? Router.route(conditions: await conditions.current(), config: config) else { return false }
         return route.upload == .photos && route.order.first == .online
+    }
+
+    /// The preparer only if it reads ahead on the server the plan will use; one made for an old address has nothing
+    /// the new server can take (its work failed or lives on the other server).
+    private func preparerForCurrentServer() -> PlanPreparer? {
+        guard let cfg = DirectorDefaults.configuration(), let preparer, let s = preparerServer,
+              s.url == cfg.baseURL, s.key == cfg.apiKey else { return nil }
+        return preparer
     }
 
     private func currentPreparer() -> PlanPreparer? {
@@ -153,7 +164,7 @@ final class DirectorModel: ObservableObject {
         let priority = DirectorDefaults.userPriority()
         let started = Date()
         var firstShotAt: Date?, shotCount = 0, fellBack = false
-        let preparer = request.mode == .inspiration && request.prepared == nil ? self.preparer : nil
+        let preparer = request.mode == .inspiration && request.prepared == nil ? self.preparerForCurrentServer() : nil
         task = Task { [weak self] in
             var request = request
             var prepWait: Double?

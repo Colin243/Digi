@@ -88,11 +88,15 @@ struct DirectorView: View {
         .onChange(of: inspirationImages) { _, _ in inputsChanged() }
         .onChange(of: mode) { _, _ in inputsChanged() }
         .onAppear { inputsChanged() }  // resume reading ahead for photos kept from last time
+        // A new server address or key: read the same photos again on that server (after typing pauses).
+        .onChange(of: serverURL) { _, _ in inputsChanged(after: 1) }
+        .onChange(of: apiKey) { _, _ in inputsChanged(after: 1) }
+        .onChange(of: preferenceRaw) { _, _ in inputsChanged() }
     }
 
-    private func inputsChanged() {
+    private func inputsChanged(after delay: Double = 0) {
         model.inputsChanged(mode: mode, target: targetImage, inspiration: inspirationImages,
-                            inspirationComplete: loadingInspiration == 0)
+                            inspirationComplete: loadingInspiration == 0, after: delay)
     }
 
     // MARK: input
