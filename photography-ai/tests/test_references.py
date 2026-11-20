@@ -390,3 +390,15 @@ def test_notes_variants_are_off_by_default_and_change_only_their_part(tmp_path):
     b.calls.clear()
     pipeline.analyze(b, ins, tgt, cfg(notes_style="short"), tmp_path / "c")
     assert "under 40 words" in b.calls[0][0]
+
+
+def test_notes_come_from_the_client_then_the_cache_then_the_model(tmp_path):
+    ins, tgt = [jpg(tmp_path, f"i{i}.jpg") for i in range(3)], jpg(tmp_path, "t.jpg")
+    pipeline._NOTES_CACHE.clear()
+    b = make_backend("fake")
+    pipeline.analyze(b, ins, tgt, cfg(cache_notes=True, prepared_notes=["read ahead", None, None]), tmp_path / "a")
+    assert names(b).count("notes") == 2  # photo 1 came from the client, photos 2 and 3 from the model
+    b.calls.clear()
+    pipeline.analyze(b, ins, tgt, cfg(cache_notes=True, prepared_notes=["read ahead", None, None]), tmp_path / "b")
+    assert names(b).count("notes") == 0  # photos 2 and 3 are now cached; photo 1 is still the client's
+    pipeline._NOTES_CACHE.clear()

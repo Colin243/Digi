@@ -157,6 +157,40 @@ class MLXVLMBackend:
             prefix_cached=cached,
         )
 
+    def generate_batch(self, items: list[tuple[str, list[str]]], params: GenerationParams) -> list[Generation] | None:
+        """Several (prompt, [one image]) requests in one batched pass. Returns None when this model or input cannot
+        be batched (several images in one request, or mlx-vlm raising), so the caller falls back to one at a time.
+        Each Generation carries an equal share of the batch's wall time so stage times still add up to real time."""
+        if not items or any(len(images) != 1 for _, images in items):
+            return None
+        if params.temperature != 0 or params.repetition_penalty:
+            return None  # batching here is greedy-only; sampled or penalised runs take the normal path
+        import mlx.core as mx
+
+        try:
+            from mlx_vlm.generate.ar import batch_generate
+
+            prompts_ = [self.format_prompt(prompt, 1) for prompt, _ in items]
+            mx.random.seed(params.seed)
+            if hasattr(mx, "reset_peak_memory"):
+                mx.reset_peak_memory()
+            t0 = time.perf_counter()
+            resp = batch_generate(self._model, self._processor, images=[images[0] for _, images in items],
+                                  prompts=prompts_, max_tokens=params.max_tokens, verbose=False, greedy_sampling=True)
+            wall = time.perf_counter() - t0
+        except Exception:  # noqa: BLE001 - any batching failure means "do it the slow, known-good way"
+            return None
+        clean = getattr(self._processor, "clean_output", None)
+        stats = resp.stats
+        share = wall / len(items)
+        return [Generation(text=clean(t) if callable(clean) else t, wall_seconds=share,
+                           prompt_tokens=stats.prompt_tokens // len(items) if stats.prompt_tokens else None,
+                           generation_tokens=stats.generation_tokens // len(items) if stats.generation_tokens else None,
+                           prompt_tps=stats.prompt_tps, generation_tps=stats.generation_tps,
+                           peak_memory_gb=stats.peak_memory, finish_reason=None,
+                           extra={"batched": len(items), "batch_wall_s": round(wall, 3)})
+                for t in resp.texts]
+
     def _stream(self, formatted: str, images: list[str], kwargs: dict, on_text):
         """mlx-vlm's generate() is a loop over stream_generate(); this is the same loop, passing each piece of
         text on as it arrives. It resets the stop tokens and cleans the final text exactly as generate() does."""

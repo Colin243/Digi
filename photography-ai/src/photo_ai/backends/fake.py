@@ -128,6 +128,10 @@ class FakeBackend:
                 on_text(text[i:i + STREAM_CHUNK])
         return Generation(text=text, wall_seconds=time.perf_counter() - t0, finish_reason="stop", prefix_cached=cached)
 
+    def generate_batch(self, items: list[tuple[str, list[str]]], params: GenerationParams) -> list[Generation]:
+        """Same answers as calling generate() on each item in order (the fake has no padding to disturb them)."""
+        return [self.generate(prompt, images, params) for prompt, images in items]
+
     def unload(self) -> None:
         self._loaded = False
 

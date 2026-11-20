@@ -62,12 +62,19 @@ def heldout_image_paths(spec: dict) -> list[Path]:
 
 # The first pool is eye-level-heavy (137 of 163 usable people photos; see docs/phase4-finetuning.md §9).
 # These queries target camera-angle techniques and get a larger search limit and starter-sample cap.
+# Each names a person: generic angle phrases ("worm's eye", "from below", "shot from above") mostly
+# returned architecture and aerial landscapes, and "... portrait" phrasings returned nothing in this
+# category. The angle is only the query's intent; tagging decides the real camera angle.
 ANGLE_QUERIES: dict[str, str] = {
-    "low angle portrait": "low",
-    "worm's eye": "low",
-    "from below": "low",
-    "overhead portrait": "overhead",
-    "shot from above": "high",
+    "man from below": "low",
+    "woman from below": "low",
+    "people from below": "low",
+    "man from above": "high",
+    "woman from above": "high",
+    "people from above": "high",
+    "couple from above": "high",
+    "girl lying": "overhead",
+    "woman lying": "overhead",
 }
 ANGLE_SEARCH_LIMIT = 50  # Commons gsrlimit maximum for non-bot clients
 ANGLE_SAMPLE_CAP = 20
@@ -137,8 +144,10 @@ def build_angle_candidates(dataset: str = "train_v1", log=print, pause_s: float 
 
 
 def append_candidates(dataset: str = "train_v1", candidates_name: str = "pool.angle-candidates.json",
-                      backup_name: str = "pool.before-angle.json") -> dict:
-    """Merge a candidates file into pool.json, first copying pool.json to `backup_name` (never overwritten)."""
+                      backup_name: str = "pool.before-angle.json", ids: list[str] | None = None) -> dict:
+    """Merge a candidates file (or only `ids` from it) into pool.json, first copying pool.json to
+    `backup_name` (never overwritten). New images go at the end, so fetch_pool's "first copy wins"
+    near-duplicate rule can never exclude an image that was already usable."""
     root = data_dir(dataset)
     backup = root / backup_name
     if backup.exists():
@@ -148,8 +157,9 @@ def append_candidates(dataset: str = "train_v1", candidates_name: str = "pool.an
     pool = json.loads(pool_text)
     have = {i["id"] for i in pool["images"]}
     cand = json.loads((root / candidates_name).read_text())
-    added = [i for i in cand["images"] if i["id"] not in have and is_cc0(i)]
-    pool["images"] = sorted(pool["images"] + added, key=lambda x: x["id"])
+    wanted = set(ids) if ids is not None else None
+    added = [i for i in cand["images"] if i["id"] not in have and is_cc0(i) and (wanted is None or i["id"] in wanted)]
+    pool["images"] = pool["images"] + added
     (root / "pool.json").write_text(json.dumps(pool, indent=1, ensure_ascii=False))
     return {"added": len(added), "backup": str(backup)}
 

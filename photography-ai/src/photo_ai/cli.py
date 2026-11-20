@@ -168,7 +168,10 @@ def main(argv: list[str] | None = None) -> int:
     td.add_argument("--file", type=Path, help="JSON file for import-tags / import-labels / zoom-relabel --step apply")
     td.add_argument("--step", choices=["backup", "worklist", "apply", "report"], default="report",
                     help="zoom-relabel: back up labels, write the worklist, apply edits, or report (shot-v4)")
-    td.add_argument("--out", type=Path, help="zoom-relabel --step worklist: where to write the worklist JSON")
+    td.add_argument("--out", type=Path, help="zoom-relabel --step worklist: where to write the worklist JSON; "
+                                              "review-site: output folder")
+    td.add_argument("--reuse-previews", action="store_true",
+                    help="review-site: keep shot previews drawn from an earlier version of a label (captioned as such)")
     td.add_argument("--source", default="ai-draft", help="provenance label for imported drafts")
     td.add_argument("--n-examples", type=int, default=24)
     td.add_argument("--reserve", action="store_true",
