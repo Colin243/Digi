@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Digi Progress</title>
+<style>
+/* Layout: summary row of live jobs on top, then one row per worktree. */
+:root{
+  --bg:#f5f6f8; --panel:#ffffff; --fg:#14181f; --muted:#5d6675; --line:#dfe3ea;
+  --track:#e6e9ef; --run:#1f6feb; --pause:#b7791f; --done:#1a7f4b; --idle:#8a93a3; --warn:#c2410c;
+  --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root{
+  --bg:#0f1319; --panel:#171c24; --fg:#e8ecf2; --muted:#98a2b3; --line:#262d38;
+  --track:#252c37; --run:#58a6ff; --pause:#e3b341; --done:#3fb97a; --idle:#7d8796; --warn:#f0883e;}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 -apple-system,system-ui,sans-serif;
+  padding-block:24px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+main{max-width:920px;margin:0 auto;display:flex;flex-direction:column;gap:22px}
+header{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}
+h1{font-size:20px;margin:0}
+h2{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0 0 10px}
+.live{font:12px var(--mono);color:var(--muted)}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--done);margin-right:6px}
+.dot.stale{background:var(--warn)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.row{display:flex;justify-content:space-between;gap:12px;align-items:baseline;flex-wrap:wrap}
+.name{font-weight:600;overflow-wrap:anywhere}
+.sub{color:var(--muted);font-size:12px;overflow-wrap:anywhere}
+.bar{height:10px;border-radius:5px;background:var(--track);overflow:hidden}
+.bar>i{display:block;height:100%;background:var(--run);transition:width .6s ease}
+.bar.paused>i{background:var(--pause)}
+.bar.done>i{background:var(--done)}
+.num{font:13px var(--mono);font-variant-numeric:tabular-nums}
+.pill{font-size:11px;padding:2px 8px;border-radius:999px;border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+.pill.running{color:var(--run);border-color:var(--run)} .pill.paused{color:var(--pause);border-color:var(--pause)}
+.pill.stalled{color:var(--warn);border-color:var(--warn)} .pill.merged{color:var(--done);border-color:var(--done)} .pill.warn{color:var(--warn);border-color:var(--warn)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
+.wt{display:flex;flex-direction:column;gap:8px;min-width:0}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.qrow{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(60px,1fr) auto;gap:10px;align-items:center}
+.qname{font:12px var(--mono);overflow-wrap:anywhere}
+.warnbox{border-color:var(--warn);color:var(--warn);font-size:13px}
+.empty{color:var(--muted);font-size:13px;padding:6px 0}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Digi Progress</h1>
+    <span class="live"><span id="dot" class="dot"></span><span id="stamp">connecting…</span></span>
+  </header>
+
+  <div id="overlap" class="card warnbox" hidden></div>
+  <section><h2>Running jobs</h2><div id="jobs" class="grid"></div></section>
+  <section><h2>Benchmark queue</h2><div id="queue" class="grid"></div></section>
+  <section id="svc-wrap" hidden><h2>Services</h2><div id="svc" class="grid"></div></section>
+  <section><h2>Worktrees vs main</h2><div id="wts" class="grid"></div></section>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const pct = (d,t) => t ? Math.min(100, Math.round(100*d/t)) : 0;
+const fmt = s => { if(s==null) return ''; const m=Math.round(s/60); return m>=60 ? `${Math.floor(m/60)}h ${m%60}m` : `${m}m`; };
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function job(kind, j){
+  const p = pct(j.done, j.total);
+  const cls = (j.state==='paused'||j.state==='stalled') ? 'paused' : (p>=100 ? 'done' : '');
+  const extra = [];
+  if (j.loss!=null) extra.push(`loss ${j.loss.toFixed(3)}`);
+  if (j.remaining_s!=null) extra.push(`~${fmt(j.remaining_s)} left`);
+  if (j.elapsed) extra.push(`up ${esc(j.elapsed)}`);
+  return `<div class="card">
+    <div class="row"><span class="name">${esc(j.name)}</span><span class="pill ${j.state}">${kind} · ${j.state}</span></div>
+    <div class="bar ${cls}"><i style="width:${p}%"></i></div>
+    <div class="row"><span class="num">${j.done} / ${j.total} ${kind==='Training'?'steps':'cases'} (${p}%)</span>
+      <span class="sub">${extra.join(' · ')}</span></div>
+    ${j.note?`<div class="sub">${esc(j.note)}</div>`:''}
+  </div>`;
+}
+
+function queueCard(q){
+  const rows = q.items.map(i => {
+    const p = pct(i.done, i.total);
+    return `<div class="qrow"><span class="qname">${esc(i.id)}</span>
+      <span class="bar ${i.state==='done'?'done':''}"><i style="width:${p}%"></i></span>
+      <span class="pill ${i.state==='running'?'running':(i.state==='done'?'merged':(i.state==='paused'?'paused':(i.state==='stalled'?'stalled':'')))}">${i.state==='queued'?'queued':((i.state==='paused'||i.state==='stalled')?i.state+' '+i.done+'/'+i.total:i.done+'/'+i.total)}</span></div>`;
+  }).join('');
+  return `<div class="card"><div class="row"><span class="name">${esc(q.script)}</span><span class="sub">up ${esc(q.up)}</span></div>${rows}</div>`;
+}
+
+function wt(w){
+  const merged = w.ahead===0;
+  const chips = [
+    merged ? '<span class="pill merged">in main</span>' : `<span class="pill warn">${w.ahead} unmerged</span>`,
+    w.behind ? `<span class="pill">${w.behind} behind</span>` : '',
+    w.dirty ? `<span class="pill warn">${w.dirty} uncommitted</span>` : '',
+  ].join('');
+  return `<div class="card"><div class="wt">
+    <div><div class="name">${esc(w.branch)}</div><div class="sub">${esc(w.path)} · last commit ${esc(w.age)}</div></div>
+    <div class="chips">${chips}</div></div></div>`;
+}
+
+async function tick(){
+  try{
+    const r = await fetch('/api/status',{cache:'no-store'});
+    const s = await r.json();
+    const jobs = s.training.map(j=>job('Training',j)).concat(s.benches.map(j=>job('Benchmark',j)));
+    $('jobs').innerHTML = jobs.join('') || '<div class="empty">No training or benchmark process is running.</div>';
+    $('overlap').hidden = !s.overlap.length;
+    $('overlap').textContent = s.overlap.length ? 'Overlap: ' + s.overlap.join(' + ') + ' are running at the same time. Pause one; this machine has 18 GB of RAM.' : '';
+    $('queue').innerHTML = s.queue.map(queueCard).join('') || '<div class="empty">No benchmark script is running.</div>';
+    $('svc-wrap').hidden = !s.services.length;
+    $('svc').innerHTML = s.services.map(v => `<div class="card"><div class="row"><span class="name">API server :${esc(v.port)}</span>
+      <span class="pill ${v.paused?'warn':'running'}">${v.paused?'paused (SIGSTOP)':'serving'}</span></div><div class="sub">${esc(v.model)}</div></div>`).join('');
+    $('wts').innerHTML = s.worktrees.map(wt).join('');
+    $('stamp').textContent = 'live · updated ' + new Date(s.time*1000).toLocaleTimeString() + ' · refreshes every 5s';
+    $('dot').classList.remove('stale');
+  }catch(e){
+    $('dot').classList.add('stale'); $('stamp').textContent = 'server unreachable, retrying…';
+  }
+}
+tick(); setInterval(tick, 5000);
+</script>
+</body>
+</html>
