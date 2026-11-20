@@ -313,3 +313,38 @@ def test_reserve_batch_uses_only_unused_images_and_leaves_batch_one_alone(ds, tm
     built = R.build(ds, target="vercel", batch=2)
     assert built["examples"] == 1 and built["page"].endswith("review_site_vercel_batch2/index.html")
     assert R.build(ds, target="vercel")["examples"] == len(first) + 1
+
+
+def test_review_page_reuses_earlier_previews_only_when_asked(ds):
+    from photo_ai.training import review_site as R
+
+    ids = _two_drafts(ds)
+    prev = P.data_dir(ds) / "shot_previews"
+    prev.mkdir()
+    _img(prev / "a.png", 3)
+    (prev / "manifest.json").write_text(json.dumps(
+        {ids[0]: {"answer_sha": "0000000000000000", "shots": [{"file": "a.png", "alt": "old shot"}]}}))
+
+    def previews(**kw):
+        R.build(ds, target="vercel", **kw)
+        html = (P.data_dir(ds) / "review_site_vercel" / "index.html").read_text()
+        start = html.index('id="data">') + len('id="data">')
+        data = json.loads(html[start:html.index("</script>", start)].replace("<\\/", "</"))
+        return {e["id"]: e["shot_previews"] for e in data}
+
+    assert previews()[ids[0]] == []  # the answer changed since the preview was drawn
+    shots = previews(reuse_previews=True)[ids[0]]
+    assert len(shots) == 1 and shots[0]["earlier"] is True
+
+    # a redrawn shot carries the current fingerprint: shown as current, while the old shot stays hidden by default
+    _img(prev / "b.png", 4)
+    current = L.answer_sha(L.load_label(ds, ids[0])["answer"])
+    (prev / "manifest.json").write_text(json.dumps({ids[0]: {"answer_sha": "0000000000000000", "shots": [
+        {"file": "a.png", "alt": "old shot"}, {"file": "b.png", "alt": "redrawn", "answer_sha": current}]}}))
+    shots = previews()[ids[0]]
+    assert shots[0] is None and shots[1]["earlier"] is False and shots[1]["src"].endswith("-2.jpg")
+    assert [s["earlier"] for s in previews(reuse_previews=True)[ids[0]]] == [True, False]
+    m = json.loads((prev / "manifest.json").read_text())
+    m[ids[0]]["shots"][1]["hidden"] = True
+    (prev / "manifest.json").write_text(json.dumps(m))
+    assert previews(reuse_previews=True)[ids[0]][1] is None
