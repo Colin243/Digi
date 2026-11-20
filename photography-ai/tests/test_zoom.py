@@ -156,6 +156,20 @@ def test_v7_is_v5_without_uses_principle():
     assert "uses_principle" in prompts.compositions_from_parts(AES, TGT, shot_format="v5")
 
 
+def test_v8_drops_hidden_fields_and_their_rules():
+    gone = ("visible_evidence", "fix_if_wrong", "orientation", "uses_principle")
+    assert [k for k in prompts.COMPOSITION_FIELDS_V7 if k.removesuffix("[]") not in gone] == list(prompts.COMPOSITION_FIELDS_V8)
+    assert prompts.version_for("inspiration", "v8") == prompts.PROMPT_VERSION_V16
+    p = prompts.compositions_from_parts(AES, TGT, shot_format="v8")
+    for k in gone:
+        assert k not in p
+    assert "needs_on_site_check" in p and p.index("- zoom_or_lens") < p.index("- distance_and_framing")
+    old = prompts.compositions_from_parts(AES, TGT, shot_format="v7")
+    assert "fix_if_wrong" in old and "visible_evidence" in old  # v7 byte-identical
+    look = {k.removesuffix("[]"): (["x", "y"] if k.endswith("[]") else "x") for k in prompts.COMPOSITION_FIELDS_V8}
+    schema.shot_set("v8").model_validate({"compositions": [look] * 3})
+
+
 def test_v15_scene_look_chooses_zoom_before_distance():
     """Scene Director look prompt v15: same fields as before, zoom_or_lens right ahead of distance_and_framing."""
     keys = list(prompts.SCENE_SHOT_FIELDS_V15)

@@ -39,12 +39,19 @@ public struct RunRecord: Codable, Equatable, Identifiable, Sendable {
     /// How the person responded: shots they starred, and whether they pinned one to the camera.
     public var keptCount = 0
     public var usedShot = false
+    /// Where the time went (optional so older saved runs still load): the mode, what the server had read ahead
+    /// ("references", "scene", "token", or "none"), and how long Plan waited for a read-ahead call to finish.
+    public var mode: String?
+    public var prepared: String?
+    public var prepWaitSeconds: Double?
 
     public init(id: UUID = UUID(), date: Date = Date(), engine: EngineKind, priority: DirectorPriority,
-                firstShotSeconds: Double?, totalSeconds: Double, shotCount: Int, fellBack: Bool) {
+                firstShotSeconds: Double?, totalSeconds: Double, shotCount: Int, fellBack: Bool,
+                mode: String? = nil, prepared: String? = nil, prepWaitSeconds: Double? = nil) {
         self.id = id; self.date = date; self.engine = engine; self.priority = priority
         self.firstShotSeconds = firstShotSeconds; self.totalSeconds = totalSeconds
         self.shotCount = shotCount; self.fellBack = fellBack
+        self.mode = mode; self.prepared = prepared; self.prepWaitSeconds = prepWaitSeconds
     }
 }
 

@@ -64,10 +64,11 @@ def example_rows(example: dict, answer: dict, image_path, json_format: str = "ke
             p = prompts.compositions_from_parts(answer["aesthetic"], answer["target_scene"],
                                                 example.get("subject", prompts.DEFAULT_SUBJECT), shot_format)
             comps = [_ordered(c, shot_format) for c in answer["compositions"]]
-            if shot_format in ("v5", "v6", "v7"):
+            if shot_format in ("v5", "v6", "v7", "v8"):
                 comps = [_zoom_first(c, name_zoom=shot_format != "v6") for c in comps]
-            if shot_format == "v7":
-                comps = [{k: v for k, v in c.items() if k not in prompts.DROPPED_V7} for c in comps]
+            if shot_format in ("v7", "v8"):
+                dropped = prompts.DROPPED_V8 if shot_format == "v8" else prompts.DROPPED_V7
+                comps = [{k: v for k, v in c.items() if k not in dropped} for c in comps]
             rows.append(_row(p, [tgt], _j({"compositions": comps}),
                              {**meta, "stage": "compositions", "shot_format": shot_format}))
     return rows
@@ -75,7 +76,7 @@ def example_rows(example: dict, answer: dict, image_path, json_format: str = "ke
 
 def _ordered(comp: dict, shot_format: str) -> dict:
     """shot-v3 targets put the reasoning keys first, in prompt order, so the model learns to reason first."""
-    if shot_format not in ("v3", "v4", "v5", "v6", "v7"):
+    if shot_format not in ("v3", "v4", "v5", "v6", "v7", "v8"):
         return comp
     first = [k.removesuffix("[]") for k in prompts.REASONING_FIELDS]
     return {**{k: comp[k] for k in first if k in comp}, **{k: v for k, v in comp.items() if k not in first}}
@@ -133,7 +134,8 @@ def export_sft(dataset: str = "train_v1", out_dir: Path | None = None, json_form
     "v4": the zoom prompt (v11); labels also need every look's zoom_or_lens in 1-2x with a reason.
     "v5": as v4 with the v12 prompt; each look's zoom_or_lens is moved ahead of distance_and_framing and the
     distance names its zoom (the labels themselves are not changed). "v6": as v5 with the distance text as labelled.
-    "v7": as v5 with uses_principle left out of the targets."""
+    "v7": as v5 with uses_principle left out of the targets. "v8": as v7, also without visible_evidence,
+    fix_if_wrong and orientation."""
     pool = {i["id"]: i for i in load_pool(dataset)["images"]}
     examples = {e["example_id"]: e for e in load_examples(dataset)}
     labels = load_labels(dataset)
@@ -142,10 +144,10 @@ def export_sft(dataset: str = "train_v1", out_dir: Path | None = None, json_form
     chosen = [lab for lab in labels if lab["status"] == "approved" or
               (include_unapproved and lab["status"] == "draft" and not lab.get("schema_errors"))]
     skipped, skipped_zoom = [], []
-    if shot_format in ("v3", "v4", "v5", "v6", "v7"):
+    if shot_format in ("v3", "v4", "v5", "v6", "v7", "v8"):
         skipped = [lab["example_id"] for lab in chosen if not has_reasoning(lab["answer"])]
         chosen = [lab for lab in chosen if lab["example_id"] not in skipped]
-    if shot_format in ("v4", "v5", "v6", "v7"):
+    if shot_format in ("v4", "v5", "v6", "v7", "v8"):
         skipped_zoom = [lab["example_id"] for lab in chosen if not has_zoom(lab["answer"])]
         chosen = [lab for lab in chosen if lab["example_id"] not in skipped_zoom]
     out_dir = Path(out_dir or data_dir(dataset) / ("sft-UNREVIEWED-smoke" if include_unapproved else "sft"))

@@ -111,3 +111,23 @@ def test_rate_limiter_window_expires():
     assert lim.allow("k") and not lim.allow("k")
     now[0] = 3601
     assert lim.allow("k")
+
+
+def test_server_shot_format_option(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    key = server.create_key("t", tmp_path / "keys.json")
+    backend = make_backend("fake")
+    c = TestClient(server.create_app(backend, server.load_keys(tmp_path / "keys.json"), "fake", per_hour=100, shot_format="v7"))
+    h = {"Authorization": f"Bearer {key}"}
+    assert c.get("/v1/health").json()["shot_format"] == "v7"
+    files = [("target", ("t.jpg", jpeg(), "image/jpeg"))] + [("inspiration", (f"i{i}.jpg", jpeg(), "image/jpeg")) for i in range(3)]
+    c.post("/v1/plan", data={"mode": "inspiration"}, files=files, headers=h)
+    comp = [p for p, _ in backend.calls if "is described as" in p][-1]
+    assert "zoom_or_lens" in comp and "uses_principle" not in comp  # v7 fields: zoom first, no uses_principle
+    with pytest.raises(ValueError):
+        server.create_app(backend, {}, "fake", shot_format="v99")
+
+
+def test_server_defaults_to_shot_format_v3(client):
+    c, _ = client
+    assert c.get("/v1/health").json()["shot_format"] == "v3"

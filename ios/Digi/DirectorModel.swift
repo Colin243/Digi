@@ -5,6 +5,15 @@ import DirectorKit
 
 @MainActor
 final class DirectorModel: ObservableObject {
+    /// Lives as long as the app, so the Director keeps its photos and shots when its sheet is closed.
+    static let shared = DirectorModel()
+
+    // What the person chose, kept across closing and reopening the Director.
+    @Published var mode: DirectorMode = .scene
+    @Published var style: DirectorStyle = .relaxedCandid
+    @Published var brief = ""
+    @Published var targetImage: UIImage?
+    @Published var inspirationImages: [UIImage] = []
     enum Phase: Equatable { case idle, running, done, failed(String) }
 
     @Published var phase: Phase = .idle
@@ -38,7 +47,8 @@ final class DirectorModel: ObservableObject {
 
     /// Call when the mode or any photo changes. In Inspiration mode, with online use allowed, the server starts
     /// reading the photos straight away so the plan has less left to do.
-    func inputsChanged(mode: DirectorMode, target: UIImage?, inspiration: [UIImage]) {
+    func inputsChanged(mode: DirectorMode, target: UIImage?, inspiration: [UIImage], inspirationComplete: Bool = true,
+                       after delay: Double = 0) {
         let keep = Set(([target].compactMap { $0 } + inspiration).map(ObjectIdentifier.init))
         jpegCache = jpegCache.filter { keep.contains($0.key) }
         let targetJPEG = mode == .inspiration ? target.flatMap(jpegData) : nil
@@ -46,10 +56,12 @@ final class DirectorModel: ObservableObject {
         prepTask?.cancel()
         prepTask = Task { [weak self] in
             guard let self else { return }
+            if delay > 0 { try? await Task.sleep(for: .seconds(delay)) }
+            guard !Task.isCancelled else { return }
             let allowed = await Self.onlinePreparationAllowed()
             guard !Task.isCancelled else { return }
             if allowed, let preparer = self.currentPreparer() {
-                await preparer.update(target: targetJPEG, inspiration: inspirationJPEGs)
+                await preparer.update(target: targetJPEG, inspiration: inspirationJPEGs, inspirationComplete: inspirationComplete)
             } else {
                 await self.preparer?.update(target: nil, inspiration: [])
             }
@@ -62,6 +74,14 @@ final class DirectorModel: ObservableObject {
         let config = DirectorConfig.make(preference: DirectorDefaults.userPreference(), priority: DirectorDefaults.userPriority())
         guard let route = try? Router.route(conditions: await conditions.current(), config: config) else { return false }
         return route.upload == .photos && route.order.first == .online
+    }
+
+    /// The preparer only if it reads ahead on the server the plan will use; one made for an old address has nothing
+    /// the new server can take (its work failed or lives on the other server).
+    private func preparerForCurrentServer() -> PlanPreparer? {
+        guard let cfg = DirectorDefaults.configuration(), let preparer, let s = preparerServer,
+              s.url == cfg.baseURL, s.key == cfg.apiKey else { return nil }
+        return preparer
     }
 
     private func currentPreparer() -> PlanPreparer? {
@@ -144,12 +164,15 @@ final class DirectorModel: ObservableObject {
         let priority = DirectorDefaults.userPriority()
         let started = Date()
         var firstShotAt: Date?, shotCount = 0, fellBack = false
-        let preparer = request.mode == .inspiration && request.prepared == nil ? self.preparer : nil
+        let preparer = request.mode == .inspiration && request.prepared == nil ? self.preparerForCurrentServer() : nil
         task = Task { [weak self] in
             var request = request
+            var prepWait: Double?
             if let preparer {
-                // Stop reading ahead (the server runs one job at a time) and take whatever is ready for these photos.
-                await preparer.pause()
+                // Let the read-ahead call in progress finish (the server would make the plan queue behind it anyway),
+                // start no new one, and take whatever is ready for these photos.
+                if await preparer.currentStatus == .working { self?.stageText = "Finishing reading your photos" }
+                prepWait = await preparer.finishCurrent()
                 let target = request.images.first { $0.role == .target }?.jpeg
                 let inspiration = request.images.filter { $0.role == .inspiration }.map(\.jpeg)
                 if let target {
@@ -161,9 +184,15 @@ final class DirectorModel: ObservableObject {
             /// Writes the run to the log once it ends with at least one shot.
             @MainActor func record() {
                 guard let self, shotCount > 0 else { return }
+                let p = request.prepared
+                let preparedParts = [p?.references != nil ? "references" : nil, p?.targetScene != nil ? "scene" : nil,
+                                     p?.planToken != nil ? "token" : nil].compactMap { $0 }
                 let r = RunRecord(engine: self.engineUsed ?? .offline, priority: priority,
                                   firstShotSeconds: firstShotAt.map { $0.timeIntervalSince(started) },
-                                  totalSeconds: Date().timeIntervalSince(started), shotCount: shotCount, fellBack: fellBack)
+                                  totalSeconds: Date().timeIntervalSince(started), shotCount: shotCount, fellBack: fellBack,
+                                  mode: request.mode.rawValue,
+                                  prepared: preparedParts.isEmpty ? "none" : preparedParts.joined(separator: "+"),
+                                  prepWaitSeconds: prepWait)
                 self.currentRun = r.id
                 RunLogStore.append(r)
             }

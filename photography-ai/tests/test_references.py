@@ -318,3 +318,87 @@ def test_prepare_plan_validates_its_inputs(client):
     buf = io.BytesIO(); Image.new("RGB", (64, 48), (9, 9, 9)).save(buf, "JPEG")
     assert c.post("/v1/prepare-plan", data={"references": json.dumps(refs), "target_scene": json.dumps(scene)},
                   files=[("target", ("t.jpg", buf.getvalue(), "image/jpeg"))], headers=h).status_code == 409  # scene from another photo
+
+
+# ----------------------------------------------------------------------------- one photo at a time
+
+def test_notes_one_at_a_time_give_the_same_references(tmp_path):
+    ins = [jpg(tmp_path, f"i{i}.jpg") for i in range(3)]
+    b = make_backend("fake")
+    whole = pipeline.prepare_references(b, ins, cfg(), tmp_path / "a")
+    notes = [json.loads(json.dumps(pipeline.prepare_note(b, p, cfg(), tmp_path / "b"))) for p in ins]
+    b.calls.clear()
+    refs = pipeline.prepare_references_from_notes(b, pipeline.check_notes(notes, b, cfg()), cfg(), tmp_path / "c")
+    assert names(b) == ["aesthetic"]  # no photo read again
+    assert refs["notes"] == whole["notes"] and refs["aesthetic"] == whole["aesthetic"]
+    assert pipeline.check_references(json.loads(json.dumps(refs)), b, cfg())["notes"] == whole["notes"]
+
+
+def test_bad_or_stale_notes_are_refused(tmp_path):
+    b = make_backend("fake")
+    n = pipeline.prepare_note(b, jpg(tmp_path), cfg(), tmp_path / "a")
+    with pytest.raises(StaleReferences):
+        pipeline.check_notes([{**n, "fingerprint": "0" * 16}] * 3, b, cfg())
+    for bad in ([n, n], [n] * 6, [n, n, {**n, "note": ""}], [n, n, "x"], "nope"):
+        with pytest.raises(InputError):
+            pipeline.check_notes(bad, b, cfg())
+
+
+def test_note_endpoint_then_references_from_notes(client):
+    c, h, backend = client
+    notes = []
+    for i in range(3):
+        r = c.post("/v1/note", files=[("photo", (f"i{i}.jpg", jpeg_bytes(), "image/jpeg"))], headers=h)
+        assert r.status_code == 200
+        notes.append(r.json()["note"])
+    backend.calls.clear()
+    r = c.post("/v1/references", data={"notes": json.dumps(notes)}, headers=h)
+    assert r.status_code == 200 and names(backend) == ["aesthetic"]
+    refs = r.json()["references"]
+    tgt = ("target", ("t.jpg", jpeg_bytes(), "image/jpeg"))
+    r = c.post("/v1/plan", data={"mode": "inspiration", "references": json.dumps(refs)}, files=[tgt], headers=h)
+    assert events(r)[-1]["type"] == "finished"
+    assert c.post("/v1/references", data={"notes": json.dumps(notes[:2])}, headers=h).status_code == 422
+    assert c.post("/v1/references", data={"notes": json.dumps([{**notes[0], "fingerprint": "f" * 16}] * 3)}, headers=h).status_code == 409
+    assert c.post("/v1/note", files=[], headers=h).status_code == 422
+
+
+def test_plan_with_some_notes_read_ahead_reads_only_the_rest(client):
+    c, h, backend = client
+    first = c.post("/v1/note", files=[("photo", ("i0.jpg", jpeg_bytes(), "image/jpeg"))], headers=h).json()["note"]
+    backend.calls.clear()
+    tgt = ("target", ("t.jpg", jpeg_bytes(), "image/jpeg"))
+    r = c.post("/v1/plan", data={"mode": "inspiration", "notes": json.dumps([first, None, None])}, files=[tgt] + photos(3), headers=h)
+    assert events(r)[-1]["type"] == "finished"
+    assert names(backend).count("notes") == 2  # photo 1 was read ahead
+    assert c.post("/v1/plan", data={"mode": "inspiration", "notes": json.dumps([first, None])},
+                  files=[tgt] + photos(3), headers=h).status_code == 422  # one entry per photo
+    assert c.post("/v1/plan", data={"mode": "inspiration", "notes": json.dumps([{**first, "fingerprint": "f" * 16}, None, None])},
+                  files=[tgt] + photos(3), headers=h).status_code == 409
+
+
+def test_notes_variants_are_off_by_default_and_change_only_their_part(tmp_path):
+    ins, tgt = [jpg(tmp_path, f"i{i}.jpg") for i in range(3)], jpg(tmp_path, "t.jpg")
+    b = make_backend("fake")
+    pipeline.analyze(b, ins, tgt, cfg(), tmp_path / "a")
+    base = list(b.calls); b.calls.clear()
+    assert "In 2-3 sentences" in base[0][0]
+    pipeline.analyze(b, ins, tgt, cfg(skip_aesthetic=True), tmp_path / "b")
+    assert "aesthetic" not in names(b) and names(b).count("notes") == 3
+    comp = [p for p, _ in b.calls if "is described as" in p][-1]
+    assert "Inspiration photo 1:" in comp  # the notes stand in for the style
+    b.calls.clear()
+    pipeline.analyze(b, ins, tgt, cfg(notes_style="short"), tmp_path / "c")
+    assert "under 40 words" in b.calls[0][0]
+
+
+def test_notes_come_from_the_client_then_the_cache_then_the_model(tmp_path):
+    ins, tgt = [jpg(tmp_path, f"i{i}.jpg") for i in range(3)], jpg(tmp_path, "t.jpg")
+    pipeline._NOTES_CACHE.clear()
+    b = make_backend("fake")
+    pipeline.analyze(b, ins, tgt, cfg(cache_notes=True, prepared_notes=["read ahead", None, None]), tmp_path / "a")
+    assert names(b).count("notes") == 2  # photo 1 came from the client, photos 2 and 3 from the model
+    b.calls.clear()
+    pipeline.analyze(b, ins, tgt, cfg(cache_notes=True, prepared_notes=["read ahead", None, None]), tmp_path / "b")
+    assert names(b).count("notes") == 0  # photos 2 and 3 are now cached; photo 1 is still the client's
+    pipeline._NOTES_CACHE.clear()

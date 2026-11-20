@@ -34,7 +34,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 SCHEMA_VERSION = 4
-SHOT_FORMATS = ("v1", "v2", "v3", "v4", "v5", "v6", "v7")  # v5-v7: v4 fields, zoom chosen before distance
+SHOT_FORMATS = ("v1", "v2", "v3", "v4", "v5", "v6", "v7", "v8")  # v5-v7: v4 fields, zoom chosen before distance
 
 
 def _as_list(value: Any) -> Any:
@@ -159,6 +159,15 @@ class ShotV4(ShotV3):
     zoom_or_lens: str = Field(min_length=1)
 
 
+class ShotV8(Composition):
+    """shot-v8: shot-v4 without fix_if_wrong (and without visible_evidence / orientation, already optional)."""
+
+    scene_reading: str = Field(min_length=1)
+    setup_choice: str = Field(min_length=1)
+    why_each_choice: list[str] = Field(min_length=2)
+    zoom_or_lens: str = Field(min_length=1)
+
+
 class CompositionSet(_Lenient):
     compositions: list[Composition] = Field(min_length=3)
 
@@ -175,10 +184,15 @@ class ShotSetV4(_Lenient):
     compositions: list[ShotV4] = Field(min_length=3)
 
 
+class ShotSetV8(_Lenient):
+    compositions: list[ShotV8] = Field(min_length=3)
+
+
 def shot_set(shot_format: str) -> type[BaseModel]:
     if shot_format not in SHOT_FORMATS:
         raise ValueError(f"shot_format must be one of {SHOT_FORMATS}")
-    return {"v2": ShotSetV2, "v3": ShotSetV3, "v4": ShotSetV4, "v5": ShotSetV4, "v6": ShotSetV4, "v7": ShotSetV4}.get(shot_format, CompositionSet)
+    return {"v2": ShotSetV2, "v3": ShotSetV3, "v4": ShotSetV4, "v5": ShotSetV4, "v6": ShotSetV4, "v7": ShotSetV4,
+            "v8": ShotSetV8}.get(shot_format, CompositionSet)
 
 
 def shot_model(shot_format: str) -> type[BaseModel]:
