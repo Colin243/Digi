@@ -88,3 +88,17 @@ def test_nothing_is_streamed_without_a_listener(photos, tmp_path):
     rec = analyze(backend, imgs[:3], imgs[3], RunConfig(**V3), tmp_path / "runs")
     assert rec["validation"]["ok"] and seen and all(cb is None for cb in seen)
     assert "streamed_looks" not in rec["stages"][-1]
+
+
+def test_restarted_wrapper_blocks_still_stream_each_look_whatever_the_chunking():
+    looks = [{"title": "one", "steps": ["a"]}, {"title": "two {x}", "steps": ["b"]}, {"title": "three"}]
+    text = " ".join('{"compositions": [' + json.dumps(look) for look in looks)
+    for size in (1, 2, 3, 7, 16, len(text)):
+        assert _feed_all(ArrayItemStream(), text, size) == looks
+
+
+def test_streaming_a_normal_answer_is_unchanged_by_wrapper_handling():
+    looks = [{"title": "{\"compositions\": [ inside a string"}, {"title": "two"}]
+    text = json.dumps({"compositions": looks})
+    for size in (1, 4, len(text)):
+        assert _feed_all(ArrayItemStream(), text, size) == looks
