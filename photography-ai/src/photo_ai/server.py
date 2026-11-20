@@ -105,8 +105,10 @@ class ServerState:
     waiting: int = 0
     shot_format: str = "v3"  # inspiration-mode shot format the server asks for (see schema.SHOT_FORMATS)
     prefixes: "PrefixStore" = field(default_factory=lambda: PrefixStore())
+    last_active: float = field(default_factory=time.monotonic)  # when a request last started or finished (not /v1/health)
 
 
+IDLE_LOG_S = 60  # log the gap before a request when the server had been idle at least this long
 PREFIX_TTL_S = 600
 PREFIX_MAX = 4  # each holds the model's cache for one prompt (about 60 MB for Qwen3.5-2B)
 
@@ -147,7 +149,7 @@ class PrefixStore:
 # ----------------------------------------------------------------------------- app
 
 def create_app(backend, keys: dict[str, dict], model_name: str, per_hour: int = 30, max_queue: int = 2,
-               shot_format: str = "v3") -> FastAPI:
+               shot_format: str = "v3", keep_warm_s: float = 0.0) -> FastAPI:
     """`shot_format` is what Inspiration plans ask the model for. Use the format the model was trained on (fused q5:
     v7). Apps before the ZoomPlan "N m at Kx" fix mis-scale v5-v7 distances, so v3 stays the default."""
     if shot_format not in schema.SHOT_FORMATS:
@@ -155,6 +157,38 @@ def create_app(backend, keys: dict[str, dict], model_name: str, per_hour: int = 
     state = ServerState(backend, keys, RateLimiter(per_hour), model_name, max_queue, shot_format=shot_format)
     app = FastAPI(title="Digi Director", docs_url=None, redoc_url=None, openapi_url=None)
     app.state.s = state
+
+    @app.middleware("http")
+    async def track_activity(request: Request, call_next):
+        if request.url.path == "/v1/health":
+            return await call_next(request)
+        idle = time.monotonic() - state.last_active
+        if idle > IDLE_LOG_S:  # a long gap before a request: the first request after one is often slow (memory)
+            _timing({"endpoint": "idle_gap", "path": request.url.path, "idle_s": round(idle)})
+        state.last_active = time.monotonic()
+        try:
+            return await call_next(request)
+        finally:
+            state.last_active = time.monotonic()
+
+    async def keep_warm():
+        """Every `keep_warm_s` while idle, one small request so the model's memory stays resident. Waits for any
+        real request (same lock) and never starts while one is waiting. Pings do not count as activity."""
+        last_ping = time.monotonic()
+        while True:
+            await asyncio.sleep(max(0.05, keep_warm_s / 4))
+            now = time.monotonic()
+            if state.lock.locked() or state.waiting or now - state.last_active < keep_warm_s or now - last_ping < keep_warm_s:
+                continue
+            async with state.lock:
+                took = await asyncio.get_running_loop().run_in_executor(None, warm_up, state.backend)
+            last_ping = time.monotonic()
+            _timing({"endpoint": "keep_warm", "work_s": round(took, 2)})
+
+    if keep_warm_s > 0:
+        @app.on_event("startup")
+        async def _start_keep_warm():
+            app.state.keep_warm_task = asyncio.create_task(keep_warm())
 
     def authed(request: Request) -> str:
         header = request.headers.get("authorization", "")

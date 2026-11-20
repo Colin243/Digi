@@ -131,3 +131,24 @@ def test_server_shot_format_option(tmp_path, monkeypatch):
 def test_server_defaults_to_shot_format_v3(client):
     c, _ = client
     assert c.get("/v1/health").json()["shot_format"] == "v3"
+
+
+def test_keep_warm_pings_the_model_only_while_idle(tmp_path):
+    import time
+
+    from fastapi.testclient import TestClient
+
+    from photo_ai.backends import make_backend
+    from photo_ai import server
+
+    backend = make_backend("fake")
+    app = server.create_app(backend, {server._hash("k"): {"label": "t", "created": ""}}, "fake", keep_warm_s=0.2)
+    with TestClient(app) as c:
+        time.sleep(1.0)
+        assert len(backend.calls) >= 1  # idle: pinged
+        n = len(backend.calls)
+        assert c.get("/v1/health").json()["ok"]
+    off = make_backend("fake")
+    with TestClient(server.create_app(off, {server._hash("k"): {"label": "t", "created": ""}}, "fake")):
+        time.sleep(0.5)
+    assert off.calls == []  # off by default
