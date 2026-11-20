@@ -223,6 +223,7 @@ def create_app(backend, keys: dict[str, dict], model_name: str, per_hour: int = 
         workdir = Path(tempfile.mkdtemp(prefix="digi-note-"))
         try:
             path = await _save(photo, workdir / "inspiration.jpg")
+            photo_tag = _photo_tag(path)
         except HTTPException:
             shutil.rmtree(workdir, ignore_errors=True)
             raise
@@ -230,7 +231,8 @@ def create_app(backend, keys: dict[str, dict], model_name: str, per_hour: int = 
             shutil.rmtree(workdir, ignore_errors=True)
             raise HTTPException(503, "The director is busy. Try again in a moment.")
         state.waiting += 1
-        cfg = RunConfig(mode="inspiration", json_format="keys", strategy="decomposed", shot_format=state.shot_format)
+        cfg = RunConfig(mode="inspiration", json_format="keys", strategy="decomposed", shot_format=state.shot_format,
+                        cache_notes=True)  # the same photo again is answered without the model
         try:
             t_wait = time.perf_counter()
             async with state.lock:
@@ -243,7 +245,8 @@ def create_app(backend, keys: dict[str, dict], model_name: str, per_hour: int = 
                     raise HTTPException(502, f"The director {exc}.")
         finally:
             shutil.rmtree(workdir, ignore_errors=True)  # the photo is never kept
-        _timing({"endpoint": "note", "queued_s": round(t_lock - t_wait, 2), "work_s": round(time.perf_counter() - t_lock, 2)})
+        _timing({"endpoint": "note", "photo": photo_tag, "queued_s": round(t_lock - t_wait, 2),
+                 "work_s": round(time.perf_counter() - t_lock, 2)})
         return JSONResponse({"note": note})
 
     @app.post("/v1/scene")
@@ -251,6 +254,7 @@ def create_app(backend, keys: dict[str, dict], model_name: str, per_hour: int = 
         workdir = Path(tempfile.mkdtemp(prefix="digi-scene-"))
         try:
             path = await _save(target, workdir / "target.jpg")
+            photo_tag = _photo_tag(path)
         except HTTPException:
             shutil.rmtree(workdir, ignore_errors=True)
             raise
@@ -271,7 +275,8 @@ def create_app(backend, keys: dict[str, dict], model_name: str, per_hour: int = 
                     raise HTTPException(502, f"The director {exc}.")
         finally:
             shutil.rmtree(workdir, ignore_errors=True)  # the photo is never kept
-        _timing({"endpoint": "scene", "queued_s": round(t_lock - t_wait, 2), "work_s": round(time.perf_counter() - t_lock, 2)})
+        _timing({"endpoint": "scene", "photo": photo_tag, "cached": bool(scene.get("cached")),
+                 "queued_s": round(t_lock - t_wait, 2), "work_s": round(time.perf_counter() - t_lock, 2)})
         return JSONResponse({"target_scene": scene})
 
     @app.post("/v1/prepare-plan")
@@ -466,6 +471,27 @@ def _check_target_scene(raw: str, target_path: str, backend, shot_format: str = 
 
 def _sha(path) -> str:
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def _photo_tag(path: Path) -> str:
+    """First 8 hex digits of the photo's hash: lets the timing log show whether two requests were the same photo.
+    Not reversible to the photo."""
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()[:8]
+
+
+def warm_up(backend) -> float:
+    """One small image request, so the first real request does not pay for the model's first-use setup (the first
+    scene or note after a start took 3-10 s longer than the same call later). Returns the seconds it took."""
+    from PIL import Image
+
+    from .backends.base import GenerationParams
+
+    t0 = time.perf_counter()
+    with tempfile.TemporaryDirectory(prefix="digi-warm-") as d:
+        path = Path(d) / "warm.jpg"
+        Image.linear_gradient("L").resize((1024, 768)).convert("RGB").save(path, "JPEG")
+        backend.generate("Describe this photo in one short sentence.", [str(path)], GenerationParams(8, 0.0, None, 0))
+    return time.perf_counter() - t0
 
 
 def _timing(event: dict) -> None:
