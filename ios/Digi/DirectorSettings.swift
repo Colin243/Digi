@@ -41,8 +41,7 @@ enum DirectorDefaults {
     static func configuration() -> OnlineEngine.Configuration? {
         guard let text = UserDefaults.standard.string(forKey: serverURL)?.trimmingCharacters(in: .whitespaces),
               !text.isEmpty, let key = DirectorKeychain.read(), !key.isEmpty else { return nil }
-        let withScheme = text.contains("://") ? text : "http://" + text
-        guard let url = URL(string: withScheme), url.host != nil else { return nil }
+        guard let url = ServerAddress.url(from: text) else { return nil }
         return OnlineEngine.Configuration(baseURL: url, apiKey: key)
     }
 
