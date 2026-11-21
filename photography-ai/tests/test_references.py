@@ -402,3 +402,23 @@ def test_notes_come_from_the_client_then_the_cache_then_the_model(tmp_path):
     pipeline.analyze(b, ins, tgt, cfg(cache_notes=True, prepared_notes=["read ahead", None, None]), tmp_path / "b")
     assert names(b).count("notes") == 0  # photos 2 and 3 are now cached; photo 1 is still the client's
     pipeline._NOTES_CACHE.clear()
+
+
+def test_the_same_scene_photo_again_is_answered_without_the_model(tmp_path):
+    tgt = jpg(tmp_path, "t.jpg")
+    pipeline._SCENE_CACHE.clear()
+    b = make_backend("fake")
+    first = pipeline.prepare_target_scene(b, tgt, cfg(), tmp_path / "a")
+    calls = len(b.calls)
+    again = pipeline.prepare_target_scene(b, tgt, cfg(), tmp_path / "b")
+    assert len(b.calls) == calls and again["cached"] is True and again["wall_s"] == 0.0
+    assert again["target_scene"] == first["target_scene"] and again["photo_sha256"] == first["photo_sha256"]
+    assert pipeline.check_target_scene(again, tgt, b, cfg())  # a cached answer is still accepted for that photo
+    pipeline.prepare_target_scene(b, jpg(tmp_path, "other.jpg"), cfg(temperature=0.7), tmp_path / "c")  # sampling: never cached
+    assert len(pipeline._SCENE_CACHE) == 1
+    pipeline._SCENE_CACHE.clear()
+
+
+def test_warm_up_makes_one_small_request(tmp_path):
+    b = make_backend("fake")
+    assert server.warm_up(b) >= 0 and len(b.calls) == 1 and b.calls[0][1]  # one call, with an image

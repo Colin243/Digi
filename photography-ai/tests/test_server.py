@@ -203,3 +203,33 @@ def test_unexpected_errors_do_not_leak_details_to_the_client(client, monkeypatch
     ev = events(r)[-1]
     assert ev["type"] == "error" and "secret detail" not in ev["message"] and "unexpected error" in ev["message"]
     assert "secret detail" in capsys.readouterr().err  # kept in the server log
+
+
+def test_keep_warm_pings_the_model_only_while_idle(tmp_path):
+    import time
+
+    from fastapi.testclient import TestClient
+
+    from photo_ai.backends import make_backend
+    from photo_ai import server
+
+    backend = make_backend("fake")
+    app = server.create_app(backend, {server._hash("k"): {"label": "t", "created": ""}}, "fake", keep_warm_s=0.2)
+    with TestClient(app) as c:
+        time.sleep(1.0)
+        assert len(backend.calls) >= 1  # idle: pinged
+        n = len(backend.calls)
+        assert c.get("/v1/health").json()["ok"]
+    off = make_backend("fake")
+    with TestClient(server.create_app(off, {server._hash("k"): {"label": "t", "created": ""}}, "fake")):
+        time.sleep(0.5)
+    assert off.calls == []  # off by default
+
+
+def test_refused_requests_do_not_count_as_activity(client):
+    c, _ = client
+    state = c.app.state.s
+    before = state.last_active
+    time.sleep(0.05)
+    assert c.post("/v1/note", files=[("photo", ("a.jpg", jpeg(), "image/jpeg"))]).status_code == 401
+    assert state.last_active == before  # the guard refuses it before the activity tracking sees it

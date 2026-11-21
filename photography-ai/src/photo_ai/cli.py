@@ -116,6 +116,7 @@ def main(argv: list[str] | None = None) -> int:
                     help="describe the expected JSON as a blank shape (default) or as a list of keys")
     bn.add_argument("--shot-format", choices=["v1", "v2", "v3", "v4", "v5", "v6", "v7", "v8"], default="v1",
                     help="v1 = Phase 3 format; v2/v3/v4 need --strategies decomposed")
+    bn.add_argument("--max-side", type=int, default=None, help="downscale every photo to this long edge in px (default 1024)")
     bn.add_argument("--runs-dir", type=Path, default=DEFAULT_RUNS_DIR)
 
     rp = sub.add_parser("report", help="side-by-side comparison for a benchmark")
@@ -217,6 +218,9 @@ def main(argv: list[str] | None = None) -> int:
     sv.add_argument("--port", type=int, default=8787)
     sv.add_argument("--model", default="qwen3-vl-2b-4bit", help='serve: model key, e.g. "qwen3-vl-2b-4bit+adapter=data/adapters/<run>"')
     sv.add_argument("--per-hour", type=int, default=240, help="serve: requests per key per hour (a plan with read-ahead uses 8 to 10)")
+    sv.add_argument("--keep-warm", type=float, default=0.0, metavar="SECONDS",
+                    help="serve: after this many idle seconds, send the model one small request (0 = off)")
+    sv.add_argument("--no-warmup", action="store_true", help="serve: skip the one small request that warms the model up")
     sv.add_argument("--shot-format", default="v3", help="serve: shot format for Inspiration plans; use the one the model "
                     "was trained on (fused q5: v7). Apps without the ZoomPlan 'N m at Kx' fix need v3")
     sv.add_argument("--label", default="device", help="keygen: a name for this client key")
@@ -317,7 +321,7 @@ def main(argv: list[str] | None = None) -> int:
         cases = [c for c in cases if not c.missing_files()]
         m = run_benchmark(a.models, cases, a.strategies, a.consistency_strategy, a.consistency_samples,
                           a.consistency_temperature, a.runs_dir, a.bench_id, json_format=a.json_format,
-                          shot_format=a.shot_format)
+                          shot_format=a.shot_format, max_side=a.max_side)
         print(f"benchmark {m['bench_id']}: {len(m['runs'])} runs. Next: photo-ai report --bench {m['bench_id']}")
         return 0
 
@@ -465,7 +469,9 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         backend = make_backend(a.model)
         backend.load()  # keep the model warm so the first request is not slow
-        uvicorn.run(SV.create_app(backend, keys, a.model, a.per_hour, shot_format=a.shot_format), host=a.host, port=a.port,
+        if not a.no_warmup:
+            print(f"warm-up request: {SV.warm_up(backend):.1f}s", file=sys.stderr, flush=True)
+        uvicorn.run(SV.create_app(backend, keys, a.model, a.per_hour, shot_format=a.shot_format, keep_warm_s=a.keep_warm), host=a.host, port=a.port,
                     log_level="warning")
         return 0
 
