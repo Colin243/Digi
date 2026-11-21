@@ -41,6 +41,22 @@ The local server does not serve `textOnly` yet (it answers 422 and the app falls
 | First shot visible | under 5 s | under 10 s |
 | Full set | under 10 s | under 30 s (measured on site: 25-37 s, depending on heat) |
 
+### Online, measured (2026-11-20 and 21)
+
+Mac Director server, fused q5 model, shot format v7, Inspiration mode with 3 to 4 reference photos. Seconds from pressing Plan (`scripts/readahead_replay.py`, 3 portrait cases, real model; the last row is one phone run):
+
+| When Plan is pressed | First shot | All three shots |
+|---|---|---|
+| No read-ahead | 23.1 | 30.5 |
+| Photos picked at once, Plan 1 s later | 21.7 | 29.1 |
+| Photos picked 5 s apart, Plan right after the last | 12.6 | 19.8 |
+| 40 s after the last pick (read-ahead finished) | 4.4 | 11.9 |
+| Phone field run, read-ahead finished | 5.5 | 15.0 |
+
+- The online first-shot target (under 5 s) is met only when the person waits for the read-ahead to finish, about 25 s for 5 photos. Pressing Plan right away is no faster than not reading ahead.
+- Read-ahead moves work earlier but does not reduce it: scene 3.3 s, each photo's notes 2.3 s, the style step 4.9 s and the prompt prefix 2.8 s (server work only).
+- The first request after a long idle took 12 s instead of 3 to 4 s; a keep-warm ping (`serve --keep-warm`) brought it to 4.3 s in one field run.
+
 ## Where Phase 1 lives
 `ios/DirectorKit` is a Swift package with no MLX or network dependency. Run `cd ios/DirectorKit && swift test`. It is linked into `ios/Digi.xcodeproj` as a local package. The app has a wand button in the camera header that opens the Director screen (`DirectorView.swift`): pick a place photo (and 3-5 inspiration photos for inspiration mode), choose a style, and watch shots stream in. Server address and client key live in that screen's settings (key in the Keychain). The on-device engine (`OfflineEngine` + `OnDeviceGenerator`, base Qwen3-VL-2B 4-bit loaded from `Documents/Qwen3-VL-2B-Instruct-4bit`) answers when the server is unreachable or **Stay offline** is chosen.
 
