@@ -87,8 +87,8 @@ final class DirectorModel: ObservableObject {
     private func currentPreparer() -> PlanPreparer? {
         guard let cfg = DirectorDefaults.configuration() else { preparer = nil; return nil }
         if let preparer, let s = preparerServer, s.url == cfg.baseURL, s.key == cfg.apiKey { return preparer }
-        let p = PlanPreparer(service: OnlineEngine(configuration: cfg), onStatus: { status in
-            Task { @MainActor [weak self] in self?.prepStatus = status }
+        let p = PlanPreparer(service: OnlineEngine(configuration: cfg), onStatus: { [weak self] status in
+            Task { @MainActor in self?.prepStatus = status }
         })
         preparer = p; preparerServer = (cfg.baseURL, cfg.apiKey); prepStatus = .idle
         return p
