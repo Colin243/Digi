@@ -131,3 +131,75 @@ def test_server_shot_format_option(tmp_path, monkeypatch):
 def test_server_defaults_to_shot_format_v3(client):
     c, _ = client
     assert c.get("/v1/health").json()["shot_format"] == "v3"
+
+
+# ---------------------------------------------------------------------------------------------- hardening
+
+def test_a_bad_key_is_refused_before_the_upload_is_read(client, monkeypatch):
+    from starlette import formparsers
+
+    parsed = []
+    original = formparsers.MultiPartParser.parse
+
+    async def counting(self):
+        parsed.append(1)
+        return await original(self)
+
+    monkeypatch.setattr(formparsers.MultiPartParser, "parse", counting)
+    c, h = client
+    big = ("photo", ("a.jpg", b"x" * (5 * 1024 * 1024), "image/jpeg"))
+    assert c.post("/v1/note", files=[big]).status_code == 401  # no key
+    assert c.post("/v1/note", files=[big], headers={"Authorization": "Bearer nope"}).status_code == 401
+    assert parsed == []  # the body was never parsed
+    assert c.post("/v1/note", files=[("photo", ("a.jpg", jpeg(), "image/jpeg"))], headers=h).status_code == 200
+    assert parsed  # with a valid key it is
+
+
+def test_oversized_and_unsized_bodies_are_refused(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(server, "MAX_REQUEST_BYTES", 20_000)
+    key = server.create_key("t", tmp_path / "keys.json")
+    c = TestClient(server.create_app(make_backend("fake"), server.load_keys(tmp_path / "keys.json"), "fake"))
+    h = {"Authorization": f"Bearer {key}"}
+    big = ("photo", ("a.jpg", b"x" * 50_000, "image/jpeg"))
+    r = c.post("/v1/note", files=[big], headers=h)
+    assert r.status_code == 413 and "too large" in r.json()["error"]
+
+    def chunks():  # no Content-Length: sent chunked
+        yield b"abc"
+
+    assert c.post("/v1/note", content=chunks(), headers=h).status_code == 411
+    assert c.get("/v1/health").status_code == 200  # open, and GETs need no length
+
+
+def test_uploads_must_be_readable_images_of_sane_size(client):
+    c, h = client
+    r = c.post("/v1/note", files=[("photo", ("a.jpg", b"not an image at all", "image/jpeg"))], headers=h)
+    assert r.status_code == 422 and "not a readable image" in r.json()["error"]
+    buf = io.BytesIO()
+    Image.new("L", (7000, 7000)).save(buf, "JPEG")  # 49 million pixels, a small file
+    r = c.post("/v1/note", files=[("photo", ("a.jpg", buf.getvalue(), "image/jpeg"))], headers=h)
+    assert r.status_code == 413 and "too many pixels" in r.json()["error"]
+
+
+def test_default_rate_limit_fits_a_plan_with_read_ahead(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    key = server.create_key("t", tmp_path / "keys.json")
+    c = TestClient(server.create_app(make_backend("fake"), server.load_keys(tmp_path / "keys.json"), "fake"))
+    h = {"Authorization": f"Bearer {key}"}
+    codes = [c.post("/v1/note", files=[("photo", ("a.jpg", jpeg(), "image/jpeg"))], headers=h).status_code for _ in range(40)]
+    assert 429 not in codes  # the old default of 30 an hour stopped a fourth plan with read-ahead
+
+
+def test_unexpected_errors_do_not_leak_details_to_the_client(client, monkeypatch, capsys):
+    from photo_ai import pipeline
+
+    def boom(*a, **k):
+        raise ValueError("secret detail at /Users/someone/private/file")
+
+    monkeypatch.setattr(pipeline, "analyze", boom)
+    c, h = client
+    r = c.post("/v1/plan", data=scene_form(), files={"target": ("t.jpg", jpeg(), "image/jpeg")}, headers=h)
+    ev = events(r)[-1]
+    assert ev["type"] == "error" and "secret detail" not in ev["message"] and "unexpected error" in ev["message"]
+    assert "secret detail" in capsys.readouterr().err  # kept in the server log

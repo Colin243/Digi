@@ -216,7 +216,7 @@ def main(argv: list[str] | None = None) -> int:
     sv.add_argument("--host", default="127.0.0.1", help="serve: use 0.0.0.0 so a phone on the same Wi-Fi can reach it")
     sv.add_argument("--port", type=int, default=8787)
     sv.add_argument("--model", default="qwen3-vl-2b-4bit", help='serve: model key, e.g. "qwen3-vl-2b-4bit+adapter=data/adapters/<run>"')
-    sv.add_argument("--per-hour", type=int, default=30, help="serve: requests per key per hour")
+    sv.add_argument("--per-hour", type=int, default=240, help="serve: requests per key per hour (a plan with read-ahead uses 8 to 10)")
     sv.add_argument("--shot-format", default="v3", help="serve: shot format for Inspiration plans; use the one the model "
                     "was trained on (fused q5: v7). Apps without the ZoomPlan 'N m at Kx' fix need v3")
     sv.add_argument("--label", default="device", help="keygen: a name for this client key")
