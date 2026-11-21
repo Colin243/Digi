@@ -3,7 +3,7 @@ name = "digi-photography-ai"
 version = "0.1.0"
 description = "Local VLM experiments: inspiration photos + target scene -> composition recommendations (MLX on Apple silicon)."
 readme = "README.md"
-requires-python = ">=3.10,<3.14"
+requires-python = ">=3.11,<3.14"
 dependencies = [
     "mlx-vlm>=0.7.12,<0.8",
     "gradio>=6.0,<7",

@@ -57,6 +57,7 @@ from .pipeline import RunConfig
 DEFAULT_KEYS_FILE = Path("data/server/keys.json")
 MAX_IMAGE_BYTES = 8 * 1024 * 1024
 MAX_REQUEST_BYTES = MAX_IMAGE_BYTES * 6 + 1_000_000  # target + 5 inspiration photos, plus the form fields
+ALLOWED_IMAGE_FORMATS = ("JPEG", "PNG")  # the app sends JPEG; other formats would only widen the decoder attack surface
 MAX_IMAGE_PIXELS = 40_000_000  # a small JPEG can decode to far more memory than its file size suggests
 API_VERSION = 1
 
@@ -597,10 +598,10 @@ async def _save(f: UploadFile, dest: Path) -> Path:
     if len(data) > MAX_IMAGE_BYTES:
         raise HTTPException(413, "Image is too large; send a JPEG with a long edge of about 1024 px.")
     try:
-        with Image.open(io.BytesIO(data)) as im:  # reads the header only
+        with Image.open(io.BytesIO(data), formats=ALLOWED_IMAGE_FORMATS) as im:  # reads the header only
             width, height = im.size
     except Exception:  # noqa: BLE001 - not an image the library can read
-        raise HTTPException(422, "That file is not a readable image.")
+        raise HTTPException(422, "That file is not a readable JPEG or PNG image.")
     if width * height > MAX_IMAGE_PIXELS:
         raise HTTPException(413, "Image has too many pixels; send a JPEG with a long edge of about 1024 px.")
     dest.write_bytes(data)

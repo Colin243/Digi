@@ -175,7 +175,7 @@ def test_oversized_and_unsized_bodies_are_refused(tmp_path, monkeypatch):
 def test_uploads_must_be_readable_images_of_sane_size(client):
     c, h = client
     r = c.post("/v1/note", files=[("photo", ("a.jpg", b"not an image at all", "image/jpeg"))], headers=h)
-    assert r.status_code == 422 and "not a readable image" in r.json()["error"]
+    assert r.status_code == 422 and "not a readable" in r.json()["error"]
     buf = io.BytesIO()
     Image.new("L", (7000, 7000)).save(buf, "JPEG")  # 49 million pixels, a small file
     r = c.post("/v1/note", files=[("photo", ("a.jpg", buf.getvalue(), "image/jpeg"))], headers=h)
@@ -233,3 +233,12 @@ def test_refused_requests_do_not_count_as_activity(client):
     time.sleep(0.05)
     assert c.post("/v1/note", files=[("photo", ("a.jpg", jpeg(), "image/jpeg"))]).status_code == 401
     assert state.last_active == before  # the guard refuses it before the activity tracking sees it
+
+
+def test_only_jpeg_and_png_uploads_are_accepted(client):
+    c, h = client
+    for fmt, ok in (("JPEG", True), ("PNG", True), ("GIF", False), ("BMP", False), ("TIFF", False)):
+        buf = io.BytesIO()
+        Image.new("RGB", (64, 48), (120, 90, 60)).save(buf, fmt)
+        r = c.post("/v1/note", files=[("photo", ("a.img", buf.getvalue(), "application/octet-stream"))], headers=h)
+        assert (r.status_code == 200) == ok, (fmt, r.status_code)
