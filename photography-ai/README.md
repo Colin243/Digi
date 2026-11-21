@@ -2,7 +2,7 @@
 
 A standalone Python project for Digi's offline "photography director". You give it 3–5 **inspiration** photos and one **target scene**, which is a different place where you're about to shoot. A local vision-language model describes the inspiration aesthetic and recommends **three concrete compositions** for the target. Recommendations cover camera height, angle, distance, framing and subject position, plus what still has to be checked on site.
 
-It runs fully on-device with [MLX-VLM](https://github.com/Blaizzy/mlx-vlm) on Apple silicon. Nothing here touches the Swift app in `ios/`, and nothing is fine-tuned.
+It runs fully on-device with [MLX-VLM](https://github.com/Blaizzy/mlx-vlm) on Apple silicon. The Director server in this folder is what the Swift app in `ios/` calls. It runs a fine-tuned model (see Phase 4); the earlier phases below compared base models.
 
 - **Phase 1:** baseline pipeline, upload UI, saved runs with timings.
 - **Phase 2:** diagnostics, a benchmark across models and strategies, a human scoring rubric and an evaluation UI. The findings are in [`docs/phase2-benchmark.md`](docs/phase2-benchmark.md).
