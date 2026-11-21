@@ -160,6 +160,7 @@ def summarize(manifest: dict, runs_dir: Path | None = None) -> dict:
                 "copied_prompt_examples": sum(a.get("copied_prompt_examples", 0) for a in am),
                 "diversity_fields": _mean([d.get("field_distinct") for d in div]),
                 "diversity_text": _mean([d.get("text_dissimilarity") for d in div]),
+                "repeated_looks": _mean([d.get("repeated_looks") for d in div]),
             },
             "human": _human([e for r in recs for e in r["_scores"]]),
         })
@@ -230,8 +231,8 @@ def report_markdown(summary: dict) -> str:
             "per_image summary still says who is in each photo._", "",
             "| model | strategy | inspiration identified | inspiration content | summary names subject | style recall | target identified | target object recall | "
             "invented objects in target (runs) | leaked inspiration objects | evidence grounded | concrete cue types / shot | "
-            "generic or copied | diversity: fields / text |",
-            "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+            "generic or copied | diversity: fields / text | repeated looks / run |",
+            "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for r in summary["rows"]:
         a = r["auto"]
         src = f" ({a['inspiration_source']})" if a.get("inspiration_source") else ""
@@ -242,7 +243,7 @@ def report_markdown(summary: dict) -> str:
             f"{a['hallucinated_in_target']} ({a['runs_with_hallucination']}) | {a['leaked_inspiration_objects']} | "
             f"{_cell(a['evidence_grounded_rate'])} | {_cell(a['specific_cue_types'])} | "
             f"{a['generic_or_copied']} ({a['copied_prompt_examples']} copied) | "
-            f"{_cell(a['diversity_fields'])} / {_cell(a['diversity_text'])} |")
+            f"{_cell(a['diversity_fields'])} / {_cell(a['diversity_text'])} | {_cell(a.get('repeated_looks'))} |")
     rated = [(r, rater, h) for r in summary["rows"] for rater, h in r["human"].items()]
     for kind, title, empty in (
         ("human", "Your ratings (human raters; subjective)", "_No human scores yet. Use the UI's Evaluate tab or `photo-ai score`._"),
@@ -282,7 +283,8 @@ def report_markdown(summary: dict) -> str:
             "are present; sentences with negations are ignored. *evidence grounded* = share of visible_evidence items "
             "naming an annotated target object. *concrete cue types* = how many of {height, angle, distance, frame "
             "position, movement, lens} a shot states (max 6). *diversity fields* = 0 when all three shots repeat the "
-            "same camera position/height/angle/subject position/framing, 1 when all differ."]
+            "same camera position/height/angle/subject position/framing, 1 when all differ. *repeated looks / run* = how many of "
+            "the three looks repeat an earlier look's setup (4 of those 5 fields the same): 0 is best, 2 means one setup three times."]
     return "\n".join(out)
 
 
