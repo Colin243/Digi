@@ -116,6 +116,8 @@ def main(argv: list[str] | None = None) -> int:
                     help="describe the expected JSON as a blank shape (default) or as a list of keys")
     bn.add_argument("--shot-format", choices=["v1", "v2", "v3", "v4", "v5", "v6", "v7", "v8"], default="v1",
                     help="v1 = Phase 3 format; v2/v3/v4 need --strategies decomposed")
+    bn.add_argument("--no-style-per-image", action="store_true",
+                    help="decomposed: the style step skips the per-photo lines (the shots prompt drops them anyway)")
     bn.add_argument("--runs-dir", type=Path, default=DEFAULT_RUNS_DIR)
 
     rp = sub.add_parser("report", help="side-by-side comparison for a benchmark")
@@ -317,7 +319,7 @@ def main(argv: list[str] | None = None) -> int:
         cases = [c for c in cases if not c.missing_files()]
         m = run_benchmark(a.models, cases, a.strategies, a.consistency_strategy, a.consistency_samples,
                           a.consistency_temperature, a.runs_dir, a.bench_id, json_format=a.json_format,
-                          shot_format=a.shot_format)
+                          shot_format=a.shot_format, style_per_image=not a.no_style_per_image)
         print(f"benchmark {m['bench_id']}: {len(m['runs'])} runs. Next: photo-ai report --bench {m['bench_id']}")
         return 0
 
