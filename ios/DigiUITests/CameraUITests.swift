@@ -3,6 +3,7 @@ import XCTest
 final class CameraUITests: XCTestCase {
     func testSelfTimerOptionsPersist() throws {
         let app = XCUIApplication()
+        app.launchArguments += ["-digi.onboarding.completed", "YES"]  // skip the first-run introduction
         XCUIDevice.shared.orientation = .portrait
         app.launch()
         XCTAssertTrue(app.buttons["Camera options"].waitForExistence(timeout: 10))
@@ -29,6 +30,7 @@ final class CameraUITests: XCTestCase {
     }
     func testCaptureStudySettingPersistsAcrossLaunch() throws {
         let app = XCUIApplication()
+        app.launchArguments += ["-digi.onboarding.completed", "YES"]  // skip the first-run introduction
         XCUIDevice.shared.orientation = .portrait
         app.launch()
         XCTAssertTrue(app.buttons["Camera options"].waitForExistence(timeout: 10))
@@ -51,6 +53,7 @@ final class CameraUITests: XCTestCase {
     }
     func testOptionsAndReview() throws {
         let app = XCUIApplication()
+        app.launchArguments += ["-digi.onboarding.completed", "YES"]  // skip the first-run introduction
         XCUIDevice.shared.orientation = .landscapeRight
         addUIInterruptionMonitor(withDescription: "Camera permission") { alert in
             if alert.buttons["Allow"].exists { alert.buttons["Allow"].tap(); return true }
@@ -95,6 +98,7 @@ final class CameraUITests: XCTestCase {
     }
     func testCameraPicker() throws {
         let app = XCUIApplication()
+        app.launchArguments += ["-digi.onboarding.completed", "YES"]  // skip the first-run introduction
         XCUIDevice.shared.orientation = .portrait
         app.launch()
         let menu = app.buttons["camera-picker"]
@@ -119,6 +123,7 @@ final class CameraUITests: XCTestCase {
 
     func testRotationPreservesControlsAndPanels() throws {
         let app = XCUIApplication()
+        app.launchArguments += ["-digi.onboarding.completed", "YES"]  // skip the first-run introduction
         XCUIDevice.shared.orientation = .portrait
         app.launch()
         XCTAssertTrue(app.buttons["Camera options"].waitForExistence(timeout: 10))
@@ -165,4 +170,39 @@ final class CameraUITests: XCTestCase {
         inspect("Portrait return", portrait: true)
     }
 
+    // MARK: first-run introduction
+
+    func testIntroductionWalksThroughAndThenShowsTheCamera() throws {
+        let app = XCUIApplication()
+        app.launchArguments += ["-digi.onboarding.completed", "NO"]
+        XCUIDevice.shared.orientation = .portrait
+        app.launch()
+        let primary = app.buttons["onboarding-primary"]
+        XCTAssertTrue(primary.waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["Camera options"].exists, "the camera starts only after the introduction")
+        for _ in 0..<4 { primary.tap() }  // welcome, how it works, privacy, permissions
+        XCTAssertTrue(app.textFields["onboarding-server"].waitForExistence(timeout: 3), "the last page is Connect")
+        XCTAssertFalse(primary.isEnabled, "Save and start needs an address and a key")
+        app.buttons["onboarding-later"].tap()
+        XCTAssertTrue(app.buttons["Camera options"].waitForExistence(timeout: 10))
+    }
+
+    func testSkipJumpsToConnectAndTheIntroductionDoesNotReturn() throws {
+        let app = XCUIApplication()
+        app.launchArguments += ["-digi.onboarding.completed", "NO"]
+        XCUIDevice.shared.orientation = .portrait
+        app.launch()
+        let skip = app.buttons["onboarding-skip"]
+        XCTAssertTrue(skip.waitForExistence(timeout: 10))
+        skip.tap()
+        XCTAssertTrue(app.textFields["onboarding-server"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.buttons["onboarding-skip"].exists, "no Skip on the last page")
+        app.buttons["onboarding-later"].tap()
+        XCTAssertTrue(app.buttons["Camera options"].waitForExistence(timeout: 10))
+        app.terminate()
+        app.launchArguments = []  // a normal launch: the introduction has been seen
+        app.launch()
+        XCTAssertTrue(app.buttons["Camera options"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["onboarding-primary"].exists)
+    }
 }

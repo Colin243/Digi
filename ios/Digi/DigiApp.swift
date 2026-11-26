@@ -8,7 +8,24 @@ import DirectorKit
 
 @main
 struct DigiApp: App {
-    var body: some Scene { WindowGroup { GuidanceThemed { CameraView() } } }
+    var body: some Scene { WindowGroup { GuidanceThemed { RootView() } } }
+}
+
+/// The first-run introduction until it has been seen, then the camera. The camera (and iPhone's camera and photo
+/// prompts) only starts after the introduction, so the permissions page explains them first.
+struct RootView: View {
+    @State private var introDone = OnboardingStore.isCompleted()
+
+    var body: some View {
+        if introDone {
+            CameraView()
+        } else {
+            OnboardingView {
+                OnboardingStore.markCompleted()
+                withAnimation(.easeOut(duration: 0.25)) { introDone = true }
+            }
+        }
+    }
 }
 
 enum PhotoFlash: String, CaseIterable, Identifiable {

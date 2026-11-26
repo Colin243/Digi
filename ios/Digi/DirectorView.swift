@@ -17,6 +17,7 @@ struct DirectorView: View {
     @AppStorage(DirectorDefaults.priority) private var priorityRaw = DirectorPriority.bestResults.rawValue
     @State private var apiKey = DirectorKeychain.read() ?? ""
     @State private var advancedOpen = false
+    @State private var introNote = false
 
     private var mode: DirectorMode { get { model.mode } nonmutating set { model.mode = newValue } }
     private var style: DirectorStyle { get { model.style } nonmutating set { model.style = newValue } }
@@ -300,10 +301,20 @@ struct DirectorView: View {
                     Text(priorityNote).font(.footnote).foregroundStyle(.white.opacity(0.55))
 
                     Text("Director server").font(.footnote.weight(.semibold)).foregroundStyle(.white.opacity(0.55)).padding(.top, 6)
-                    TextField("Server address, e.g. 192.168.1.20:8787", text: $serverURL)
+                    TextField("Server address, e.g. my-mac.tailnet.ts.net", text: $serverURL)
                         .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
                         .padding(14).background(theme.panel, in: RoundedRectangle(cornerRadius: 12))
                         .accessibilityIdentifier("director-server")
+                    if let address = ServerAddress.url(from: serverURL) {
+                        if ServerAddress.isPlainHTTP(address) {
+                            Text("Not encrypted: your key and photos can be read by others on this network. Use it only on a network you trust, or use an https address (for example through Tailscale).")
+                                .font(.footnote).foregroundStyle(.orange.opacity(0.9))
+                                .accessibilityIdentifier("director-server-plain-http")
+                        }
+                    } else if !serverURL.trimmingCharacters(in: .whitespaces).isEmpty {
+                        Text("That address is not valid. Use a host name or address, with http:// or https:// if you like.")
+                            .font(.footnote).foregroundStyle(.red.opacity(0.85))
+                    }
                     SecureField("Client key from `photo-ai server keygen`", text: $apiKey)
                         .textInputAutocapitalization(.never).autocorrectionDisabled()
                         .onChange(of: apiKey) { _, v in DirectorKeychain.write(v) }
@@ -316,6 +327,19 @@ struct DirectorView: View {
                     }
                     Text("The key is stored in the iOS Keychain. With no server set, the on-device director is used. Text-only needs a server that supports it; for now it falls back to the phone.")
                         .font(.footnote).foregroundStyle(.white.opacity(0.55))
+                    Button {
+                        OnboardingStore.reset()
+                        introNote = true
+                    } label: {
+                        Text("Show the introduction again").font(.subheadline.weight(.medium)).frame(maxWidth: .infinity, minHeight: 44)
+                            .background(theme.panel, in: RoundedRectangle(cornerRadius: 14))
+                            .contentShape(RoundedRectangle(cornerRadius: 14))
+                    }
+                    .buttonStyle(.plain).accessibilityIdentifier("director-show-intro")
+                    if introNote {
+                        Text("The introduction will show the next time you open Digi.")
+                            .font(.footnote).foregroundStyle(.white.opacity(0.55))
+                    }
                     runStats
                 }.padding(.bottom, 8)
             }

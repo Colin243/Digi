@@ -129,10 +129,20 @@ DIVERSITY_FIELDS = ("camera_position", "camera_height", "camera_angle", "subject
 DIRECTION_FIELDS = ("body_pose", "head_direction", "gaze", "expression_cue")  # shot-v2
 
 
+def repeated_looks(comps: list[dict], min_same: int = 4) -> int:
+    """How many looks (after the first) repeat an earlier look's setup: the same camera position, height, angle,
+    subject position and distance in at least `min_same` of those five fields. 0 = three different setups,
+    2 = all three looks are the same setup."""
+    setups = [[_normalize(str(c.get(f, ""))) for f in DIVERSITY_FIELDS] for c in comps]
+    return sum(
+        any(sum(a == b for a, b in zip(setups[i], setups[j])) >= min_same for j in range(i))
+        for i in range(1, len(setups)))
+
+
 def diversity(comps: list[dict]) -> dict:
     """How different the three shots are. 0 = identical on every field, 1 = all different."""
     if len(comps) < 2:
-        return {"field_distinct": None, "text_dissimilarity": None}
+        return {"field_distinct": None, "text_dissimilarity": None, "repeated_looks": None}
     per_field = {}
     # shot-v2 pose and gaze count toward diversity only when present, so shot-v1 numbers don't change
     fields = DIVERSITY_FIELDS + tuple(f for f in ("body_pose", "gaze") if any(c.get(f) for c in comps))
@@ -143,6 +153,7 @@ def diversity(comps: list[dict]) -> dict:
         "field_distinct": round(sum(per_field.values()) / len(per_field), 3),
         "per_field": per_field,
         "text_dissimilarity": round(1 - (pairwise_similarity([composition_text(c) for c in comps]) or 0), 3),
+        "repeated_looks": repeated_looks(comps),
     }
 
 

@@ -37,6 +37,7 @@ def run_benchmark(
     log=print,
     json_format: str = "shape",
     shot_format: str = "v1",
+    max_side: int | None = None,
 ) -> dict:
     runs_dir = Path(runs_dir or DEFAULT_RUNS_DIR)
     bench_id = bench_id or datetime.now().strftime("bench-%Y%m%d-%H%M%S")
@@ -47,6 +48,8 @@ def run_benchmark(
         "bench_id": bench_id, "created_at": datetime.now().isoformat(timespec="seconds"), "runs": []}
     if shot_format != "v1":
         manifest["shot_format"] = shot_format
+    if max_side is not None:
+        manifest["max_side"] = max_side
     done = {(r["model"], r["case"], r["strategy"], r["kind"], r["seed"]) for r in manifest["runs"]}
 
     def save():
@@ -69,7 +72,8 @@ def run_benchmark(
                 if key in done:  # resumable
                     continue
                 cfg = RunConfig(strategy=strategy, temperature=temp, seed=seed, subject=case.subject,
-                                json_format=json_format, shot_format=shot_format)
+                                json_format=json_format, shot_format=shot_format,
+                                **({"max_side": max_side} if max_side is not None else {}))
                 rec = analyze(backend, insp, tgt, cfg, runs_dir, label=bench_id, case=case)
                 manifest["runs"].append({"run_id": rec["run_id"], "model": backend.spec.key, "case": case.id,
                                          "strategy": strategy, "kind": kind, "seed": seed, "temperature": temp})
@@ -160,6 +164,7 @@ def summarize(manifest: dict, runs_dir: Path | None = None) -> dict:
                 "copied_prompt_examples": sum(a.get("copied_prompt_examples", 0) for a in am),
                 "diversity_fields": _mean([d.get("field_distinct") for d in div]),
                 "diversity_text": _mean([d.get("text_dissimilarity") for d in div]),
+                "repeated_looks": _mean([d.get("repeated_looks") for d in div]),
             },
             "human": _human([e for r in recs for e in r["_scores"]]),
         })
@@ -230,8 +235,8 @@ def report_markdown(summary: dict) -> str:
             "per_image summary still says who is in each photo._", "",
             "| model | strategy | inspiration identified | inspiration content | summary names subject | style recall | target identified | target object recall | "
             "invented objects in target (runs) | leaked inspiration objects | evidence grounded | concrete cue types / shot | "
-            "generic or copied | diversity: fields / text |",
-            "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+            "generic or copied | diversity: fields / text | repeated looks / run |",
+            "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for r in summary["rows"]:
         a = r["auto"]
         src = f" ({a['inspiration_source']})" if a.get("inspiration_source") else ""
@@ -242,7 +247,7 @@ def report_markdown(summary: dict) -> str:
             f"{a['hallucinated_in_target']} ({a['runs_with_hallucination']}) | {a['leaked_inspiration_objects']} | "
             f"{_cell(a['evidence_grounded_rate'])} | {_cell(a['specific_cue_types'])} | "
             f"{a['generic_or_copied']} ({a['copied_prompt_examples']} copied) | "
-            f"{_cell(a['diversity_fields'])} / {_cell(a['diversity_text'])} |")
+            f"{_cell(a['diversity_fields'])} / {_cell(a['diversity_text'])} | {_cell(a.get('repeated_looks'))} |")
     rated = [(r, rater, h) for r in summary["rows"] for rater, h in r["human"].items()]
     for kind, title, empty in (
         ("human", "Your ratings (human raters; subjective)", "_No human scores yet. Use the UI's Evaluate tab or `photo-ai score`._"),
@@ -282,7 +287,8 @@ def report_markdown(summary: dict) -> str:
             "are present; sentences with negations are ignored. *evidence grounded* = share of visible_evidence items "
             "naming an annotated target object. *concrete cue types* = how many of {height, angle, distance, frame "
             "position, movement, lens} a shot states (max 6). *diversity fields* = 0 when all three shots repeat the "
-            "same camera position/height/angle/subject position/framing, 1 when all differ."]
+            "same camera position/height/angle/subject position/framing, 1 when all differ. *repeated looks / run* = how many of "
+            "the three looks repeat an earlier look's setup (4 of those 5 fields the same): 0 is best, 2 means one setup three times."]
     return "\n".join(out)
 
 
