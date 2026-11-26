@@ -141,8 +141,10 @@ struct DirectorView: View {
                     VStack(spacing: 8) { ProgressView(); Text("Loading photo…").font(.footnote) }
                         .frame(maxWidth: .infinity).frame(height: 150)
                 } else if let targetImage {
-                    Image(uiImage: targetImage).resizable().scaledToFill()
-                        .frame(maxWidth: .infinity).frame(height: 190).clipped()
+                    // A fixed-height clear box with the photo drawn over it: a wide photo cannot widen the whole sheet.
+                    Color.clear.frame(maxWidth: .infinity).frame(height: 190)
+                        .overlay { Image(uiImage: targetImage).resizable().scaledToFill() }
+                        .clipped()
                     Label("Change", systemImage: "photo").font(.footnote.weight(.semibold))
                         .padding(.horizontal, 12).padding(.vertical, 7)
                         .background(.black.opacity(0.6), in: Capsule()).padding(10)
