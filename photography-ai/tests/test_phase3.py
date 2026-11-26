@@ -183,3 +183,16 @@ def test_rater_kinds_are_separated():
     assert make_entry("r", dict.fromkeys(CATEGORY_KEYS, 3), "colin")["rater_kind"] == "human"
     with pytest.raises(ValueError):  # AI-reserved names can't be recorded as human
         make_entry("r", dict.fromkeys(CATEGORY_KEYS, 3), "claude-me", kind="human")
+
+
+def test_repeated_looks_counts_looks_that_repeat_an_earlier_setup():
+    base = {"camera_position": "On the path", "camera_height": "Waist", "camera_angle": "Up 10", "subject_position": "Left third",
+            "distance_and_framing": "2 m full body"}
+    other = {"camera_position": "By the wall", "camera_height": "Chest", "camera_angle": "Level", "subject_position": "Centre",
+             "distance_and_framing": "1.5 m half body"}
+    assert metrics.repeated_looks([base, other, dict(other, camera_position="Under the tree", camera_angle="Up 20")]) == 0
+    assert metrics.repeated_looks([base, dict(base, title="x"), other]) == 1  # same setup, only the title differs
+    assert metrics.repeated_looks([base, dict(base), dict(base)]) == 2
+    assert metrics.repeated_looks([base, dict(base, camera_height="Chest"), other]) == 1  # 4 of 5 fields the same counts
+    assert metrics.diversity([base, dict(base), dict(base)])["repeated_looks"] == 2
+    assert metrics.diversity([base])["repeated_looks"] is None
