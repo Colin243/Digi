@@ -224,6 +224,12 @@ struct DirectorView: View {
                     .font(.footnote).foregroundStyle(.white.opacity(0.6))
                     .accessibilityIdentifier("director-prep-status")
             }
+            if model.serverState == .unreachable && model.phase != .running {
+                Label("Can't reach your Director server. Check the address in Settings and that your phone can reach it.",
+                      systemImage: "wifi.exclamationmark")
+                    .font(.footnote).foregroundStyle(.orange.opacity(0.9))
+                    .accessibilityIdentifier("director-server-unreachable")
+            }
             if model.phase == .running {
                 Button(role: .cancel) { model.cancel() } label: {
                     Text("Cancel").font(.subheadline.weight(.medium)).frame(maxWidth: .infinity, minHeight: 44)
