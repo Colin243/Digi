@@ -1,8 +1,41 @@
 # Digi
 
-A personal iPhone digicam gift app in development: G12 first, S95 second, G7 X Mark II third. Native source editing will use VS Code, with Xcode for iPhone builds and testing. Distribution is local USB development installation.
+**Digi turns a photo you love into step-by-step directions for recreating it with your own camera, wherever you are standing.** Pick 3 to 5 reference photos and a photo of your location, and Digi proposes three shots: where to stand, how high to hold the phone, the angle, the distance and zoom, and how to use the light. Pin one and the viewfinder coaches you live: level, tilt, framing, and when to step closer. It is an iPhone camera app with a G12-inspired digicam look.
 
-## What exists today
+## What works today
+
+| Part | Status |
+|---|---|
+| Camera app (SwiftUI, iPhone 17 Pro tested) | Capture, Photos saving, G12-inspired look, portrait and landscape |
+| Inspiration Director (reference photos to three shots) | Working end to end through a Director server on a Mac. With the photos read ahead, the first shot appears in about 5.5 s and all three in about 15 s |
+| Portrait and Scenery modes | Working: one scene photo plus a style gives shots |
+| Live guidance (level, tilt, subject framing, distance cue) | Partly built: person and face tracking, one cue at a time. Body pose, lighting cues and a target frame are not built |
+| On-device (offline) Director | Prototype only. A 14 November run took about 40 s for three shots; the model is not bundled in the app |
+
+## Status and limits (read this first)
+
+- This is a one-developer prototype, not a released product. It has not been user-tested yet.
+- Quality has been measured on 14 test scenes with automatic checks, plus an AI-assisted blind rating. Human-reviewed ratings and labels are still to come.
+- The shot-planning model is a small fine-tuned vision-language model (Qwen3.5-2B family, run with MLX). Whether fine-tuning beats the base model or a hosted model has not been shown on human ratings.
+- The Director server runs on a Mac. There is no hosted service.
+- Privacy by design: live guidance analyses preview frames in memory and drops them. Photos sent to the Director server are deleted after each request, and API keys are stored hashed.
+- No open-source license has been chosen. All rights reserved.
+
+## How it works
+
+1. The app reads each photo as you pick it, on the Director server: a short note per reference photo, a reading of your scene, then the shared style.
+2. When you press Plan, the model writes three shots, streamed one at a time.
+3. Zoom and distance are set by a rule in the app from the room you have to step back, so the advice fits the place.
+4. A pinned shot becomes a guide card over the viewfinder, with live cues from the camera.
+
+## Repository map
+
+- `ios/`: the SwiftUI app and `DirectorKit`, the Swift package for shot planning, routing and live guidance.
+- `photography-ai/`: the Director server, the benchmark and training tools, and the evaluation UI.
+- `prototype/`, `tracking-replay/`, `research/`: browser study, tracking replay and research notes behind the camera look.
+- `docs/`: design, plans and reports.
+
+## Camera app foundation: what exists today
 
 - Approved product design in `docs/superpowers/specs/2026-09-13-digicam-design.md`.
 - Interactive browser study in `prototype/`, with an explicitly uncalibrated photo treatment and modeled save flow.
