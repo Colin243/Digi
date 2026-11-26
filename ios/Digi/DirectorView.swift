@@ -17,6 +17,7 @@ struct DirectorView: View {
     @AppStorage(DirectorDefaults.priority) private var priorityRaw = DirectorPriority.bestResults.rawValue
     @State private var apiKey = DirectorKeychain.read() ?? ""
     @State private var advancedOpen = false
+    @State private var introNote = false
 
     private var mode: DirectorMode { get { model.mode } nonmutating set { model.mode = newValue } }
     private var style: DirectorStyle { get { model.style } nonmutating set { model.style = newValue } }
@@ -326,6 +327,19 @@ struct DirectorView: View {
                     }
                     Text("The key is stored in the iOS Keychain. With no server set, the on-device director is used. Text-only needs a server that supports it; for now it falls back to the phone.")
                         .font(.footnote).foregroundStyle(.white.opacity(0.55))
+                    Button {
+                        OnboardingStore.reset()
+                        introNote = true
+                    } label: {
+                        Text("Show the introduction again").font(.subheadline.weight(.medium)).frame(maxWidth: .infinity, minHeight: 44)
+                            .background(theme.panel, in: RoundedRectangle(cornerRadius: 14))
+                            .contentShape(RoundedRectangle(cornerRadius: 14))
+                    }
+                    .buttonStyle(.plain).accessibilityIdentifier("director-show-intro")
+                    if introNote {
+                        Text("The introduction will show the next time you open Digi.")
+                            .font(.footnote).foregroundStyle(.white.opacity(0.55))
+                    }
                     runStats
                 }.padding(.bottom, 8)
             }
