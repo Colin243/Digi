@@ -34,12 +34,14 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import hmac
+import io
 import json
 import secrets
 import shutil
 import sys
 import tempfile
 import time
+import traceback
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -47,12 +49,16 @@ from typing import Callable
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
+from PIL import Image
 
 from . import pipeline, prompts, schema
 from .pipeline import RunConfig
 
 DEFAULT_KEYS_FILE = Path("data/server/keys.json")
 MAX_IMAGE_BYTES = 8 * 1024 * 1024
+MAX_REQUEST_BYTES = MAX_IMAGE_BYTES * 6 + 1_000_000  # target + 5 inspiration photos, plus the form fields
+ALLOWED_IMAGE_FORMATS = ("JPEG", "PNG")  # the app sends JPEG; other formats would only widen the decoder attack surface
+MAX_IMAGE_PIXELS = 40_000_000  # a small JPEG can decode to far more memory than its file size suggests
 API_VERSION = 1
 
 
@@ -75,6 +81,50 @@ def create_key(label: str, path: Path = DEFAULT_KEYS_FILE) -> str:
 
 def load_keys(path: Path = DEFAULT_KEYS_FILE) -> dict[str, dict]:
     return json.loads(path.read_text()) if path.exists() else {}
+
+
+def _label_for(header: str, keys: dict[str, dict]) -> str | None:
+    """The label of the key in an Authorization header, or None. Compares against every stored hash in constant time."""
+    key = header[7:] if header.lower().startswith("bearer ") else ""
+    digest = _hash(key) if key else ""
+    found = None
+    for known in keys:
+        if hmac.compare_digest(known, digest):
+            found = keys[known]["label"]
+    return found
+
+
+async def _reply(send, status: int, message: str) -> None:
+    body = json.dumps({"error": message}).encode()
+    await send({"type": "http.response.start", "status": status,
+                "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode())]})
+    await send({"type": "http.response.body", "body": body})
+
+
+class _GuardMiddleware:
+    """Runs before the request body is read. Without it, the multipart body of an unauthenticated request was read
+    and spooled to disk before the key was checked. A wrong or missing key gets 401, a body with no declared length
+    gets 411 and one over the limit gets 413, all without reading the body. /v1/health stays open."""
+
+    def __init__(self, app, keys: dict[str, dict], max_body: int):
+        self.app, self.keys, self.max_body = app, keys, max_body
+
+    async def __call__(self, scope, receive, send):
+        path = scope.get("path", "")
+        if scope["type"] != "http" or not path.startswith("/v1/") or path == "/v1/health":
+            return await self.app(scope, receive, send)
+        headers = dict(scope["headers"])
+        if _label_for(headers.get(b"authorization", b"").decode("latin-1"), self.keys) is None:
+            return await _reply(send, 401, "Missing or invalid API key.")
+        if scope["method"] in ("POST", "PUT", "PATCH"):
+            length = headers.get(b"content-length")
+            if length is None:
+                return await _reply(send, 411, "Content-Length is required.")
+            if not length.isdigit():
+                return await _reply(send, 400, "Invalid Content-Length.")
+            if int(length) > self.max_body:
+                return await _reply(send, 413, f"Request is too large (limit {self.max_body // 1_000_000} MB).")
+        await self.app(scope, receive, send)
 
 
 # ----------------------------------------------------------------------------- limits
@@ -105,8 +155,10 @@ class ServerState:
     waiting: int = 0
     shot_format: str = "v3"  # inspiration-mode shot format the server asks for (see schema.SHOT_FORMATS)
     prefixes: "PrefixStore" = field(default_factory=lambda: PrefixStore())
+    last_active: float = field(default_factory=time.monotonic)  # when a request last started or finished (not /v1/health)
 
 
+IDLE_LOG_S = 60  # log the gap before a request when the server had been idle at least this long
 PREFIX_TTL_S = 600
 PREFIX_MAX = 4  # each holds the model's cache for one prompt (about 60 MB for Qwen3.5-2B)
 
@@ -146,8 +198,8 @@ class PrefixStore:
 
 # ----------------------------------------------------------------------------- app
 
-def create_app(backend, keys: dict[str, dict], model_name: str, per_hour: int = 30, max_queue: int = 2,
-               shot_format: str = "v3") -> FastAPI:
+def create_app(backend, keys: dict[str, dict], model_name: str, per_hour: int = 240, max_queue: int = 2,
+               shot_format: str = "v3", keep_warm_s: float = 0.0) -> FastAPI:
     """`shot_format` is what Inspiration plans ask the model for. Use the format the model was trained on (fused q5:
     v7). Apps before the ZoomPlan "N m at Kx" fix mis-scale v5-v7 distances, so v3 stays the default."""
     if shot_format not in schema.SHOT_FORMATS:
@@ -156,17 +208,48 @@ def create_app(backend, keys: dict[str, dict], model_name: str, per_hour: int = 
     app = FastAPI(title="Digi Director", docs_url=None, redoc_url=None, openapi_url=None)
     app.state.s = state
 
+    @app.middleware("http")
+    async def track_activity(request: Request, call_next):
+        if request.url.path == "/v1/health":
+            return await call_next(request)
+        idle = time.monotonic() - state.last_active
+        if idle > IDLE_LOG_S:  # a long gap before a request: the first request after one is often slow (memory)
+            _timing({"endpoint": "idle_gap", "path": request.url.path, "idle_s": round(idle)})
+        state.last_active = time.monotonic()
+        try:
+            return await call_next(request)
+        finally:
+            state.last_active = time.monotonic()
+
+    async def keep_warm():
+        """Every `keep_warm_s` while idle, one small request so the model's memory stays resident. Waits for any
+        real request (same lock) and never starts while one is waiting. Pings do not count as activity."""
+        last_ping = time.monotonic()
+        while True:
+            await asyncio.sleep(max(0.05, keep_warm_s / 4))
+            now = time.monotonic()
+            if state.lock.locked() or state.waiting or now - state.last_active < keep_warm_s or now - last_ping < keep_warm_s:
+                continue
+            async with state.lock:
+                took = await asyncio.get_running_loop().run_in_executor(None, warm_up, state.backend)
+            last_ping = time.monotonic()
+            _timing({"endpoint": "keep_warm", "work_s": round(took, 2)})
+
+    if keep_warm_s > 0:
+        @app.on_event("startup")
+        async def _start_keep_warm():
+            app.state.keep_warm_task = asyncio.create_task(keep_warm())
+
+    # Added last, so it runs first: an unauthenticated request is refused before anything else sees it.
+    app.add_middleware(_GuardMiddleware, keys=state.keys, max_body=MAX_REQUEST_BYTES)
+
     def authed(request: Request) -> str:
-        header = request.headers.get("authorization", "")
-        key = header[7:] if header.lower().startswith("bearer ") else ""
-        digest = _hash(key) if key else ""
-        for known in state.keys:  # constant-time compare against every stored hash
-            if hmac.compare_digest(known, digest):
-                label = state.keys[known]["label"]
-                if not state.limiter.allow(label):
-                    raise HTTPException(429, "Too many requests. Try again later.")
-                return label
-        raise HTTPException(401, "Missing or invalid API key.")
+        label = _label_for(request.headers.get("authorization", ""), state.keys)
+        if label is None:
+            raise HTTPException(401, "Missing or invalid API key.")
+        if not state.limiter.allow(label):
+            raise HTTPException(429, "Too many requests. Try again later.")
+        return label
 
     @app.get("/v1/health")
     async def health():
@@ -223,6 +306,7 @@ def create_app(backend, keys: dict[str, dict], model_name: str, per_hour: int = 
         workdir = Path(tempfile.mkdtemp(prefix="digi-note-"))
         try:
             path = await _save(photo, workdir / "inspiration.jpg")
+            photo_tag = _photo_tag(path)
         except HTTPException:
             shutil.rmtree(workdir, ignore_errors=True)
             raise
@@ -230,7 +314,8 @@ def create_app(backend, keys: dict[str, dict], model_name: str, per_hour: int = 
             shutil.rmtree(workdir, ignore_errors=True)
             raise HTTPException(503, "The director is busy. Try again in a moment.")
         state.waiting += 1
-        cfg = RunConfig(mode="inspiration", json_format="keys", strategy="decomposed", shot_format=state.shot_format)
+        cfg = RunConfig(mode="inspiration", json_format="keys", strategy="decomposed", shot_format=state.shot_format,
+                        cache_notes=True)  # the same photo again is answered without the model
         try:
             t_wait = time.perf_counter()
             async with state.lock:
@@ -243,7 +328,8 @@ def create_app(backend, keys: dict[str, dict], model_name: str, per_hour: int = 
                     raise HTTPException(502, f"The director {exc}.")
         finally:
             shutil.rmtree(workdir, ignore_errors=True)  # the photo is never kept
-        _timing({"endpoint": "note", "queued_s": round(t_lock - t_wait, 2), "work_s": round(time.perf_counter() - t_lock, 2)})
+        _timing({"endpoint": "note", "photo": photo_tag, "queued_s": round(t_lock - t_wait, 2),
+                 "work_s": round(time.perf_counter() - t_lock, 2)})
         return JSONResponse({"note": note})
 
     @app.post("/v1/scene")
@@ -251,6 +337,7 @@ def create_app(backend, keys: dict[str, dict], model_name: str, per_hour: int = 
         workdir = Path(tempfile.mkdtemp(prefix="digi-scene-"))
         try:
             path = await _save(target, workdir / "target.jpg")
+            photo_tag = _photo_tag(path)
         except HTTPException:
             shutil.rmtree(workdir, ignore_errors=True)
             raise
@@ -271,7 +358,8 @@ def create_app(backend, keys: dict[str, dict], model_name: str, per_hour: int = 
                     raise HTTPException(502, f"The director {exc}.")
         finally:
             shutil.rmtree(workdir, ignore_errors=True)  # the photo is never kept
-        _timing({"endpoint": "scene", "queued_s": round(t_lock - t_wait, 2), "work_s": round(time.perf_counter() - t_lock, 2)})
+        _timing({"endpoint": "scene", "photo": photo_tag, "cached": bool(scene.get("cached")),
+                 "queued_s": round(t_lock - t_wait, 2), "work_s": round(time.perf_counter() - t_lock, 2)})
         return JSONResponse({"target_scene": scene})
 
     @app.post("/v1/prepare-plan")
@@ -408,7 +496,12 @@ def create_app(backend, keys: dict[str, dict], model_name: str, per_hour: int = 
                         sink({"type": "error", "message": "The director could not produce valid shots: "
                               + "; ".join(record["validation"]["errors"][:3])})
                 except Exception as exc:  # noqa: BLE001 - report any failure to the client
-                    sink({"type": "error", "message": str(exc)})
+                    if isinstance(exc, (pipeline.InputError, RuntimeError)):
+                        message = str(exc)  # worded for the user
+                    else:  # anything else may hold paths or internals: log it here, send a plain message
+                        traceback.print_exc()
+                        message = "The director hit an unexpected error."
+                    sink({"type": "error", "message": message})
                 finally:
                     pipeline.reset_compositions_prefix(ptoken)
                     pipeline.reset_event_sink(token)
@@ -468,6 +561,27 @@ def _sha(path) -> str:
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
+def _photo_tag(path: Path) -> str:
+    """First 8 hex digits of the photo's hash: lets the timing log show whether two requests were the same photo.
+    Not reversible to the photo."""
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()[:8]
+
+
+def warm_up(backend) -> float:
+    """One small image request, so the first real request does not pay for the model's first-use setup (the first
+    scene or note after a start took 3-10 s longer than the same call later). Returns the seconds it took."""
+    from PIL import Image
+
+    from .backends.base import GenerationParams
+
+    t0 = time.perf_counter()
+    with tempfile.TemporaryDirectory(prefix="digi-warm-") as d:
+        path = Path(d) / "warm.jpg"
+        Image.linear_gradient("L").resize((1024, 768)).convert("RGB").save(path, "JPEG")
+        backend.generate("Describe this photo in one short sentence.", [str(path)], GenerationParams(8, 0.0, None, 0))
+    return time.perf_counter() - t0
+
+
 def _timing(event: dict) -> None:
     """One JSON line per request on stderr: where the time went (queue, stages, read-ahead used). No photos or text."""
     print(json.dumps({"t": time.strftime("%H:%M:%S"), **event}), file=sys.stderr, flush=True)
@@ -483,5 +597,12 @@ async def _save(f: UploadFile, dest: Path) -> Path:
         raise HTTPException(422, "Empty image upload.")
     if len(data) > MAX_IMAGE_BYTES:
         raise HTTPException(413, "Image is too large; send a JPEG with a long edge of about 1024 px.")
+    try:
+        with Image.open(io.BytesIO(data), formats=ALLOWED_IMAGE_FORMATS) as im:  # reads the header only
+            width, height = im.size
+    except Exception:  # noqa: BLE001 - not an image the library can read
+        raise HTTPException(422, "That file is not a readable JPEG or PNG image.")
+    if width * height > MAX_IMAGE_PIXELS:
+        raise HTTPException(413, "Image has too many pixels; send a JPEG with a long edge of about 1024 px.")
     dest.write_bytes(data)
     return dest

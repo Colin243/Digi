@@ -635,6 +635,10 @@ def target_fingerprint(backend: VLMBackend, cfg: RunConfig) -> str:
     return hashlib.sha256("\x1f".join(parts).encode()).hexdigest()[:16]
 
 
+_SCENE_CACHE: dict[tuple, dict] = {}  # (fingerprint, photo sha256) -> prepared scene reading
+_SCENE_CACHE_MAX = 16
+
+
 def prepare_target_scene(backend: VLMBackend, target: str, cfg: RunConfig | None = None, runs_dir: Path | None = None) -> dict:
     """Read the target photo ahead of time. It needs nothing but that photo, so it can run the moment the photo is
     chosen. The result carries a hash of the photo's bytes so it cannot be paired with a different photo later."""
@@ -643,6 +647,10 @@ def prepare_target_scene(backend: VLMBackend, target: str, cfg: RunConfig | None
         raise InputError("Only the decomposed Inspiration Director has a target scene to prepare.")
     if not target or not Path(target).is_file():
         raise InputError(f"File not found: {target}")
+    fingerprint, sha = target_fingerprint(backend, cfg), _file_sha(target)
+    key = (fingerprint, sha)
+    if cfg.temperature == 0 and key in _SCENE_CACHE:  # the same photo again (greedy, same model and prompt): same answer
+        return {**_SCENE_CACHE[key], "wall_s": 0.0, "cached": True}
     run_id, run_dir = new_run_dir(Path(runs_dir or DEFAULT_RUNS_DIR), backend.spec.key)
     tgt = prepare(target, run_dir / "inputs" / "target.jpg", "target", cfg.max_side).saved_as
     backend.load()
@@ -651,8 +659,13 @@ def prepare_target_scene(backend: VLMBackend, target: str, cfg: RunConfig | None
         scene, st = _target_scene_stage(backend, run_dir, tgt, cfg)
     if scene is None:
         raise RuntimeError("could not read the target photo (target_scene)")
-    return {"version": REFERENCES_VERSION, "fingerprint": target_fingerprint(backend, cfg), "photo_sha256": _file_sha(target),
-            "target_scene": scene, "wall_s": round(time.perf_counter() - t0, 3)}
+    out = {"version": REFERENCES_VERSION, "fingerprint": fingerprint, "photo_sha256": sha,
+           "target_scene": scene, "wall_s": round(time.perf_counter() - t0, 3)}
+    if cfg.temperature == 0:
+        if len(_SCENE_CACHE) >= _SCENE_CACHE_MAX:
+            _SCENE_CACHE.pop(next(iter(_SCENE_CACHE)))
+        _SCENE_CACHE[key] = out
+    return out
 
 
 def check_target_scene(prepared: object, target: str, backend: VLMBackend, cfg: RunConfig) -> dict:
