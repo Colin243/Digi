@@ -404,6 +404,18 @@ def test_notes_come_from_the_client_then_the_cache_then_the_model(tmp_path):
     pipeline._NOTES_CACHE.clear()
 
 
+def test_style_without_per_image_changes_only_the_style_prompt(tmp_path):
+    ins, tgt = [jpg(tmp_path, f"i{i}.jpg") for i in range(3)], jpg(tmp_path, "t.jpg")
+    b = make_backend("fake")
+    pipeline.analyze(b, ins, tgt, cfg(), tmp_path / "a")
+    base = [p for p, _ in b.calls if "notes on a photographer" in p][0]; b.calls.clear()
+    assert "per_image" in base
+    pipeline.analyze(b, ins, tgt, cfg(style_per_image=False), tmp_path / "b")
+    short = [p for p, _ in b.calls if "notes on a photographer" in p][0]
+    assert "per_image" not in short and "summarize each note" not in short and "summary" in short
+    assert pipeline.reference_fingerprint(b, cfg()) != pipeline.reference_fingerprint(b, cfg(style_per_image=False))
+
+
 def test_the_same_scene_photo_again_is_answered_without_the_model(tmp_path):
     tgt = jpg(tmp_path, "t.jpg")
     pipeline._SCENE_CACHE.clear()

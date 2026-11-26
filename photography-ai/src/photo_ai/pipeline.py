@@ -98,6 +98,7 @@ class RunConfig:
     # Experiments (benchmarks only until a quality check says otherwise):
     notes_style: str = "full"  # prompts.NOTES_STYLES: "short" asks for notes under 40 words
     skip_aesthetic: bool = False  # True: no separate style step; the notes go straight into the compositions prompt
+    style_per_image: bool = True  # False: the style step does not write the per-photo lines the compositions drop
 
     def params(self, max_tokens: int | None = None) -> GenerationParams:
         return GenerationParams(max_tokens or self.max_tokens, self.temperature, self.repetition_penalty, self.seed)
@@ -313,7 +314,7 @@ def _target_scene_stage(backend, run_dir, tgt, cfg):
 
 
 def _aesthetic_stage(backend, run_dir, notes, cfg):
-    return _run_stage(backend, run_dir, "aesthetic_from_notes", prompts.aesthetic_from_notes(notes), [], schema.Aesthetic, cfg, 900)
+    return _run_stage(backend, run_dir, "aesthetic_from_notes", prompts.aesthetic_from_notes(notes, cfg.style_per_image), [], schema.Aesthetic, cfg, 900)
 
 
 def _compositions_prompt(aesthetic: dict, target: dict, cfg: RunConfig, brief: str) -> str:
@@ -495,7 +496,7 @@ def reference_fingerprint(backend: VLMBackend, cfg: RunConfig) -> str:
     references is refused instead of silently feeding a different model's wording into this one."""
     with prompts.json_format(cfg.json_format):
         parts = [str(REFERENCES_VERSION), backend.spec.key, cfg.json_format, str(cfg.max_side),
-                 prompts.image_notes(cfg.notes_style), prompts.aesthetic_from_notes(["{note}"])]
+                 prompts.image_notes(cfg.notes_style), prompts.aesthetic_from_notes(["{note}"], cfg.style_per_image)]
     return hashlib.sha256("\x1f".join(parts).encode()).hexdigest()[:16]
 
 

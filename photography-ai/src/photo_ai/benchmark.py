@@ -37,6 +37,7 @@ def run_benchmark(
     log=print,
     json_format: str = "shape",
     shot_format: str = "v1",
+    style_per_image: bool = True,
     max_side: int | None = None,
 ) -> dict:
     runs_dir = Path(runs_dir or DEFAULT_RUNS_DIR)
@@ -48,6 +49,8 @@ def run_benchmark(
         "bench_id": bench_id, "created_at": datetime.now().isoformat(timespec="seconds"), "runs": []}
     if shot_format != "v1":
         manifest["shot_format"] = shot_format
+    if not style_per_image:
+        manifest["style_per_image"] = False
     if max_side is not None:
         manifest["max_side"] = max_side
     done = {(r["model"], r["case"], r["strategy"], r["kind"], r["seed"]) for r in manifest["runs"]}
@@ -72,7 +75,7 @@ def run_benchmark(
                 if key in done:  # resumable
                     continue
                 cfg = RunConfig(strategy=strategy, temperature=temp, seed=seed, subject=case.subject,
-                                json_format=json_format, shot_format=shot_format,
+                                json_format=json_format, shot_format=shot_format, style_per_image=style_per_image,
                                 **({"max_side": max_side} if max_side is not None else {}))
                 rec = analyze(backend, insp, tgt, cfg, runs_dir, label=bench_id, case=case)
                 manifest["runs"].append({"run_id": rec["run_id"], "model": backend.spec.key, "case": case.id,

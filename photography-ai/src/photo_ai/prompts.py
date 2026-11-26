@@ -533,15 +533,20 @@ def target_scene_only() -> str:
     )
 
 
-def aesthetic_from_notes(notes: list[str]) -> str:
+def aesthetic_from_notes(notes: list[str], per_image: bool = True) -> str:
+    """per_image=False leaves out the one-line summary of each note: the compositions prompt drops it anyway
+    (see compositions_from_parts), so it only costs generation time."""
     listed = "\n".join(f"Inspiration photo {i}: {n}" for i, n in enumerate(notes, 1))
-    shape = _blank(AESTHETIC_FIELDS)
+    fields = AESTHETIC_FIELDS if per_image else {k: v for k, v in AESTHETIC_FIELDS.items() if k != "per_image[]"}
+    shape = _blank(fields)
+    ask = "Describe the style they share and the techniques that could transfer to a different location."
+    if per_image:
+        ask += " For per_image, summarize each note in one line, in order."
     return (
         "You are a photography director. Here are notes on a photographer's inspiration photos:\n"
         f"{listed}\n\n"
-        "Describe the style they share and the techniques that could transfer to a different location. "
-        "For per_image, summarize each note in one line, in order.\n\n"
-        f"{_guide('Fields', AESTHETIC_FIELDS)}\n\n{_RULES}\n{_answer(shape)}"
+        f"{ask}\n\n"
+        f"{_guide('Fields', fields)}\n\n{_RULES}\n{_answer(shape)}"
     )
 
 
