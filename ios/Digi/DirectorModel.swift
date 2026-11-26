@@ -29,6 +29,25 @@ final class DirectorModel: ObservableObject {
 
     private var task: Task<Void, Never>?
 
+    // MARK: checking the server when the app opens
+
+    enum ServerState: Equatable { case unknown, checking, reachable, unreachable }
+    /// Whether the saved Director server answered the last check. Stays `.unknown` when no server is set up.
+    @Published private(set) var serverState: ServerState = .unknown
+
+    /// Asks the saved server if it is there (the health check sends no photos and needs no key). Called when the
+    /// app opens and comes back to the front, so a wrong or unreachable address shows before a plan fails on it.
+    func checkServer() {
+        guard let cfg = DirectorDefaults.configuration() else { serverState = .unknown; return }
+        serverState = .checking
+        let url = cfg.baseURL.appendingPathComponent("v1/health")
+        Task { [weak self] in
+            var request = URLRequest(url: url); request.timeoutInterval = 6
+            let ok = ((try? await URLSession.shared.data(for: request).1 as? HTTPURLResponse)?.statusCode == 200)
+            self?.serverState = ok ? .reachable : .unreachable
+        }
+    }
+
     // MARK: reading photos ahead (Inspiration Director, online only)
 
     /// Each photo is turned into a JPEG once and that exact `Data` is used for preparing and for the plan:

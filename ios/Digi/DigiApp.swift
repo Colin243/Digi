@@ -15,10 +15,12 @@ struct DigiApp: App {
 /// prompts) only starts after the introduction, so the permissions page explains them first.
 struct RootView: View {
     @State private var introDone = OnboardingStore.isCompleted()
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         if introDone {
             CameraView()
+                .task(id: scenePhase) { if scenePhase == .active { DirectorModel.shared.checkServer() } }
         } else {
             OnboardingView {
                 OnboardingStore.markCompleted()
