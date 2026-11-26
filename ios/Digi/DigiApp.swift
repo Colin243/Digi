@@ -783,6 +783,9 @@ struct CameraView: View {
                                             .position(x: point.x * area.size.width, y: point.y * area.size.height)
                                     }.allowsHitTesting(false).accessibilityLabel("Selected focus point")
                                 }
+                                if pinnedShot.shot == nil, guidanceSettings.display.levelIndicator != .off {
+                                    PhoneLevelIndicator(level: PhoneLevel.shared)
+                                }
                                 if pinnedShot.shot != nil {
                                     SubjectOverlay(live: LiveGuidance.shared, debug: guidanceSettings.display.detectionBoxes,
                                                    readout: guidanceSettings.display.debugReadout,
@@ -997,10 +1000,10 @@ struct CameraView: View {
         }
         .preferredColorScheme(.dark)
         .statusBarHidden()
-        .onAppear { camera.start(); updateGuidance() }
+        .onAppear { camera.start(); PhoneLevel.shared.start(); updateGuidance() }
         .onChange(of: phase) { _, newPhase in
-            if newPhase == .active { camera.start() }
-            else { cancelCountdown(); camera.stop() }
+            if newPhase == .active { camera.start(); PhoneLevel.shared.start() }
+            else { cancelCountdown(); camera.stop(); PhoneLevel.shared.stop() }
             updateGuidance()
         }
         .onChange(of: pinnedShot.shot) { old, new in

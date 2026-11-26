@@ -244,6 +244,68 @@ struct LiveCueRow: View {
     }
 }
 
+/// The phone's own tilt, always on while the camera is showing: like the iPhone camera's level, it comes from the
+/// motion sensors (gravity), so it does not depend on a pinned shot or on the Director having run.
+/// Separate from `LiveGuidance`, which only runs for a pinned shot.
+final class PhoneLevel: ObservableObject, @unchecked Sendable {
+    static let shared = PhoneLevel()
+    /// Horizon tilt in degrees (+ = turned clockwise as you see the screen), and camera pitch. Nil until the first reading.
+    @Published private(set) var roll: Double?
+    @Published private(set) var pitch: Double?
+
+    private let motion = CMMotionManager()
+    private let queue: OperationQueue = { let q = OperationQueue(); q.maxConcurrentOperationCount = 1; return q }()
+    private var smoothedRoll: Double?, smoothedPitch: Double?
+
+    private init() {}
+
+    /// Main thread.
+    func start() {
+        guard motion.isDeviceMotionAvailable, !motion.isDeviceMotionActive else { return }
+        motion.deviceMotionUpdateInterval = 1.0 / 20
+        motion.startDeviceMotionUpdates(to: queue) { [weak self] m, _ in
+            guard let self, let g = m?.gravity else { return }
+            let sample = PoseSample(gravityX: g.x, y: g.y, z: g.z)
+            // Light smoothing; the roll jumps by a whole turn only when the phone changes between upright and sideways.
+            self.smoothedRoll = self.smoothedRoll.map { abs($0 - sample.rollDegrees) > 45 ? sample.rollDegrees : $0 + 0.35 * (sample.rollDegrees - $0) } ?? sample.rollDegrees
+            self.smoothedPitch = self.smoothedPitch.map { $0 + 0.35 * (sample.pitchDegrees - $0) } ?? sample.pitchDegrees
+            let roll = self.smoothedRoll, pitch = self.smoothedPitch
+            DispatchQueue.main.async { self.roll = roll; self.pitch = pitch }
+        }
+    }
+
+    /// Main thread.
+    func stop() {
+        motion.stopDeviceMotionUpdates()
+        smoothedRoll = nil; smoothedPitch = nil; roll = nil; pitch = nil
+    }
+}
+
+/// A short line that stays on the horizon, and turns green when the phone is level. Shown while no shot is pinned
+/// (a pinned shot has the fuller `LevelIndicator`).
+struct PhoneLevelIndicator: View {
+    @ObservedObject var level: PhoneLevel
+    @Environment(\.guidanceTheme) private var theme
+
+    var body: some View {
+        if let roll = level.roll, let pitch = level.pitch, abs(pitch) < 55 {
+            let isLevel = abs(roll) < 1.5
+            ZStack {
+                HStack(spacing: 70) {
+                    Rectangle().frame(width: 18, height: 1.5)
+                    Rectangle().frame(width: 18, height: 1.5)
+                }.foregroundStyle(.white.opacity(0.55))
+                Rectangle().fill(isLevel ? theme.ok : Color.white).frame(width: 120, height: 1.5)
+                    .rotationEffect(.degrees(-roll))
+            }
+            .shadow(color: .black.opacity(0.6), radius: 2)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+            .animation(.linear(duration: 0.08), value: roll)
+        }
+    }
+}
+
 /// Horizon line plus a tilt dot over the viewfinder. The line follows the real horizon; the dot
 /// sits in the centre ring when the camera's tilt matches the shot.
 struct LevelIndicator: View {
